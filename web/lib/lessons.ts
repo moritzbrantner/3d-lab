@@ -21,7 +21,13 @@ export type LessonId =
   | "uvs"
   | "vertex-colors"
   | "winding"
-  | "procedural";
+  | "procedural"
+  | "matrix-composition"
+  | "hierarchy"
+  | "keyframes"
+  | "quaternions"
+  | "skinning"
+  | "gltf-animation";
 
 export type Lesson = {
   id: LessonId;
@@ -99,8 +105,8 @@ export const lessons: readonly Lesson[] = [
     explanation: "Object transforms are composed into matrices. The model's local vertex data stays the same while a transform places that model into world space.",
     notice: "Use the controls below the viewport. The cube's source mesh remains unchanged while its Object3D transform changes.",
     three: "Object3D.position / rotation / scale / matrix",
-    rust: "future transform layer consuming Vec3 and Mesh",
-    stats: [["translation", "3 values"], ["rotation", "3 Euler angles"], ["scale", "3 values"]],
+    rust: "three_d_animation::Transform + Mat4",
+    stats: [["translation", "3 values"], ["rotation", "quaternion / Euler view"], ["scale", "3 values"]],
   },
   {
     id: "projection",
@@ -110,7 +116,7 @@ export const lessons: readonly Lesson[] = [
     explanation: "Perspective projection makes distant objects appear smaller. Orthographic projection preserves apparent size with distance, which is useful for CAD, diagrams, and some game views.",
     notice: "Switch projection modes and compare the three equal cubes arranged at increasing depth.",
     three: "PerspectiveCamera / OrthographicCamera",
-    rust: "future renderer-side camera matrices, outside Mesh ownership",
+    rust: "renderer-side camera matrices remain outside mesh ownership",
     stats: [["perspective", "depth scales size"], ["orthographic", "size is depth-invariant"], ["camera output", "clip space"]],
   },
   {
@@ -121,7 +127,7 @@ export const lessons: readonly Lesson[] = [
     explanation: "Lighting evaluates how a surface orientation relates to light sources and material properties. The mesh topology itself does not need to know which lighting model renders it.",
     notice: "Orbit around the sphere and compare the lit side, the grazing edge, and the shadowed side.",
     three: "MeshStandardMaterial + AmbientLight + DirectionalLight",
-    rust: "renderer concern; core geometry only supplies positions/topology/normals",
+    rust: "renderer concern; core geometry supplies positions/topology/normals",
     stats: [["ambient lights", "1"], ["directional lights", "1"], ["material", "standard"]],
   },
   {
@@ -132,7 +138,7 @@ export const lessons: readonly Lesson[] = [
     explanation: "Animation is repeated state evolution. A renderer does not inherently require skeletal animation: even incrementing an object's rotation every frame is already an animation loop.",
     notice: "Pause the animation to separate the static mesh from the time-varying transform.",
     three: "requestAnimationFrame + Object3D.rotation",
-    rust: "future animation/evaluation layer above renderer-independent Mesh",
+    rust: "three_d_animation::AnimationClip builds on the same idea",
     stats: [["mesh", "torus knot"], ["animated values", "rotation x / y"], ["clock", "frame delta"]],
   },
   {
@@ -189,5 +195,71 @@ export const lessons: readonly Lesson[] = [
     three: "BufferGeometry generated from typed lesson data",
     rust: "Mesh::subdivided_plane",
     stats: [["vertices", "(n + 1)²"], ["triangles", "2n²"], ["generated attributes", "normal + UV"]],
+  },
+  {
+    id: "matrix-composition",
+    number: "15",
+    title: "Matrix composition",
+    summary: "See translation × rotation × scale become one model matrix.",
+    explanation: "Homogeneous 4×4 matrices let translation, rotation, and scale share one representation. Their multiplication order matters: the model matrix here applies local scale, then rotation, then world translation.",
+    notice: "Rotate the composed matrix. The wireframe cube is an untransformed reference; the solid cube is positioned entirely by an explicit matrix.",
+    three: "Matrix4.makeTranslation / makeRotationY / makeScale / multiply",
+    rust: "Mat4::translation × Mat4::rotation × Mat4::scale",
+    stats: [["matrix", "4 × 4"], ["stored scalars", "16"], ["composition", "T × R × S"]],
+  },
+  {
+    id: "hierarchy",
+    number: "16",
+    title: "Parent & child transforms",
+    summary: "A child inherits the world transform accumulated above it.",
+    explanation: "Scene graphs store local transforms and derive world transforms by multiplying through the parent chain. This is why moving a shoulder also moves the forearm and hand without rewriting their local coordinates.",
+    notice: "Change the parent angle and watch both downstream links move. The child also has its own local rotation, composed after the parent transform.",
+    three: "Object3D.add + matrixWorld",
+    rust: "TransformNode + world_matrices",
+    stats: [["hierarchy depth", "3"], ["world rule", "parent world × child local"], ["storage rule", "parent before child"]],
+  },
+  {
+    id: "keyframes",
+    number: "17",
+    title: "Keyframes, interpolation & clips",
+    summary: "Store sparse poses, then reconstruct the motion between them.",
+    explanation: "A keyframe track records values at specific times. Interpolation fills the gaps, easing remaps interpolation time, and multiple tracks can be packaged into a reusable animation clip.",
+    notice: "Scrub between the three keyframes, compare linear and smooth interpolation, or play the same clip repeatedly.",
+    three: "VectorKeyframeTrack + AnimationClip + AnimationMixer",
+    rust: "KeyframeTrack<T> + Interpolation + AnimationClip",
+    stats: [["keyframes", "3"], ["clip duration", "2 s"], ["interpolation", "linear / smooth"]],
+  },
+  {
+    id: "quaternions",
+    number: "18",
+    title: "Euler angles vs. quaternions",
+    summary: "Euler angles are intuitive; quaternions interpolate orientation robustly.",
+    explanation: "Euler rotations are three ordered axis rotations and can lose a degree of freedom near gimbal lock. Unit quaternions encode orientation without that axis alignment problem and support spherical interpolation (SLERP).",
+    notice: "Move toward the 90° middle-axis rotation. The left object linearly interpolates Euler angles; the right follows a quaternion SLERP between the same endpoint orientations.",
+    three: "Euler + Quaternion.slerpQuaternions",
+    rust: "Quat::from_euler_xyz + Quat::slerp",
+    stats: [["Euler values", "3 angles + order"], ["quaternion values", "x / y / z / w"], ["rotation interpolation", "SLERP"]],
+  },
+  {
+    id: "skinning",
+    number: "19",
+    title: "Skeletons & skinning",
+    summary: "Joints deform one mesh by blending multiple bone transforms.",
+    explanation: "A skeleton is a transform hierarchy plus inverse bind matrices. Each skinned vertex stores joint indices and weights; the final position blends the corresponding joint skin matrices.",
+    notice: "Bend the middle joint. Vertices near the joint blend two bones, so the strip deforms instead of breaking into rigid pieces.",
+    three: "Bone + Skeleton + SkinnedMesh + skinIndex/skinWeight",
+    rust: "Skeleton + Joint + SkinInfluence + skin_matrices",
+    stats: [["joints", "3"], ["max influences / vertex", "4"], ["weight rule", "normalized sum = 1"]],
+  },
+  {
+    id: "gltf-animation",
+    number: "20",
+    title: "Minimal glTF animation",
+    summary: "Load the same animation concepts from a standard asset container.",
+    explanation: "glTF stores nodes, accessors, buffers, animation samplers, and channels in a portable format. The tiny embedded asset has one node and one translation track, proving the model pipeline is the same keyframe machinery packaged for interchange.",
+    notice: "Pause and resume the loaded glTF clip. The visible cube is attached to the animated glTF node so you can see the imported channel move it.",
+    three: "GLTFLoader + AnimationMixer",
+    rust: "AnimationClip/Skeleton data are ready for a later glTF adapter",
+    stats: [["glTF version", "2.0"], ["nodes", "1"], ["animation channels", "1 translation"]],
   },
 ] as const;

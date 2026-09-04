@@ -5,6 +5,14 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { VertexNormalsHelper } from "three/examples/jsm/helpers/VertexNormalsHelper.js";
 import {
+  buildAdvancedLessonScene,
+  type AdvancedSceneRuntime,
+} from "@/components/advanced-three-lessons";
+import {
+  DEFAULT_ADVANCED_STATE,
+  type AdvancedLessonState,
+} from "@/lib/animation-data";
+import {
   coloredTriangleMesh,
   cubeMesh,
   subdividedPlane,
@@ -31,6 +39,7 @@ type SceneRuntime = {
   transformTarget: THREE.Object3D | null;
   setCullMode: ((mode: CullMode) => void) | null;
   updateSubdivisions: ((segments: number) => void) | null;
+  advanced: AdvancedSceneRuntime | null;
 };
 
 const DEFAULT_TRANSFORM: TransformState = { rotateY: 35, scale: 1, lift: 0 };
@@ -105,7 +114,11 @@ function makeCheckerTexture(): THREE.DataTexture {
 
 function buildLessonScene(
   id: LessonId,
-  options: { cullMode: CullMode; subdivisions: number },
+  options: {
+    cullMode: CullMode;
+    subdivisions: number;
+    advancedState: AdvancedLessonState;
+  },
 ): SceneRuntime {
   const root = new THREE.Group();
   let animated: THREE.Object3D | null = null;
@@ -140,17 +153,18 @@ function buildLessonScene(
 
   if (id === "indexed-meshes") {
     const geometry = meshGeometry(cubeMesh);
-    const cube = new THREE.Mesh(geometry, new THREE.MeshNormalMaterial({ flatShading: true }));
-    root.add(cube);
+    root.add(new THREE.Mesh(geometry, new THREE.MeshNormalMaterial({ flatShading: true })));
     root.add(new THREE.LineSegments(new THREE.WireframeGeometry(geometry), new THREE.LineBasicMaterial()));
     root.add(makePointCloud(cubeMesh.vertices, 0.1));
   }
 
   if (id === "normals") {
     const geometry = new THREE.BoxGeometry(1.5, 1.5, 1.5, 1, 1, 1);
-    const cube = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ roughness: 0.72, metalness: 0 }));
-    root.add(cube);
-    root.add(new VertexNormalsHelper(cube, 0.35));
+    const cube = new THREE.Mesh(
+      geometry,
+      new THREE.MeshStandardMaterial({ roughness: 0.72, metalness: 0 }),
+    );
+    root.add(cube, new VertexNormalsHelper(cube, 0.35));
   }
 
   if (id === "transforms") {
@@ -158,8 +172,7 @@ function buildLessonScene(
       meshGeometry(cubeMesh),
       new THREE.MeshNormalMaterial({ flatShading: true }),
     );
-    root.add(cube);
-    root.add(new THREE.AxesHelper(1.8));
+    root.add(cube, new THREE.AxesHelper(1.8));
     transformTarget = cube;
   }
 
@@ -175,11 +188,10 @@ function buildLessonScene(
   }
 
   if (id === "lighting") {
-    const sphere = new THREE.Mesh(
+    root.add(new THREE.Mesh(
       new THREE.SphereGeometry(1, 48, 32),
       new THREE.MeshStandardMaterial({ roughness: 0.55, metalness: 0.05 }),
-    );
-    root.add(sphere);
+    ));
   }
 
   if (id === "animation") {
@@ -292,7 +304,10 @@ function buildLessonScene(
     updateSubdivisions = install;
   }
 
-  return { root, animated, transformTarget, setCullMode, updateSubdivisions };
+  const advanced = buildAdvancedLessonScene(id, options.advancedState);
+  if (advanced) root.add(advanced.root);
+
+  return { root, animated, transformTarget, setCullMode, updateSubdivisions, advanced };
 }
 
 export function ThreeLab() {
@@ -303,6 +318,7 @@ export function ThreeLab() {
   const projectionRef = useRef<ProjectionMode>("perspective");
   const cullModeRef = useRef<CullMode>("front");
   const subdivisionsRef = useRef(DEFAULT_SUBDIVISIONS);
+  const advancedStateRef = useRef<AdvancedLessonState>(DEFAULT_ADVANCED_STATE);
 
   const [lessonId, setLessonId] = useState<LessonId>("coordinates");
   const [animationEnabled, setAnimationEnabled] = useState(true);
@@ -310,16 +326,65 @@ export function ThreeLab() {
   const [projection, setProjection] = useState<ProjectionMode>("perspective");
   const [cullMode, setCullMode] = useState<CullMode>("front");
   const [subdivisions, setSubdivisions] = useState(DEFAULT_SUBDIVISIONS);
+  const [advancedState, setAdvancedState] = useState<AdvancedLessonState>(DEFAULT_ADVANCED_STATE);
 
   const lesson = useMemo(() => lessons.find((entry) => entry.id === lessonId) ?? lessons[0], [lessonId]);
   const stats = useMemo(() => {
-    if (lessonId !== "procedural") return lesson.stats;
-    return [
-      ["segments", String(subdivisions)],
-      ["vertices", String((subdivisions + 1) ** 2)],
-      ["triangles", String(2 * subdivisions ** 2)],
-    ] as const;
-  }, [lesson, lessonId, subdivisions]);
+    if (lessonId === "procedural") {
+      return [
+        ["segments", String(subdivisions)],
+        ["vertices", String((subdivisions + 1) ** 2)],
+        ["triangles", String(2 * subdivisions ** 2)],
+      ] as const;
+    }
+    if (lessonId === "matrix-composition") {
+      return [
+        ["matrix", "4 × 4 / 16 scalars"],
+        ["Y rotation", `${advancedState.matrixAngle}°`],
+        ["order", "T × R × S"],
+      ] as const;
+    }
+    if (lessonId === "hierarchy") {
+      return [
+        ["nodes", "3"],
+        ["parent angle", `${advancedState.hierarchyAngle}°`],
+        ["world rule", "parent × local"],
+      ] as const;
+    }
+    if (lessonId === "keyframes") {
+      return [
+        ["keyframes", "3"],
+        ["time", `${advancedState.keyframeTime.toFixed(2)} s`],
+        ["interpolation", advancedState.keyframeInterpolation],
+      ] as const;
+    }
+    if (lessonId === "quaternions") {
+      return [
+        ["interpolation", `${Math.round(advancedState.rotationT * 100)}%`],
+        ["left", "Euler XYZ"],
+        ["right", "quaternion SLERP"],
+      ] as const;
+    }
+    if (lessonId === "skinning") {
+      return [
+        ["joints", "3"],
+        ["middle bend", `${advancedState.skeletonBend}°`],
+        ["influences", "up to 2 used / 4 slots"],
+      ] as const;
+    }
+    if (lessonId === "gltf-animation") {
+      return [
+        ["asset", "embedded glTF 2.0"],
+        ["clip", "Bounce / 2 s"],
+        ["playback", advancedState.gltfPlaying ? "playing" : "paused"],
+      ] as const;
+    }
+    return lesson.stats;
+  }, [advancedState, lesson, lessonId, subdivisions]);
+
+  const updateAdvanced = (patch: Partial<AdvancedLessonState>) => {
+    setAdvancedState((current) => ({ ...current, ...patch }));
+  };
 
   useEffect(() => {
     animationEnabledRef.current = animationEnabled;
@@ -342,6 +407,11 @@ export function ThreeLab() {
     subdivisionsRef.current = subdivisions;
     runtimeRef.current?.updateSubdivisions?.(subdivisions);
   }, [subdivisions]);
+
+  useEffect(() => {
+    advancedStateRef.current = advancedState;
+    runtimeRef.current?.advanced?.setState(advancedState);
+  }, [advancedState]);
 
   useEffect(() => {
     const viewport = viewportRef.current;
@@ -376,7 +446,7 @@ export function ThreeLab() {
     scene.add(ambient, directional);
 
     const grid = new THREE.GridHelper(8, 16);
-    grid.position.y = -1.35;
+    grid.position.y = -1.75;
     scene.add(grid);
 
     const lessonRoot = new THREE.Group();
@@ -384,12 +454,14 @@ export function ThreeLab() {
 
     function installLesson(id: LessonId) {
       if (runtimeRef.current) {
+        runtimeRef.current.advanced?.dispose();
         lessonRoot.remove(runtimeRef.current.root);
         disposeObject(runtimeRef.current.root);
       }
       const runtime = buildLessonScene(id, {
         cullMode: cullModeRef.current,
         subdivisions: subdivisionsRef.current,
+        advancedState: advancedStateRef.current,
       });
       lessonRoot.add(runtime.root);
       runtimeRef.current = runtime;
@@ -434,6 +506,8 @@ export function ThreeLab() {
         runtime.transformTarget.position.y = current.lift;
       }
 
+      runtime?.advanced?.tick(delta);
+
       const orthographic = projectionRef.current === "orthographic";
       perspectiveControls.enabled = !orthographic;
       orthographicControls.enabled = orthographic;
@@ -450,6 +524,7 @@ export function ThreeLab() {
       observer.disconnect();
       perspectiveControls.dispose();
       orthographicControls.dispose();
+      runtimeRef.current?.advanced?.dispose();
       disposeObject(scene);
       renderer.dispose();
       renderer.domElement.remove();
@@ -532,6 +607,68 @@ export function ThreeLab() {
                 <strong>{(subdivisions + 1) ** 2}</strong> vertices · <strong>{2 * subdivisions ** 2}</strong> triangles
               </div>
             </div>
+          )}
+
+          {lessonId === "matrix-composition" && (
+            <div className="controls-grid" aria-label="Matrix composition controls">
+              <label>
+                Rotation Y <output>{advancedState.matrixAngle}°</output>
+                <input type="range" min="-180" max="180" value={advancedState.matrixAngle} onChange={(event) => updateAdvanced({ matrixAngle: Number(event.target.value) })} />
+              </label>
+              <div className="mesh-readout"><strong>T × R × S</strong> explicit model matrix</div>
+            </div>
+          )}
+
+          {lessonId === "hierarchy" && (
+            <div className="controls-grid" aria-label="Hierarchy controls">
+              <label>
+                Parent angle <output>{advancedState.hierarchyAngle}°</output>
+                <input type="range" min="-110" max="110" value={advancedState.hierarchyAngle} onChange={(event) => updateAdvanced({ hierarchyAngle: Number(event.target.value) })} />
+              </label>
+              <div className="mesh-readout"><strong>parent world × child local</strong></div>
+            </div>
+          )}
+
+          {lessonId === "keyframes" && (
+            <div className="controls-grid" aria-label="Keyframe controls">
+              <label>
+                Time <output>{advancedState.keyframeTime.toFixed(2)} s</output>
+                <input type="range" min="0" max="2" step="0.01" value={advancedState.keyframeTime} disabled={advancedState.keyframePlaying} onChange={(event) => updateAdvanced({ keyframeTime: Number(event.target.value) })} />
+              </label>
+              <div className="segmented" aria-label="Keyframe interpolation">
+                <button type="button" className={advancedState.keyframeInterpolation === "linear" ? "active" : ""} onClick={() => updateAdvanced({ keyframeInterpolation: "linear" })}>Linear</button>
+                <button type="button" className={advancedState.keyframeInterpolation === "smooth" ? "active" : ""} onClick={() => updateAdvanced({ keyframeInterpolation: "smooth" })}>Smooth</button>
+              </div>
+              <button type="button" className="secondary-button" onClick={() => updateAdvanced({ keyframePlaying: !advancedState.keyframePlaying })}>
+                {advancedState.keyframePlaying ? "Pause clip" : "Play clip"}
+              </button>
+            </div>
+          )}
+
+          {lessonId === "quaternions" && (
+            <div className="controls-grid" aria-label="Rotation interpolation controls">
+              <label>
+                Endpoint interpolation <output>{Math.round(advancedState.rotationT * 100)}%</output>
+                <input type="range" min="0" max="1" step="0.01" value={advancedState.rotationT} onChange={(event) => updateAdvanced({ rotationT: Number(event.target.value) })} />
+              </label>
+              <div className="mesh-readout"><strong>Euler XYZ</strong> left · <strong>SLERP</strong> right</div>
+            </div>
+          )}
+
+          {lessonId === "skinning" && (
+            <div className="controls-grid" aria-label="Skeleton controls">
+              <label>
+                Middle joint bend <output>{advancedState.skeletonBend}°</output>
+                <input type="range" min="-80" max="80" value={advancedState.skeletonBend} onChange={(event) => updateAdvanced({ skeletonBend: Number(event.target.value) })} />
+              </label>
+              <div className="mesh-readout"><strong>3 joints</strong> with blended vertex weights</div>
+            </div>
+          )}
+
+          {lessonId === "gltf-animation" && (
+            <button type="button" className="secondary-button animation-toggle" onClick={() => updateAdvanced({ gltfPlaying: !advancedState.gltfPlaying })}>
+              {advancedState.gltfPlaying ? "Pause glTF clip" : "Resume glTF clip"}
+            </button>
           )}
         </div>
 

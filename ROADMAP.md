@@ -19,14 +19,17 @@
 - [x] Add bounded mesh subdivision and procedural plane generation.
 - [x] Validate optional normal, UV, and color buffers in both the TypeScript lesson model and `three-d-core`.
 
-## Next implementation horizon
-
 ### Slice 3 — transforms and animation depth
 
-- Matrix composition and parent/child transforms.
-- Keyframes and interpolation.
-- Quaternion rotation.
-- Skeletons, joints, skinning, and a minimal glTF animation example.
+- [x] Teach explicit translation × rotation × scale matrix composition.
+- [x] Demonstrate parent/child/grandchild transform composition.
+- [x] Add keyframes, interpolation/easing, playback, and reusable clips.
+- [x] Compare Euler interpolation with quaternion SLERP around a 90° middle-axis rotation.
+- [x] Build a three-joint skinned strip from explicit bone weights before introducing file formats.
+- [x] Load a minimal glTF 2.0 translation animation with `GLTFLoader` and `AnimationMixer`.
+- [x] Add renderer-independent `Mat4`, `Quat`, `Transform`, hierarchy, keyframe/clip, skeleton, and skin-influence types in Rust.
+
+## Next implementation horizon
 
 ### Slice 4 — renderer comparison
 
@@ -37,7 +40,7 @@
 
 ### Slice 5 — model pipeline
 
-- OBJ and glTF anatomy.
-- Mesh loading and validation.
-- Tangents and normal maps.
-- Level-of-detail and mesh simplification experiments.
+- Expand glTF anatomy from animation-only to meshes/materials/assets.
+- Add OBJ and glTF mesh loading and validation.
+- Add tangents and normal maps.
+- Add level-of-detail and mesh simplification experiments.
