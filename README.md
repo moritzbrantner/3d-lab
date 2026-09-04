@@ -1,3 +1,54 @@
 # 3d-lab
 
-Interactive experiments for learning 3D geometry, meshes, rendering, and animation.
+`3d-lab` is an interactive learning repository for 3D fundamentals: vertices, triangles, indexed meshes, normals, transforms, cameras, lighting, and animation.
+
+The repository deliberately has two parallel surfaces:
+
+- **Web / Three.js** — visual, interactive lessons that can be published with GitHub Pages.
+- **Rust / `three-d-core`** — renderer-independent geometry primitives and algorithms for understanding and testing the same concepts at the data level.
+
+The web renderer is intentionally Three.js-first. The Rust crate does not depend on Three.js, WebGL, WebGPU, or a windowing stack; native/WebGPU rendering can be added later without moving mesh ownership out of the core crate.
+
+## Curriculum
+
+The first GitHub Pages slice covers:
+
+1. Coordinate systems
+2. Vertices
+3. Triangles
+4. Indexed meshes
+5. Normals
+6. Transforms
+7. Perspective vs. orthographic projection
+8. Lighting
+9. Animation
+
+Every topic combines a concise explanation with an interactive scene and a small data inspector.
+
+## Development
+
+### Rust
+
+```bash
+cargo fmt --all --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test --all-features
+```
+
+### Web
+
+```bash
+cd web
+bun install
+bun run typecheck
+bun test
+bun run build
+```
+
+Then run `bun run dev` for the local teaching site.
+
+## Architecture
+
+See [`docs/contracts/mesh-model.md`](docs/contracts/mesh-model.md) for the intentionally small parity contract between the TypeScript lessons and the Rust core.
+
+See [`ROADMAP.md`](ROADMAP.md) for the next implementation slices.

@@ -1,0 +1,5 @@
+/target
+/web/.next
+/web/out
+/web/node_modules
+.DS_Store
