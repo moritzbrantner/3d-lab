@@ -4,7 +4,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { VertexNormalsHelper } from "three/examples/jsm/helpers/VertexNormalsHelper.js";
-import { cubeMesh, triangleMesh } from "@/lib/mesh";
+import {
+  coloredTriangleMesh,
+  cubeMesh,
+  subdividedPlane,
+  triangleMesh,
+  triangleNormal,
+  uvQuadMesh,
+  validateMesh,
+  type IndexedMesh,
+} from "@/lib/mesh";
 import { lessons, type LessonId } from "@/lib/lessons";
 
 type TransformState = {
@@ -14,20 +23,39 @@ type TransformState = {
 };
 
 type ProjectionMode = "perspective" | "orthographic";
+type CullMode = "front" | "double";
 
 type SceneRuntime = {
   root: THREE.Group;
   animated: THREE.Object3D | null;
   transformTarget: THREE.Object3D | null;
+  setCullMode: ((mode: CullMode) => void) | null;
+  updateSubdivisions: ((segments: number) => void) | null;
 };
 
 const DEFAULT_TRANSFORM: TransformState = { rotateY: 35, scale: 1, lift: 0 };
+const DEFAULT_SUBDIVISIONS = 4;
 
-function meshGeometry(mesh: typeof cubeMesh): THREE.BufferGeometry {
+function meshGeometry(mesh: IndexedMesh): THREE.BufferGeometry {
+  validateMesh(mesh);
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(mesh.vertices.flat(), 3));
   geometry.setIndex([...mesh.indices]);
-  geometry.computeVertexNormals();
+
+  if (mesh.attributes?.normals) {
+    geometry.setAttribute("normal", new THREE.Float32BufferAttribute(mesh.attributes.normals.flat(), 3));
+  } else {
+    geometry.computeVertexNormals();
+  }
+
+  if (mesh.attributes?.uvs) {
+    geometry.setAttribute("uv", new THREE.Float32BufferAttribute(mesh.attributes.uvs.flat(), 2));
+  }
+
+  if (mesh.attributes?.colors) {
+    geometry.setAttribute("color", new THREE.Float32BufferAttribute(mesh.attributes.colors.flat(), 3));
+  }
+
   return geometry;
 }
 
@@ -36,7 +64,11 @@ function disposeObject(root: THREE.Object3D) {
     if (object instanceof THREE.Mesh || object instanceof THREE.Line || object instanceof THREE.Points) {
       object.geometry.dispose();
       const materials = Array.isArray(object.material) ? object.material : [object.material];
-      materials.forEach((material) => material.dispose());
+      materials.forEach((material) => {
+        const mappedMaterial = material as THREE.Material & { map?: THREE.Texture | null };
+        mappedMaterial.map?.dispose();
+        material.dispose();
+      });
     }
   });
 }
@@ -47,10 +79,39 @@ function makePointCloud(positions: readonly (readonly number[])[], size = 0.12) 
   return new THREE.Points(geometry, new THREE.PointsMaterial({ size, sizeAttenuation: true }));
 }
 
-function buildLessonScene(id: LessonId): SceneRuntime {
+function makeCheckerTexture(): THREE.DataTexture {
+  const size = 8;
+  const data = new Uint8Array(size * size * 4);
+
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const offset = (y * size + x) * 4;
+      const light = (Math.floor(x / 2) + Math.floor(y / 2)) % 2 === 0;
+      const value = light ? 235 : 42;
+      data[offset] = value;
+      data[offset + 1] = light ? 235 : 112;
+      data[offset + 2] = light ? 235 : 185;
+      data[offset + 3] = 255;
+    }
+  }
+
+  const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.magFilter = THREE.NearestFilter;
+  texture.minFilter = THREE.NearestFilter;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function buildLessonScene(
+  id: LessonId,
+  options: { cullMode: CullMode; subdivisions: number },
+): SceneRuntime {
   const root = new THREE.Group();
   let animated: THREE.Object3D | null = null;
   let transformTarget: THREE.Object3D | null = null;
+  let setCullMode: SceneRuntime["setCullMode"] = null;
+  let updateSubdivisions: SceneRuntime["updateSubdivisions"] = null;
 
   if (id === "coordinates") {
     root.add(new THREE.AxesHelper(2.4));
@@ -130,7 +191,108 @@ function buildLessonScene(id: LessonId): SceneRuntime {
     animated = knot;
   }
 
-  return { root, animated, transformTarget };
+  if (id === "normal-modes") {
+    const flatGeometry = new THREE.IcosahedronGeometry(0.88, 2);
+    const smoothGeometry = flatGeometry.clone();
+    smoothGeometry.computeVertexNormals();
+
+    const flat = new THREE.Mesh(
+      flatGeometry,
+      new THREE.MeshStandardMaterial({ roughness: 0.72, metalness: 0, flatShading: true }),
+    );
+    const smooth = new THREE.Mesh(
+      smoothGeometry,
+      new THREE.MeshStandardMaterial({ roughness: 0.72, metalness: 0, flatShading: false }),
+    );
+    flat.position.x = -1.15;
+    smooth.position.x = 1.15;
+    root.add(flat, smooth);
+  }
+
+  if (id === "uvs") {
+    const geometry = meshGeometry(uvQuadMesh);
+    const material = new THREE.MeshBasicMaterial({
+      map: makeCheckerTexture(),
+      side: THREE.DoubleSide,
+    });
+    root.add(new THREE.Mesh(geometry, material));
+    root.add(new THREE.LineSegments(new THREE.WireframeGeometry(geometry), new THREE.LineBasicMaterial()));
+  }
+
+  if (id === "vertex-colors") {
+    const geometry = meshGeometry(coloredTriangleMesh);
+    root.add(new THREE.Mesh(
+      geometry,
+      new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }),
+    ));
+    root.add(new THREE.Points(
+      geometry.clone(),
+      new THREE.PointsMaterial({ size: 0.16, sizeAttenuation: true, vertexColors: true }),
+    ));
+  }
+
+  if (id === "winding") {
+    const materials: THREE.MeshNormalMaterial[] = [];
+    const addTriangle = (reversed: boolean, x: number) => {
+      const mesh = reversed
+        ? { vertices: triangleMesh.vertices, indices: [0, 2, 1] as const }
+        : triangleMesh;
+      const geometry = meshGeometry(mesh);
+      const material = new THREE.MeshNormalMaterial({
+        side: options.cullMode === "front" ? THREE.FrontSide : THREE.DoubleSide,
+      });
+      const group = new THREE.Group();
+      group.position.x = x;
+      group.scale.setScalar(0.72);
+      group.add(new THREE.Mesh(geometry, material));
+      group.add(new THREE.LineSegments(new THREE.WireframeGeometry(geometry), new THREE.LineBasicMaterial()));
+
+      const normal = triangleNormal(mesh, 0);
+      if (normal) {
+        group.add(new THREE.ArrowHelper(
+          new THREE.Vector3(...normal),
+          new THREE.Vector3(0, -0.16, 0),
+          0.9,
+        ));
+      }
+
+      materials.push(material);
+      root.add(group);
+    };
+
+    addTriangle(false, -1.2);
+    addTriangle(true, 1.2);
+    setCullMode = (mode) => {
+      materials.forEach((material) => {
+        material.side = mode === "front" ? THREE.FrontSide : THREE.DoubleSide;
+        material.needsUpdate = true;
+      });
+    };
+  }
+
+  if (id === "procedural") {
+    const proceduralRoot = new THREE.Group();
+    root.add(proceduralRoot);
+
+    const install = (segments: number) => {
+      disposeObject(proceduralRoot);
+      proceduralRoot.clear();
+      const geometry = meshGeometry(subdividedPlane(segments));
+      proceduralRoot.add(new THREE.Mesh(
+        geometry,
+        new THREE.MeshStandardMaterial({ roughness: 0.72, metalness: 0, side: THREE.DoubleSide }),
+      ));
+      proceduralRoot.add(new THREE.LineSegments(
+        new THREE.WireframeGeometry(geometry),
+        new THREE.LineBasicMaterial(),
+      ));
+    };
+
+    install(options.subdivisions);
+    updateSubdivisions = install;
+  }
+
+  return { root, animated, transformTarget, setCullMode, updateSubdivisions };
 }
 
 export function ThreeLab() {
@@ -139,13 +301,25 @@ export function ThreeLab() {
   const animationEnabledRef = useRef(true);
   const transformRef = useRef<TransformState>(DEFAULT_TRANSFORM);
   const projectionRef = useRef<ProjectionMode>("perspective");
+  const cullModeRef = useRef<CullMode>("front");
+  const subdivisionsRef = useRef(DEFAULT_SUBDIVISIONS);
 
   const [lessonId, setLessonId] = useState<LessonId>("coordinates");
   const [animationEnabled, setAnimationEnabled] = useState(true);
   const [transform, setTransform] = useState<TransformState>(DEFAULT_TRANSFORM);
   const [projection, setProjection] = useState<ProjectionMode>("perspective");
+  const [cullMode, setCullMode] = useState<CullMode>("front");
+  const [subdivisions, setSubdivisions] = useState(DEFAULT_SUBDIVISIONS);
 
   const lesson = useMemo(() => lessons.find((entry) => entry.id === lessonId) ?? lessons[0], [lessonId]);
+  const stats = useMemo(() => {
+    if (lessonId !== "procedural") return lesson.stats;
+    return [
+      ["segments", String(subdivisions)],
+      ["vertices", String((subdivisions + 1) ** 2)],
+      ["triangles", String(2 * subdivisions ** 2)],
+    ] as const;
+  }, [lesson, lessonId, subdivisions]);
 
   useEffect(() => {
     animationEnabledRef.current = animationEnabled;
@@ -158,6 +332,16 @@ export function ThreeLab() {
   useEffect(() => {
     projectionRef.current = projection;
   }, [projection]);
+
+  useEffect(() => {
+    cullModeRef.current = cullMode;
+    runtimeRef.current?.setCullMode?.(cullMode);
+  }, [cullMode]);
+
+  useEffect(() => {
+    subdivisionsRef.current = subdivisions;
+    runtimeRef.current?.updateSubdivisions?.(subdivisions);
+  }, [subdivisions]);
 
   useEffect(() => {
     const viewport = viewportRef.current;
@@ -203,7 +387,10 @@ export function ThreeLab() {
         lessonRoot.remove(runtimeRef.current.root);
         disposeObject(runtimeRef.current.root);
       }
-      const runtime = buildLessonScene(id);
+      const runtime = buildLessonScene(id, {
+        cullMode: cullModeRef.current,
+        subdivisions: subdivisionsRef.current,
+      });
       lessonRoot.add(runtime.root);
       runtimeRef.current = runtime;
     }
@@ -263,7 +450,7 @@ export function ThreeLab() {
       observer.disconnect();
       perspectiveControls.dispose();
       orthographicControls.dispose();
-      if (runtimeRef.current) disposeObject(runtimeRef.current.root);
+      disposeObject(scene);
       renderer.dispose();
       renderer.domElement.remove();
       runtimeRef.current = null;
@@ -327,6 +514,25 @@ export function ThreeLab() {
               {animationEnabled ? "Pause animation" : "Resume animation"}
             </button>
           )}
+
+          {lessonId === "winding" && (
+            <div className="segmented" aria-label="Back-face culling mode">
+              <button type="button" className={cullMode === "front" ? "active" : ""} onClick={() => setCullMode("front")}>Front faces only</button>
+              <button type="button" className={cullMode === "double" ? "active" : ""} onClick={() => setCullMode("double")}>Double-sided</button>
+            </div>
+          )}
+
+          {lessonId === "procedural" && (
+            <div className="controls-grid procedural-controls" aria-label="Subdivision controls">
+              <label>
+                Segments <output>{subdivisions}</output>
+                <input type="range" min="1" max="16" value={subdivisions} onChange={(event) => setSubdivisions(Number(event.target.value))} />
+              </label>
+              <div className="mesh-readout">
+                <strong>{(subdivisions + 1) ** 2}</strong> vertices · <strong>{2 * subdivisions ** 2}</strong> triangles
+              </div>
+            </div>
+          )}
         </div>
 
         <aside className="lesson-copy">
@@ -341,7 +547,7 @@ export function ThreeLab() {
           <section>
             <p className="eyebrow">Data inspector</p>
             <dl className="stats">
-              {lesson.stats.map(([label, value]) => (
+              {stats.map(([label, value]) => (
                 <div key={label}>
                   <dt>{label}</dt>
                   <dd>{value}</dd>
