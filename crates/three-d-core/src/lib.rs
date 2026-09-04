@@ -77,6 +77,7 @@ pub struct Bounds3 {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MeshError {
+    NonFiniteVertex { vertex_index: usize },
     IndexCountNotDivisibleByThree { index_count: usize },
     IndexOutOfBounds { index: u32, vertex_count: usize },
 }
@@ -84,6 +85,9 @@ pub enum MeshError {
 impl fmt::Display for MeshError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::NonFiniteVertex { vertex_index } => {
+                write!(formatter, "vertex {vertex_index} contains a non-finite coordinate")
+            }
             Self::IndexCountNotDivisibleByThree { index_count } => {
                 write!(formatter, "index count {index_count} is not divisible by three")
             }
@@ -108,6 +112,12 @@ pub struct Mesh {
 
 impl Mesh {
     pub fn new(vertices: Vec<Vec3>, indices: Vec<u32>) -> Result<Self, MeshError> {
+        if let Some((vertex_index, _)) = vertices.iter().enumerate().find(|(_, vertex)| {
+            !vertex.x.is_finite() || !vertex.y.is_finite() || !vertex.z.is_finite()
+        }) {
+            return Err(MeshError::NonFiniteVertex { vertex_index });
+        }
+
         if !indices.len().is_multiple_of(3) {
             return Err(MeshError::IndexCountNotDivisibleByThree {
                 index_count: indices.len(),
@@ -197,6 +207,12 @@ impl Mesh {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rejects_non_finite_vertices() {
+        let result = Mesh::new(vec![Vec3::new(f32::NAN, 0.0, 0.0)], vec![]);
+        assert_eq!(result, Err(MeshError::NonFiniteVertex { vertex_index: 0 }));
+    }
 
     #[test]
     fn rejects_partial_triangles() {
