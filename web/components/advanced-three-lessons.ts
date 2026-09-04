@@ -118,7 +118,7 @@ function buildKeyframes(initial: AdvancedLessonState): AdvancedSceneRuntime {
   );
   root.add(keyframePoints);
 
-  const makeClip = (name: string, interpolation: number) => {
+  const makeClip = (name: string, interpolation: THREE.InterpolationModes) => {
     const track = new THREE.VectorKeyframeTrack(
       ".position",
       [...KEYFRAME_TIMES],
