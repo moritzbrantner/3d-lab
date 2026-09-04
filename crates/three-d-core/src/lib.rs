@@ -344,10 +344,10 @@ impl Mesh {
     pub fn smooth_vertex_normals(&self) -> Vec<Vec3> {
         let mut sums = vec![Vec3::ZERO; self.vertices.len()];
 
-        for indices in self.indices.chunks_exact(3) {
-            let a_index = indices[0] as usize;
-            let b_index = indices[1] as usize;
-            let c_index = indices[2] as usize;
+        for &[a_index, b_index, c_index] in self.indices.as_chunks::<3>().0 {
+            let a_index = a_index as usize;
+            let b_index = b_index as usize;
+            let c_index = c_index as usize;
             let a = self.vertices[a_index];
             let b = self.vertices[b_index];
             let c = self.vertices[c_index];
