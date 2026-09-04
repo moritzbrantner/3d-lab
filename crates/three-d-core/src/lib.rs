@@ -140,16 +140,29 @@ pub struct VertexAttributes {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MeshError {
-    NonFiniteVertex { vertex_index: usize },
-    IndexCountNotDivisibleByThree { index_count: usize },
-    IndexOutOfBounds { index: u32, vertex_count: usize },
+    NonFiniteVertex {
+        vertex_index: usize,
+    },
+    IndexCountNotDivisibleByThree {
+        index_count: usize,
+    },
+    IndexOutOfBounds {
+        index: u32,
+        vertex_count: usize,
+    },
     AttributeCountMismatch {
         attribute: VertexAttributeKind,
         attribute_count: usize,
         vertex_count: usize,
     },
-    NonFiniteAttribute { attribute: VertexAttributeKind, vertex_index: usize },
-    InvalidSubdivisionCount { segments: u32, max: u32 },
+    NonFiniteAttribute {
+        attribute: VertexAttributeKind,
+        vertex_index: usize,
+    },
+    InvalidSubdivisionCount {
+        segments: u32,
+        max: u32,
+    },
 }
 
 impl fmt::Display for MeshError {
