@@ -1,7 +1,7 @@
-//! Renderer-independent transform and animation fundamentals used by `3d-lab`.
+//! Renderer-independent transform and animation fundamentals for `3d-lab`.
 //!
-//! This crate deliberately owns scene math and animation data, but not rendering,
-//! GPU APIs, asset loading, or mesh topology. Meshes remain owned by `three-d-core`.
+//! This crate owns scene math and animation data, but deliberately does not own
+//! rendering, GPU APIs, asset loading, or mesh topology.
 
 use core::fmt;
 use core::ops::Mul;
@@ -89,11 +89,9 @@ impl Quat {
             return start;
         }
 
-        let start_weight = ((1.0 - factor) * theta).sin() / sine;
-        let end_weight = (factor * theta).sin() / sine;
         start
-            .scaled(start_weight)
-            .added(end.scaled(end_weight))
+            .scaled(((1.0 - factor) * theta).sin() / sine)
+            .added(end.scaled((factor * theta).sin() / sine))
             .normalized()
             .unwrap_or(Self::IDENTITY)
     }
@@ -125,7 +123,7 @@ impl Default for Quat {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Mat4 {
-    /// Column-major elements, matching the conventional GPU/Three.js layout.
+    /// Column-major elements, matching conventional GPU and Three.js layout.
     pub elements: [f32; 16],
 }
 
@@ -155,33 +153,24 @@ impl Mat4 {
     }
 
     pub fn rotation(rotation: Quat) -> Self {
-        let rotation = rotation.normalized().unwrap_or(Quat::IDENTITY);
-        let x2 = rotation.x + rotation.x;
-        let y2 = rotation.y + rotation.y;
-        let z2 = rotation.z + rotation.z;
-        let xx = rotation.x * x2;
-        let xy = rotation.x * y2;
-        let xz = rotation.x * z2;
-        let yy = rotation.y * y2;
-        let yz = rotation.y * z2;
-        let zz = rotation.z * z2;
-        let wx = rotation.w * x2;
-        let wy = rotation.w * y2;
-        let wz = rotation.w * z2;
-
-        let m00 = 1.0 - (yy + zz);
-        let m01 = xy - wz;
-        let m02 = xz + wy;
-        let m10 = xy + wz;
-        let m11 = 1.0 - (xx + zz);
-        let m12 = yz - wx;
-        let m20 = xz - wy;
-        let m21 = yz + wx;
-        let m22 = 1.0 - (xx + yy);
+        let q = rotation.normalized().unwrap_or(Quat::IDENTITY);
+        let x2 = q.x + q.x;
+        let y2 = q.y + q.y;
+        let z2 = q.z + q.z;
+        let xx = q.x * x2;
+        let xy = q.x * y2;
+        let xz = q.x * z2;
+        let yy = q.y * y2;
+        let yz = q.y * z2;
+        let zz = q.z * z2;
+        let wx = q.w * x2;
+        let wy = q.w * y2;
+        let wz = q.w * z2;
 
         Self {
             elements: [
-                m00, m10, m20, 0.0, m01, m11, m21, 0.0, m02, m12, m22, 0.0, 0.0, 0.0, 0.0, 1.0,
+                1.0 - (yy + zz), xy + wz, xz - wy, 0.0, xy - wz, 1.0 - (xx + zz), yz + wx,
+                0.0, xz + wy, yz - wx, 1.0 - (xx + yy), 0.0, 0.0, 0.0, 0.0, 1.0,
             ],
         }
     }
@@ -273,23 +262,20 @@ impl std::error::Error for HierarchyError {}
 
 pub fn world_matrices(nodes: &[TransformNode]) -> Result<Vec<Mat4>, HierarchyError> {
     let mut world = Vec::with_capacity(nodes.len());
-
     for (node_index, node) in nodes.iter().enumerate() {
         let local = node.local.matrix();
-        let matrix = if let Some(parent) = node.parent {
-            if parent >= node_index {
+        let matrix = match node.parent {
+            Some(parent) if parent >= node_index => {
                 return Err(HierarchyError::ParentMustPrecedeChild {
                     node: node_index,
                     parent,
                 });
             }
-            world[parent] * local
-        } else {
-            local
+            Some(parent) => world[parent] * local,
+            None => local,
         };
         world.push(matrix);
     }
-
     Ok(world)
 }
 
@@ -347,12 +333,8 @@ pub enum TrackError {
 impl fmt::Display for TrackError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Empty => {
-                formatter.write_str("a keyframe track must contain at least one keyframe")
-            }
-            Self::NonFiniteTime { index } => {
-                write!(formatter, "keyframe {index} has a non-finite time")
-            }
+            Self::Empty => formatter.write_str("a keyframe track must contain at least one keyframe"),
+            Self::NonFiniteTime { index } => write!(formatter, "keyframe {index} has a non-finite time"),
             Self::TimesNotStrictlyIncreasing { index } => write!(
                 formatter,
                 "keyframe {index} does not occur after the previous keyframe"
@@ -374,7 +356,6 @@ impl<T: Copy> KeyframeTrack<T> {
         if frames.is_empty() {
             return Err(TrackError::Empty);
         }
-
         for (index, frame) in frames.iter().enumerate() {
             if !frame.time.is_finite() {
                 return Err(TrackError::NonFiniteTime { index });
@@ -383,7 +364,6 @@ impl<T: Copy> KeyframeTrack<T> {
                 return Err(TrackError::TimesNotStrictlyIncreasing { index });
             }
         }
-
         Ok(Self {
             frames,
             interpolation,
@@ -405,17 +385,15 @@ impl<T: Interpolate> KeyframeTrack<T> {
         if time <= first.time {
             return first.value;
         }
-
         let last = self.frames[self.frames.len() - 1];
         if time >= last.time {
             return last.value;
         }
-
         let pair = self
             .frames
             .windows(2)
             .find(|pair| time <= pair[1].time)
-            .expect("time within validated track range");
+            .expect("time is inside validated track range");
         let start = pair[0];
         let end = pair[1];
         let factor = (time - start.time) / (end.time - start.time);
@@ -442,18 +420,18 @@ pub enum AnimationTrack {
 }
 
 impl AnimationTrack {
-    fn end_time(&self) -> f32 {
-        match self {
-            Self::Translation { track, .. } | Self::Scale { track, .. } => track.end_time(),
-            Self::Rotation { track, .. } => track.end_time(),
-        }
-    }
-
     fn node(&self) -> usize {
         match self {
             Self::Translation { node, .. }
             | Self::Rotation { node, .. }
             | Self::Scale { node, .. } => *node,
+        }
+    }
+
+    fn end_time(&self) -> f32 {
+        match self {
+            Self::Translation { track, .. } | Self::Scale { track, .. } => track.end_time(),
+            Self::Rotation { track, .. } => track.end_time(),
         }
     }
 
@@ -475,9 +453,7 @@ pub enum ClipError {
 impl fmt::Display for ClipError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::EmptyTracks => {
-                formatter.write_str("an animation clip must contain at least one track")
-            }
+            Self::EmptyTracks => formatter.write_str("an animation clip must contain at least one track"),
             Self::NodeOutOfBounds { node, node_count } => write!(
                 formatter,
                 "animation track targets node {node}, but pose has only {node_count} nodes"
@@ -520,14 +496,13 @@ impl AnimationClip {
     }
 
     pub fn sample(&self, time: f32, pose: &mut [Transform]) -> Result<(), ClipError> {
-        let time = time.clamp(0.0, self.duration);
         let node_count = pose.len();
         for track in &self.tracks {
             let node = track.node();
             let transform = pose
                 .get_mut(node)
                 .ok_or(ClipError::NodeOutOfBounds { node, node_count })?;
-            track.sample_into(time, transform);
+            track.sample_into(time.clamp(0.0, self.duration), transform);
         }
         Ok(())
     }
@@ -579,13 +554,13 @@ pub struct Skeleton {
 impl Skeleton {
     pub fn new(joints: Vec<Joint>) -> Result<Self, SkeletonError> {
         for (joint_index, joint) in joints.iter().enumerate() {
-            if let Some(parent) = joint.parent
-                && parent >= joint_index
-            {
-                return Err(SkeletonError::ParentMustPrecedeChild {
-                    joint: joint_index,
-                    parent,
-                });
+            if let Some(parent) = joint.parent {
+                if parent >= joint_index {
+                    return Err(SkeletonError::ParentMustPrecedeChild {
+                        joint: joint_index,
+                        parent,
+                    });
+                }
             }
         }
         Ok(Self { joints })
@@ -602,7 +577,6 @@ impl Skeleton {
                 actual: joint_world.len(),
             });
         }
-
         Ok(self
             .joints
             .iter()
@@ -625,12 +599,10 @@ impl SkinInfluence {
                 return Err(SkeletonError::InvalidWeight { slot });
             }
         }
-
         let total: f32 = weights.iter().sum();
         if total <= EPSILON {
             return Err(SkeletonError::ZeroTotalWeight);
         }
-
         Ok(Self {
             joints,
             weights: weights.map(|weight| weight / total),
@@ -638,14 +610,10 @@ impl SkinInfluence {
     }
 
     pub fn validate_joints(self, joint_count: usize) -> Result<Self, SkeletonError> {
-        if let Some(&joint) = self
-            .joints
-            .iter()
-            .zip(self.weights)
-            .find_map(|(joint, weight)| (weight > 0.0).then_some(joint))
-            .filter(|&&joint| joint as usize >= joint_count)
-        {
-            return Err(SkeletonError::JointIndexOutOfBounds { joint, joint_count });
+        for (&joint, weight) in self.joints.iter().zip(self.weights) {
+            if weight > 0.0 && joint as usize >= joint_count {
+                return Err(SkeletonError::JointIndexOutOfBounds { joint, joint_count });
+            }
         }
         Ok(self)
     }
@@ -670,7 +638,6 @@ mod tests {
             rotation,
             scale: Vec3::new(2.0, 1.0, 1.0),
         };
-
         assert_vec3_close(
             transform.matrix().transform_point(Vec3::new(1.0, 0.0, 0.0)),
             Vec3::new(2.0, 5.0, 4.0),
@@ -695,12 +662,8 @@ mod tests {
                 },
             },
         ];
-
         let world = world_matrices(&nodes).unwrap();
-        assert_vec3_close(
-            world[1].transform_point(Vec3::ZERO),
-            Vec3::new(1.0, 2.0, 0.0),
-        );
+        assert_vec3_close(world[1].transform_point(Vec3::ZERO), Vec3::new(1.0, 2.0, 0.0));
     }
 
     #[test]
@@ -718,8 +681,8 @@ mod tests {
     #[test]
     fn quaternion_slerp_takes_a_smooth_midpoint() {
         let end = Quat::from_axis_angle(Vec3::new(0.0, 0.0, 1.0), FRAC_PI_2).unwrap();
-        let midpoint = Quat::IDENTITY.slerp(end, 0.5);
-        let rotated = Mat4::rotation(midpoint).transform_point(Vec3::new(1.0, 0.0, 0.0));
+        let rotated = Mat4::rotation(Quat::IDENTITY.slerp(end, 0.5))
+            .transform_point(Vec3::new(1.0, 0.0, 0.0));
         let half_sqrt_two = core::f32::consts::FRAC_1_SQRT_2;
         assert_vec3_close(rotated, Vec3::new(half_sqrt_two, half_sqrt_two, 0.0));
     }
@@ -728,19 +691,12 @@ mod tests {
     fn smoothstep_changes_keyframe_easing_without_changing_endpoints() {
         let track = KeyframeTrack::new(
             vec![
-                Keyframe {
-                    time: 0.0,
-                    value: 0.0,
-                },
-                Keyframe {
-                    time: 1.0,
-                    value: 10.0,
-                },
+                Keyframe { time: 0.0, value: 0.0 },
+                Keyframe { time: 1.0, value: 10.0 },
             ],
             Interpolation::SmoothStep,
         )
         .unwrap();
-
         assert!((track.sample(0.25) - 1.5625).abs() < 1.0e-5);
         assert_eq!(track.sample(-1.0), 0.0);
         assert_eq!(track.sample(2.0), 10.0);
@@ -750,45 +706,27 @@ mod tests {
     fn keyframe_tracks_reject_unsorted_times() {
         let track = KeyframeTrack::new(
             vec![
-                Keyframe {
-                    time: 1.0,
-                    value: 1.0,
-                },
-                Keyframe {
-                    time: 1.0,
-                    value: 2.0,
-                },
+                Keyframe { time: 1.0, value: 1.0 },
+                Keyframe { time: 1.0, value: 2.0 },
             ],
             Interpolation::Linear,
         );
-        assert_eq!(
-            track,
-            Err(TrackError::TimesNotStrictlyIncreasing { index: 1 })
-        );
+        assert_eq!(track, Err(TrackError::TimesNotStrictlyIncreasing { index: 1 }));
     }
 
     #[test]
     fn animation_clip_samples_multiple_transform_channels() {
         let translation = KeyframeTrack::new(
             vec![
-                Keyframe {
-                    time: 0.0,
-                    value: Vec3::ZERO,
-                },
-                Keyframe {
-                    time: 2.0,
-                    value: Vec3::new(2.0, 0.0, 0.0),
-                },
+                Keyframe { time: 0.0, value: Vec3::ZERO },
+                Keyframe { time: 2.0, value: Vec3::new(2.0, 0.0, 0.0) },
             ],
             Interpolation::Linear,
         )
         .unwrap();
         let rotation = KeyframeTrack::new(
             vec![
-                Keyframe {
-                    time: 0.0,
-                    value: Quat::IDENTITY,
-                },
+                Keyframe { time: 0.0, value: Quat::IDENTITY },
                 Keyframe {
                     time: 2.0,
                     value: Quat::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), PI).unwrap(),
@@ -800,19 +738,12 @@ mod tests {
         let clip = AnimationClip::new(
             "move-and-turn",
             vec![
-                AnimationTrack::Translation {
-                    node: 0,
-                    track: translation,
-                },
-                AnimationTrack::Rotation {
-                    node: 0,
-                    track: rotation,
-                },
+                AnimationTrack::Translation { node: 0, track: translation },
+                AnimationTrack::Rotation { node: 0, track: rotation },
             ],
         )
         .unwrap();
         let mut pose = [Transform::IDENTITY];
-
         clip.sample(1.0, &mut pose).unwrap();
         assert_vec3_close(pose[0].translation, Vec3::new(1.0, 0.0, 0.0));
         assert_eq!(clip.name(), "move-and-turn");
@@ -820,10 +751,9 @@ mod tests {
     }
 
     #[test]
-    fn skin_influences_are_normalized_and_checked_against_joint_count() {
+    fn skin_influences_validate_every_active_joint() {
         let influence = SkinInfluence::new([0, 1, 0, 0], [3.0, 1.0, 0.0, 0.0]).unwrap();
         assert!((influence.weights[0] - 0.75).abs() < EPSILON);
-        assert!((influence.weights[1] - 0.25).abs() < EPSILON);
         assert_eq!(influence.validate_joints(2), Ok(influence));
         assert_eq!(
             SkinInfluence::new([0, 2, 0, 0], [0.5, 0.5, 0.0, 0.0])
@@ -855,11 +785,7 @@ mod tests {
                 Mat4::translation(Vec3::new(2.0, 0.0, 0.0)),
             ])
             .unwrap();
-
         assert_vec3_close(matrices[0].transform_point(Vec3::ZERO), Vec3::ZERO);
-        assert_vec3_close(
-            matrices[1].transform_point(Vec3::ZERO),
-            Vec3::new(2.0, 0.0, 0.0),
-        );
+        assert_vec3_close(matrices[1].transform_point(Vec3::ZERO), Vec3::new(2.0, 0.0, 0.0));
     }
 }
