@@ -169,8 +169,22 @@ impl Mat4 {
 
         Self {
             elements: [
-                1.0 - (yy + zz), xy + wz, xz - wy, 0.0, xy - wz, 1.0 - (xx + zz), yz + wx,
-                0.0, xz + wy, yz - wx, 1.0 - (xx + yy), 0.0, 0.0, 0.0, 0.0, 1.0,
+                1.0 - (yy + zz),
+                xy + wz,
+                xz - wy,
+                0.0,
+                xy - wz,
+                1.0 - (xx + zz),
+                yz + wx,
+                0.0,
+                xz + wy,
+                yz - wx,
+                1.0 - (xx + yy),
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
             ],
         }
     }
@@ -333,8 +347,12 @@ pub enum TrackError {
 impl fmt::Display for TrackError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Empty => formatter.write_str("a keyframe track must contain at least one keyframe"),
-            Self::NonFiniteTime { index } => write!(formatter, "keyframe {index} has a non-finite time"),
+            Self::Empty => {
+                formatter.write_str("a keyframe track must contain at least one keyframe")
+            }
+            Self::NonFiniteTime { index } => {
+                write!(formatter, "keyframe {index} has a non-finite time")
+            }
             Self::TimesNotStrictlyIncreasing { index } => write!(
                 formatter,
                 "keyframe {index} does not occur after the previous keyframe"
@@ -453,7 +471,9 @@ pub enum ClipError {
 impl fmt::Display for ClipError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::EmptyTracks => formatter.write_str("an animation clip must contain at least one track"),
+            Self::EmptyTracks => {
+                formatter.write_str("an animation clip must contain at least one track")
+            }
             Self::NodeOutOfBounds { node, node_count } => write!(
                 formatter,
                 "animation track targets node {node}, but pose has only {node_count} nodes"
@@ -663,7 +683,10 @@ mod tests {
             },
         ];
         let world = world_matrices(&nodes).unwrap();
-        assert_vec3_close(world[1].transform_point(Vec3::ZERO), Vec3::new(1.0, 2.0, 0.0));
+        assert_vec3_close(
+            world[1].transform_point(Vec3::ZERO),
+            Vec3::new(1.0, 2.0, 0.0),
+        );
     }
 
     #[test]
@@ -691,8 +714,14 @@ mod tests {
     fn smoothstep_changes_keyframe_easing_without_changing_endpoints() {
         let track = KeyframeTrack::new(
             vec![
-                Keyframe { time: 0.0, value: 0.0 },
-                Keyframe { time: 1.0, value: 10.0 },
+                Keyframe {
+                    time: 0.0,
+                    value: 0.0,
+                },
+                Keyframe {
+                    time: 1.0,
+                    value: 10.0,
+                },
             ],
             Interpolation::SmoothStep,
         )
@@ -706,27 +735,45 @@ mod tests {
     fn keyframe_tracks_reject_unsorted_times() {
         let track = KeyframeTrack::new(
             vec![
-                Keyframe { time: 1.0, value: 1.0 },
-                Keyframe { time: 1.0, value: 2.0 },
+                Keyframe {
+                    time: 1.0,
+                    value: 1.0,
+                },
+                Keyframe {
+                    time: 1.0,
+                    value: 2.0,
+                },
             ],
             Interpolation::Linear,
         );
-        assert_eq!(track, Err(TrackError::TimesNotStrictlyIncreasing { index: 1 }));
+        assert_eq!(
+            track,
+            Err(TrackError::TimesNotStrictlyIncreasing { index: 1 })
+        );
     }
 
     #[test]
     fn animation_clip_samples_multiple_transform_channels() {
         let translation = KeyframeTrack::new(
             vec![
-                Keyframe { time: 0.0, value: Vec3::ZERO },
-                Keyframe { time: 2.0, value: Vec3::new(2.0, 0.0, 0.0) },
+                Keyframe {
+                    time: 0.0,
+                    value: Vec3::ZERO,
+                },
+                Keyframe {
+                    time: 2.0,
+                    value: Vec3::new(2.0, 0.0, 0.0),
+                },
             ],
             Interpolation::Linear,
         )
         .unwrap();
         let rotation = KeyframeTrack::new(
             vec![
-                Keyframe { time: 0.0, value: Quat::IDENTITY },
+                Keyframe {
+                    time: 0.0,
+                    value: Quat::IDENTITY,
+                },
                 Keyframe {
                     time: 2.0,
                     value: Quat::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), PI).unwrap(),
@@ -738,8 +785,14 @@ mod tests {
         let clip = AnimationClip::new(
             "move-and-turn",
             vec![
-                AnimationTrack::Translation { node: 0, track: translation },
-                AnimationTrack::Rotation { node: 0, track: rotation },
+                AnimationTrack::Translation {
+                    node: 0,
+                    track: translation,
+                },
+                AnimationTrack::Rotation {
+                    node: 0,
+                    track: rotation,
+                },
             ],
         )
         .unwrap();
@@ -786,6 +839,9 @@ mod tests {
             ])
             .unwrap();
         assert_vec3_close(matrices[0].transform_point(Vec3::ZERO), Vec3::ZERO);
-        assert_vec3_close(matrices[1].transform_point(Vec3::ZERO), Vec3::new(2.0, 0.0, 0.0));
+        assert_vec3_close(
+            matrices[1].transform_point(Vec3::ZERO),
+            Vec3::new(2.0, 0.0, 0.0),
+        );
     }
 }
