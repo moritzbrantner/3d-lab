@@ -86,10 +86,16 @@ impl fmt::Display for MeshError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::NonFiniteVertex { vertex_index } => {
-                write!(formatter, "vertex {vertex_index} contains a non-finite coordinate")
+                write!(
+                    formatter,
+                    "vertex {vertex_index} contains a non-finite coordinate"
+                )
             }
             Self::IndexCountNotDivisibleByThree { index_count } => {
-                write!(formatter, "index count {index_count} is not divisible by three")
+                write!(
+                    formatter,
+                    "index count {index_count} is not divisible by three"
+                )
             }
             Self::IndexOutOfBounds {
                 index,
@@ -192,12 +198,8 @@ impl Mesh {
             Vec3::new(-0.5, 0.5, 0.5),
         ];
         let indices = vec![
-            0, 2, 1, 0, 3, 2,
-            4, 5, 6, 4, 6, 7,
-            0, 1, 5, 0, 5, 4,
-            3, 7, 6, 3, 6, 2,
-            1, 2, 6, 1, 6, 5,
-            0, 4, 7, 0, 7, 3,
+            0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7, 0, 1, 5, 0, 5, 4, 3, 7, 6, 3, 6, 2, 1, 2, 6, 1, 6,
+            5, 0, 4, 7, 0, 7, 3,
         ];
 
         Self::new(vertices, indices).expect("hard-coded cube indices are valid")
