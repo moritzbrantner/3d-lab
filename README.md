@@ -1,6 +1,6 @@
 # 3d-lab
 
-`3d-lab` is an interactive learning repository for 3D fundamentals: vertices, triangles, indexed meshes, normals, transforms, cameras, lighting, and animation.
+`3d-lab` is an interactive learning repository for 3D fundamentals: vertices, triangles, indexed meshes, attributes, normals, transforms, cameras, lighting, procedural geometry, and animation.
 
 The repository deliberately has two parallel surfaces:
 
@@ -11,7 +11,7 @@ The web renderer is intentionally Three.js-first. The Rust crate does not depend
 
 ## Curriculum
 
-The first GitHub Pages slice covers:
+The GitHub Pages curriculum currently covers:
 
 1. Coordinate systems
 2. Vertices
@@ -22,8 +22,13 @@ The first GitHub Pages slice covers:
 7. Perspective vs. orthographic projection
 8. Lighting
 9. Animation
+10. Flat vs. smooth normals
+11. UV coordinates and texture mapping
+12. Vertex colors and attribute interpolation
+13. Triangle winding and back-face culling
+14. Mesh subdivision and procedural generation
 
-Every topic combines a concise explanation with an interactive scene and a small data inspector.
+Every topic combines a concise explanation with an interactive scene and a small data inspector. The topology-and-attributes lessons also mirror their data model in Rust: optional normal, UV, and color buffers must align with the position buffer, and procedural generation produces deterministic indexed geometry on both surfaces.
 
 ## Development
 

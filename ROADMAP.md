@@ -1,6 +1,8 @@
 # 3d-lab roadmap
 
-## Current slice — fundamentals on GitHub Pages
+## Completed slices
+
+### Slice 1 — fundamentals on GitHub Pages
 
 - [x] Establish renderer-independent Rust mesh primitives.
 - [x] Establish the parallel TypeScript mesh representation used by lessons.
@@ -8,15 +10,16 @@
 - [x] Cover coordinates, vertices, triangles, indexed meshes, normals, transforms, projection, lighting, and animation.
 - [x] Add CI and GitHub Pages deployment.
 
-## Next implementation horizon
-
 ### Slice 2 — topology and attributes
 
-- Per-face vs. per-vertex normals.
-- UV coordinates and texture mapping.
-- Vertex colors and custom attributes.
-- Triangle winding, back-face culling, and manifold intuition.
-- Mesh subdivision and simple procedural generation.
+- [x] Compare per-face and per-vertex normals.
+- [x] Add UV coordinates and texture mapping.
+- [x] Add vertex colors and attribute interpolation.
+- [x] Demonstrate triangle winding and back-face culling.
+- [x] Add bounded mesh subdivision and procedural plane generation.
+- [x] Validate optional normal, UV, and color buffers in both the TypeScript lesson model and `three-d-core`.
+
+## Next implementation horizon
 
 ### Slice 3 — transforms and animation depth
 
