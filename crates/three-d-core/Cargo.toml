@@ -1,0 +1,8 @@
+[package]
+name = "three-d-core"
+version = "0.1.0"
+edition = "2024"
+description = "Renderer-independent 3D geometry fundamentals for 3d-lab"
+license = "MIT"
+
+[dependencies]
