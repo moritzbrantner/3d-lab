@@ -177,9 +177,14 @@ export function ThreeLab() {
     const orthographicCamera = new THREE.OrthographicCamera(-2.6, 2.6, 2.6, -2.6, 0.1, 100);
     orthographicCamera.position.copy(perspectiveCamera.position);
 
-    const controls = new OrbitControls(perspectiveCamera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.target.set(0, 0, 0);
+    const perspectiveControls = new OrbitControls(perspectiveCamera, renderer.domElement);
+    perspectiveControls.enableDamping = true;
+    perspectiveControls.target.set(0, 0, 0);
+
+    const orthographicControls = new OrbitControls(orthographicCamera, renderer.domElement);
+    orthographicControls.enableDamping = true;
+    orthographicControls.target.copy(perspectiveControls.target);
+    orthographicControls.enabled = false;
 
     const ambient = new THREE.AmbientLight(0xffffff, 1.4);
     const directional = new THREE.DirectionalLight(0xffffff, 3.4);
@@ -242,8 +247,11 @@ export function ThreeLab() {
         runtime.transformTarget.position.y = current.lift;
       }
 
-      const camera = projectionRef.current === "orthographic" ? orthographicCamera : perspectiveCamera;
-      controls.object = camera;
+      const orthographic = projectionRef.current === "orthographic";
+      perspectiveControls.enabled = !orthographic;
+      orthographicControls.enabled = orthographic;
+      const controls = orthographic ? orthographicControls : perspectiveControls;
+      const camera = orthographic ? orthographicCamera : perspectiveCamera;
       controls.update();
       renderer.render(scene, camera);
       frame = requestAnimationFrame(render);
@@ -253,7 +261,8 @@ export function ThreeLab() {
     return () => {
       cancelAnimationFrame(frame);
       observer.disconnect();
-      controls.dispose();
+      perspectiveControls.dispose();
+      orthographicControls.dispose();
       if (runtimeRef.current) disposeObject(runtimeRef.current.root);
       renderer.dispose();
       renderer.domElement.remove();
