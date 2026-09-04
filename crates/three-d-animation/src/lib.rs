@@ -574,13 +574,13 @@ pub struct Skeleton {
 impl Skeleton {
     pub fn new(joints: Vec<Joint>) -> Result<Self, SkeletonError> {
         for (joint_index, joint) in joints.iter().enumerate() {
-            if let Some(parent) = joint.parent {
-                if parent >= joint_index {
-                    return Err(SkeletonError::ParentMustPrecedeChild {
-                        joint: joint_index,
-                        parent,
-                    });
-                }
+            if let Some(parent) = joint.parent
+                && parent >= joint_index
+            {
+                return Err(SkeletonError::ParentMustPrecedeChild {
+                    joint: joint_index,
+                    parent,
+                });
             }
         }
         Ok(Self { joints })
