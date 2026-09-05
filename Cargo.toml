@@ -1,3 +1,7 @@
 [workspace]
-members = ["crates/three-d-core", "crates/three-d-animation"]
+members = [
+    "crates/three-d-core",
+    "crates/three-d-animation",
+    "examples/wgpu-native",
+]
 resolver = "2"

@@ -2,13 +2,14 @@
 
 `3d-lab` is an interactive learning repository for 3D fundamentals: vertices, triangles, indexed meshes, attributes, normals, transforms, cameras, lighting, procedural geometry, animation, and skinning.
 
-The repository deliberately has two parallel surfaces:
+The repository deliberately has parallel surfaces:
 
 - **Web / Three.js** — visual, interactive lessons that can be published with GitHub Pages.
 - **Rust / `three-d-core`** — renderer-independent mesh geometry and topology.
 - **Rust / `three-d-animation`** — renderer-independent matrices, transforms, animation tracks/clips, and skeletal data.
+- **Native / `wgpu` example** — a narrow renderer-comparison adapter that consumes the Rust mesh model without moving GPU ownership into the core crates.
 
-The web renderer is intentionally Three.js-first. The Rust crates do not depend on Three.js, WebGL, WebGPU, a windowing stack, or a glTF loader; native/WebGPU rendering and asset adapters can be added later without moving core ownership.
+The web renderer is intentionally Three.js-first. The Rust core crates do not depend on Three.js, WebGL, WebGPU, a windowing stack, or a glTF loader; native/WebGPU rendering and asset adapters stay downstream of the renderer-independent models.
 
 ## Curriculum
 
@@ -45,6 +46,12 @@ Every topic combines a concise explanation with an interactive scene and a small
 cargo fmt --all --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all-features
+```
+
+Run the native `wgpu` comparison baseline on a machine with a supported graphics adapter:
+
+```bash
+cargo run -p three-d-wgpu-example
 ```
 
 ### Web
