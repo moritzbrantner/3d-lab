@@ -116,6 +116,29 @@ describe("scene editor model", () => {
     expect(history.present.nodes.find((node) => node.id === "mast")?.transform.translation).toEqual([0.6, 1.1, 0]);
   });
 
+  test("undoing a vertex edit restores the exact prior mesh attributes", () => {
+    const source: EditorScene = {
+      nodes: [
+        {
+          id: "mesh",
+          name: "Mesh",
+          parent: null,
+          transform: { translation: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+          mesh: {
+            vertices: [[0, 0, 0], [1, 0, 0], [0, 1, 0]],
+            indices: [0, 1, 2],
+            attributes: { normals: [[0, 0, 1], [0, 0, 1], [0, 0, 1]] },
+          },
+        },
+      ],
+    };
+    let history = createEditorHistory(source);
+    history = commitMeshVertex(history, "mesh", 2, [0, 1.5, 0]);
+    expect(history.present.nodes[0].mesh?.attributes?.normals).toBeUndefined();
+    history = undoEditorHistory(history);
+    expect(history.present.nodes[0].mesh?.attributes?.normals).toEqual([[0, 0, 1], [0, 0, 1], [0, 0, 1]]);
+  });
+
   test("a new command after undo clears the redo branch", () => {
     let history = createEditorHistory();
     history = commitNodeTransform(history, "mast", { translation: [0.6, 1.1, 0] });
