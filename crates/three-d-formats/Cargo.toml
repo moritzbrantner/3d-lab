@@ -1,0 +1,13 @@
+[package]
+name = "three-d-formats"
+version = "0.1.0"
+edition = "2024"
+description = "Loss-aware OBJ and glTF adapters for 3d-lab"
+license = "MIT"
+
+[dependencies]
+base64 = "0.23.1"
+gltf = { version = "1.4.1", default-features = false, features = ["names", "utils"] }
+three-d-assets = { path = "../three-d-assets" }
+three-d-core = { path = "../three-d-core" }
+tobj = { version = "4.0.5", default-features = false }
