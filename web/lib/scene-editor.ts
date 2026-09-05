@@ -18,6 +18,38 @@ export type EditorScene = {
   nodes: readonly EditorNode[];
 };
 
+export type MeshEdge = readonly [a: number, b: number];
+
+export type EditorCommand =
+  | {
+      kind: "node-transform";
+      nodeId: string;
+      before: EditableTransform;
+      after: EditableTransform;
+    }
+  | {
+      kind: "vertex-position";
+      nodeId: string;
+      vertexIndex: number;
+      before: Vec3;
+      after: Vec3;
+      beforeMesh: IndexedMesh;
+      afterMesh: IndexedMesh;
+    }
+  | {
+      kind: "replace-scene";
+      before: EditorScene;
+      after: EditorScene;
+    };
+
+export type EditorHistory = {
+  present: EditorScene;
+  undo: readonly EditorCommand[];
+  redo: readonly EditorCommand[];
+};
+
+export const MAX_EDITOR_HISTORY = 100;
+
 const IDENTITY_TRANSFORM: EditableTransform = {
   translation: [0, 0, 0],
   rotation: [0, 0, 0],
@@ -51,14 +83,44 @@ function cloneTransform(transform: EditableTransform): EditableTransform {
   };
 }
 
+export function cloneEditorScene(scene: EditorScene): EditorScene {
+  return {
+    nodes: scene.nodes.map((node) => ({
+      ...node,
+      transform: cloneTransform(node.transform),
+      mesh: node.mesh ? cloneMesh(node.mesh) : undefined,
+    })),
+  };
+}
+
 function finiteVec3(value: Vec3): boolean {
   return value.every(Number.isFinite);
+}
+
+function vec3Equal(left: Vec3, right: Vec3): boolean {
+  return left[0] === right[0] && left[1] === right[1] && left[2] === right[2];
+}
+
+function transformEqual(left: EditableTransform, right: EditableTransform): boolean {
+  return (
+    vec3Equal(left.translation, right.translation)
+    && vec3Equal(left.rotation, right.rotation)
+    && vec3Equal(left.scale, right.scale)
+  );
+}
+
+function sceneEqual(left: EditorScene, right: EditorScene): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function findNodeIndex(scene: EditorScene, nodeId: string): number {
   const index = scene.nodes.findIndex((node) => node.id === nodeId);
   if (index < 0) throw new Error(`unknown node ${nodeId}`);
   return index;
+}
+
+function canonicalEdge(a: number, b: number): MeshEdge {
+  return a < b ? [a, b] : [b, a];
 }
 
 export function createEditorScene(): EditorScene {
@@ -138,6 +200,37 @@ export function childrenOf(scene: EditorScene, parent: string | null): readonly 
   return scene.nodes.filter((node) => node.parent === parent);
 }
 
+export function meshEdges(mesh: IndexedMesh): readonly MeshEdge[] {
+  validateMesh(mesh);
+  const edges: MeshEdge[] = [];
+  const seen = new Set<string>();
+  for (let offset = 0; offset < mesh.indices.length; offset += 3) {
+    const triangle = [mesh.indices[offset], mesh.indices[offset + 1], mesh.indices[offset + 2]] as const;
+    const candidates = [
+      canonicalEdge(triangle[0], triangle[1]),
+      canonicalEdge(triangle[1], triangle[2]),
+      canonicalEdge(triangle[2], triangle[0]),
+    ] as const;
+    candidates.forEach((edge) => {
+      const key = `${edge[0]}:${edge[1]}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      edges.push(edge);
+    });
+  }
+  return edges;
+}
+
+export function triangleVertexIndices(mesh: IndexedMesh, faceIndex: number): readonly [number, number, number] {
+  validateMesh(mesh);
+  const faceCount = mesh.indices.length / 3;
+  if (!Number.isInteger(faceIndex) || faceIndex < 0 || faceIndex >= faceCount) {
+    throw new Error(`face ${faceIndex} is outside mesh with ${faceCount} faces`);
+  }
+  const offset = faceIndex * 3;
+  return [mesh.indices[offset], mesh.indices[offset + 1], mesh.indices[offset + 2]];
+}
+
 export function updateNodeTransform(
   scene: EditorScene,
   nodeId: string,
@@ -188,4 +281,104 @@ export function updateMeshVertex(scene: EditorScene, nodeId: string, vertexIndex
   const next = { nodes };
   validateEditorScene(next);
   return next;
+}
+
+function replaceNodeMesh(scene: EditorScene, nodeId: string, mesh: IndexedMesh): EditorScene {
+  const index = findNodeIndex(scene, nodeId);
+  const nodes = scene.nodes.map((candidate, candidateIndex) =>
+    candidateIndex === index ? { ...candidate, mesh: cloneMesh(mesh) } : candidate,
+  );
+  const next = { nodes };
+  validateEditorScene(next);
+  return next;
+}
+
+export function createEditorHistory(scene: EditorScene = createEditorScene()): EditorHistory {
+  validateEditorScene(scene);
+  return { present: cloneEditorScene(scene), undo: [], redo: [] };
+}
+
+function pushCommand(history: EditorHistory, command: EditorCommand, present: EditorScene): EditorHistory {
+  const undo = [...history.undo, command].slice(-MAX_EDITOR_HISTORY);
+  return { present, undo, redo: [] };
+}
+
+export function commitNodeTransform(
+  history: EditorHistory,
+  nodeId: string,
+  patch: Partial<EditableTransform>,
+): EditorHistory {
+  const index = findNodeIndex(history.present, nodeId);
+  const before = cloneTransform(history.present.nodes[index].transform);
+  const present = updateNodeTransform(history.present, nodeId, patch);
+  const after = cloneTransform(present.nodes[index].transform);
+  if (transformEqual(before, after)) return history;
+  return pushCommand(history, { kind: "node-transform", nodeId, before, after }, present);
+}
+
+export function commitMeshVertex(
+  history: EditorHistory,
+  nodeId: string,
+  vertexIndex: number,
+  position: Vec3,
+): EditorHistory {
+  const index = findNodeIndex(history.present, nodeId);
+  const sourceMesh = history.present.nodes[index].mesh;
+  const before = sourceMesh?.vertices[vertexIndex];
+  if (!sourceMesh || !before) throw new Error(`vertex ${vertexIndex} is outside node ${nodeId}`);
+  if (vec3Equal(before, position)) return history;
+  const beforeMesh = cloneMesh(sourceMesh);
+  const present = updateMeshVertex(history.present, nodeId, vertexIndex, position);
+  const afterMesh = cloneMesh(present.nodes[index].mesh!);
+  return pushCommand(history, {
+    kind: "vertex-position",
+    nodeId,
+    vertexIndex,
+    before: cloneVec3(before),
+    after: cloneVec3(position),
+    beforeMesh,
+    afterMesh,
+  }, present);
+}
+
+export function replaceEditorScene(history: EditorHistory, scene: EditorScene): EditorHistory {
+  validateEditorScene(scene);
+  if (sceneEqual(history.present, scene)) return history;
+  const after = cloneEditorScene(scene);
+  return pushCommand(history, {
+    kind: "replace-scene",
+    before: cloneEditorScene(history.present),
+    after: cloneEditorScene(after),
+  }, after);
+}
+
+function applyCommand(scene: EditorScene, command: EditorCommand, forward: boolean): EditorScene {
+  switch (command.kind) {
+    case "node-transform":
+      return updateNodeTransform(scene, command.nodeId, forward ? command.after : command.before);
+    case "vertex-position":
+      return replaceNodeMesh(scene, command.nodeId, forward ? command.afterMesh : command.beforeMesh);
+    case "replace-scene":
+      return cloneEditorScene(forward ? command.after : command.before);
+  }
+}
+
+export function undoEditorHistory(history: EditorHistory): EditorHistory {
+  const command = history.undo[history.undo.length - 1];
+  if (!command) return history;
+  return {
+    present: applyCommand(history.present, command, false),
+    undo: history.undo.slice(0, -1),
+    redo: [command, ...history.redo].slice(0, MAX_EDITOR_HISTORY),
+  };
+}
+
+export function redoEditorHistory(history: EditorHistory): EditorHistory {
+  const command = history.redo[0];
+  if (!command) return history;
+  return {
+    present: applyCommand(history.present, command, true),
+    undo: [...history.undo, command].slice(-MAX_EDITOR_HISTORY),
+    redo: history.redo.slice(1),
+  };
 }

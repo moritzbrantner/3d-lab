@@ -28,7 +28,7 @@
 
 .panelCopy,
 .viewportHint,
-.vertexSection p,
+.componentSection p,
 .boundary p {
   color: var(--muted);
   line-height: 1.55;
@@ -89,7 +89,8 @@
 
 .nodeKind,
 .kindBadge,
-.sectionLabel {
+.sectionLabel,
+.modeGroup > span {
   color: var(--muted);
   font: 700 0.67rem ui-monospace, SFMono-Regular, Menlo, monospace;
   letter-spacing: 0.04em;
@@ -128,7 +129,9 @@
 
 .toolButton,
 .clearButton,
-.resetButton {
+.resetButton,
+.modeButton,
+.modeButtonActive {
   min-height: 40px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -142,14 +145,58 @@
   font-size: 0.78rem;
 }
 
-.toolButton:hover,
+.toolButton:hover:not(:disabled),
 .clearButton:hover,
-.resetButton:hover {
+.resetButton:hover,
+.modeButton:hover:not(:disabled),
+.modeButtonActive:hover:not(:disabled) {
   border-color: #50627a;
   color: var(--text);
 }
 
+.toolButton:disabled,
+.modeButton:disabled,
+.modeButtonActive:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
 .toolButtonActive {
+  border-color: #31527e;
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.modeBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  align-items: center;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: #0d141e;
+}
+
+.modeGroup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+}
+
+.modeGroup > span {
+  margin-right: 4px;
+}
+
+.modeButton,
+.modeButtonActive {
+  min-height: 34px;
+  padding: 0 10px;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.modeButtonActive {
   border-color: #31527e;
   background: var(--accent-soft);
   color: var(--text);
@@ -239,7 +286,7 @@
   font: 0.8rem ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-.vertexSection,
+.componentSection,
 .boundary {
   padding-top: 16px;
   border-top: 1px solid var(--border);
@@ -258,15 +305,16 @@
   font-size: 0.74rem;
 }
 
-.vertexSection .vectorEditor {
+.componentSection .vectorEditor {
   margin-top: 13px;
 }
 
-.vertexSection p,
+.componentSection p,
 .boundary p {
   margin: 10px 0 0;
 }
 
+.componentSection code,
 .boundary code {
   color: #d7e5ff;
 }
@@ -299,7 +347,7 @@
   }
 
   .inspectorHeading,
-  .vertexSection,
+  .componentSection,
   .boundary,
   .resetButton {
     grid-column: 1 / -1;
@@ -325,8 +373,14 @@
     flex-direction: column;
   }
 
-  .toolbarActions {
+  .toolbarActions,
+  .modeBar {
     justify-content: flex-start;
+  }
+
+  .modeBar {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .inspectorPanel {
@@ -335,7 +389,7 @@
   }
 
   .inspectorHeading,
-  .vertexSection,
+  .componentSection,
   .boundary,
   .resetButton {
     grid-column: auto;

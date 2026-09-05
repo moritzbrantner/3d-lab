@@ -3,28 +3,41 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import {
   childrenOf,
+  commitMeshVertex,
+  commitNodeTransform,
+  createEditorHistory,
   createEditorScene,
-  updateMeshVertex,
-  updateNodeTransform,
+  redoEditorHistory,
+  replaceEditorScene,
+  triangleVertexIndices,
+  undoEditorHistory,
   type EditableTransform,
   type EditorNode,
-  type EditorScene,
+  type MeshEdge,
 } from "@/lib/scene-editor";
 import type { Vec3 } from "@/lib/mesh";
 import styles from "./scene-editor-lab.module.css";
 
 type Axis = 0 | 1 | 2;
+type SelectionMode = "object" | "vertex" | "edge" | "face";
+type GizmoMode = "translate" | "rotate" | "scale";
+type GizmoSpace = "local" | "world";
 
 type Runtime = {
   renderer: THREE.WebGLRenderer;
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
   controls: OrbitControls;
+  transform: TransformControls;
   objects: Map<string, THREE.Object3D>;
   vertexPoints: THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial> | null;
+  vertexTarget: THREE.Object3D | null;
+  componentOverlay: THREE.Object3D | null;
   resizeObserver: ResizeObserver;
+  suppressNextPick: boolean;
   frameId: number;
 };
 
@@ -32,6 +45,19 @@ const AXES: readonly [label: string, axis: Axis][] = [
   ["X", 0],
   ["Y", 1],
   ["Z", 2],
+];
+
+const SELECTION_MODES: readonly [SelectionMode, string][] = [
+  ["object", "Object"],
+  ["vertex", "Vertex"],
+  ["edge", "Edge"],
+  ["face", "Face"],
+];
+
+const GIZMO_MODES: readonly [GizmoMode, string, string][] = [
+  ["translate", "Move", "W"],
+  ["rotate", "Rotate", "E"],
+  ["scale", "Scale", "R"],
 ];
 
 function toDegrees(value: number): number {
@@ -46,6 +72,10 @@ function mutableVec3(value: Vec3): [number, number, number] {
   return [value[0], value[1], value[2]];
 }
 
+function canonicalEdge(a: number, b: number): MeshEdge {
+  return a < b ? [a, b] : [b, a];
+}
+
 function createGeometry(node: EditorNode): THREE.BufferGeometry {
   const geometry = new THREE.BufferGeometry();
   if (!node.mesh) return geometry;
@@ -54,6 +84,53 @@ function createGeometry(node: EditorNode): THREE.BufferGeometry {
   geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
   return geometry;
+}
+
+function disposeRenderable(object: THREE.Object3D | null): void {
+  if (!object) return;
+  object.removeFromParent();
+  if (object instanceof THREE.Mesh || object instanceof THREE.Line || object instanceof THREE.Points) {
+    object.geometry.dispose();
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    materials.forEach((material) => material.dispose());
+  }
+}
+
+function closestEdge(hit: THREE.Intersection<THREE.Object3D>): MeshEdge | null {
+  if (!(hit.object instanceof THREE.Mesh) || !hit.face) return null;
+  const position = hit.object.geometry.getAttribute("position");
+  if (!(position instanceof THREE.BufferAttribute)) return null;
+
+  const point = hit.object.worldToLocal(hit.point.clone());
+  const candidates = [
+    canonicalEdge(hit.face.a, hit.face.b),
+    canonicalEdge(hit.face.b, hit.face.c),
+    canonicalEdge(hit.face.c, hit.face.a),
+  ] as const;
+  const start = new THREE.Vector3();
+  const end = new THREE.Vector3();
+  const nearest = new THREE.Vector3();
+  let best: MeshEdge | null = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+
+  candidates.forEach((edge) => {
+    start.fromBufferAttribute(position, edge[0]);
+    end.fromBufferAttribute(position, edge[1]);
+    new THREE.Line3(start, end).closestPointToPoint(point, true, nearest);
+    const distance = nearest.distanceToSquared(point);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = edge;
+    }
+  });
+  return best;
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  return target instanceof HTMLInputElement
+    || target instanceof HTMLTextAreaElement
+    || target instanceof HTMLSelectElement
+    || (target instanceof HTMLElement && target.isContentEditable);
 }
 
 function VectorEditor({
@@ -91,16 +168,16 @@ function VectorEditor({
 }
 
 function HierarchyTree({
-  scene,
+  nodes,
   selectedNodeId,
   onSelect,
 }: {
-  scene: EditorScene;
+  nodes: readonly EditorNode[];
   selectedNodeId: string;
   onSelect: (nodeId: string) => void;
 }) {
   const renderBranch = (parent: string | null): ReactNode => {
-    const children = childrenOf(scene, parent);
+    const children = childrenOf({ nodes }, parent);
     if (children.length === 0) return null;
     return (
       <ul className={parent === null ? styles.treeRoot : styles.treeBranch}>
@@ -128,28 +205,38 @@ function HierarchyTree({
 export function SceneEditorLab() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const runtimeRef = useRef<Runtime | null>(null);
-  const initialSceneRef = useRef<EditorScene | null>(null);
-  const [editorScene, setEditorScene] = useState<EditorScene>(() => {
-    const scene = createEditorScene();
-    initialSceneRef.current = scene;
-    return scene;
-  });
+  const selectionModeRef = useRef<SelectionMode>("object");
+  const [history, setHistory] = useState(() => createEditorHistory());
   const [selectedNodeId, setSelectedNodeId] = useState("body");
+  const [selectionMode, setSelectionMode] = useState<SelectionMode>("object");
   const [selectedVertexIndex, setSelectedVertexIndex] = useState<number | null>(null);
+  const [selectedEdge, setSelectedEdge] = useState<MeshEdge | null>(null);
+  const [selectedFaceIndex, setSelectedFaceIndex] = useState<number | null>(null);
+  const [gizmoMode, setGizmoMode] = useState<GizmoMode>("translate");
+  const [gizmoSpace, setGizmoSpace] = useState<GizmoSpace>("local");
   const [showVertices, setShowVertices] = useState(true);
   const [wireframe, setWireframe] = useState(false);
 
+  const editorScene = history.present;
   const selectedNode = useMemo(
     () => editorScene.nodes.find((node) => node.id === selectedNodeId) ?? editorScene.nodes[0],
     [editorScene, selectedNodeId],
   );
   const selectedVertex =
     selectedVertexIndex === null || !selectedNode.mesh ? null : selectedNode.mesh.vertices[selectedVertexIndex] ?? null;
+  const selectedFaceVertices = selectedFaceIndex === null || !selectedNode.mesh
+    ? null
+    : triangleVertexIndices(selectedNode.mesh, selectedFaceIndex);
+  const vertexGizmoActive = selectionMode === "vertex" && selectedVertexIndex !== null && selectedVertex !== null;
+  const effectiveGizmoMode: GizmoMode = vertexGizmoActive ? "translate" : gizmoMode;
+
+  useEffect(() => {
+    selectionModeRef.current = selectionMode;
+  }, [selectionMode]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    const initialScene = initialSceneRef.current;
-    if (!canvas || !initialScene) return;
+    if (!canvas) return;
 
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -165,6 +252,9 @@ export function SceneEditorLab() {
     controls.target.set(0, 0.2, 0);
     controls.update();
 
+    const transform = new TransformControls(camera, canvas);
+    scene.add(transform.getHelper());
+
     scene.add(new THREE.HemisphereLight(0xdce8ff, 0x20283a, 2.2));
     const key = new THREE.DirectionalLight(0xffffff, 3.4);
     key.position.set(4, 6, 5);
@@ -176,7 +266,8 @@ export function SceneEditorLab() {
     scene.add(new THREE.AxesHelper(1.5));
 
     const objects = new Map<string, THREE.Object3D>();
-    initialScene.nodes.forEach((node) => {
+    const initialNodes = createEditorScene().nodes;
+    initialNodes.forEach((node) => {
       const object = node.mesh
         ? new THREE.Mesh(
             createGeometry(node),
@@ -185,9 +276,10 @@ export function SceneEditorLab() {
         : new THREE.Group();
       object.name = node.name;
       object.userData.nodeId = node.id;
+      object.userData.editorTargetKind = "node";
       objects.set(node.id, object);
     });
-    initialScene.nodes.forEach((node) => {
+    initialNodes.forEach((node) => {
       const object = objects.get(node.id);
       if (!object) return;
       const parent = node.parent ? objects.get(node.parent) : null;
@@ -205,31 +297,79 @@ export function SceneEditorLab() {
     resizeObserver.observe(canvas);
     resize();
 
+    transform.addEventListener("dragging-changed", (event) => {
+      controls.enabled = !event.value;
+      const runtime = runtimeRef.current;
+      if (runtime && event.value) runtime.suppressNextPick = true;
+    });
+    transform.addEventListener("mouseUp", () => {
+      const object = transform.object;
+      if (!object) return;
+      if (object.userData.editorTargetKind === "vertex") {
+        const nodeId = object.userData.nodeId as string;
+        const vertexIndex = object.userData.vertexIndex as number;
+        setHistory((current) => commitMeshVertex(current, nodeId, vertexIndex, [
+          object.position.x,
+          object.position.y,
+          object.position.z,
+        ]));
+        return;
+      }
+      const nodeId = object.userData.nodeId as string | undefined;
+      if (!nodeId) return;
+      setHistory((current) => commitNodeTransform(current, nodeId, {
+        translation: [object.position.x, object.position.y, object.position.z],
+        rotation: [object.rotation.x, object.rotation.y, object.rotation.z],
+        scale: [object.scale.x, object.scale.y, object.scale.z],
+      }));
+    });
+
     const raycaster = new THREE.Raycaster();
     raycaster.params.Points = { threshold: 0.16 };
     const pointer = new THREE.Vector2();
     const pick = (event: MouseEvent) => {
+      const runtime = runtimeRef.current;
+      if (runtime?.suppressNextPick) {
+        runtime.suppressNextPick = false;
+        return;
+      }
+
       const bounds = canvas.getBoundingClientRect();
       pointer.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
       pointer.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1;
       raycaster.setFromCamera(pointer, camera);
 
-      const runtime = runtimeRef.current;
-      if (runtime?.vertexPoints) {
+      const mode = selectionModeRef.current;
+      if (mode === "vertex" && runtime?.vertexPoints) {
         const vertexHit = raycaster.intersectObject(runtime.vertexPoints, false)[0];
         if (vertexHit && vertexHit.index !== undefined) {
           const nodeId = runtime.vertexPoints.userData.nodeId as string;
           setSelectedNodeId(nodeId);
           setSelectedVertexIndex(vertexHit.index);
+          setSelectedEdge(null);
+          setSelectedFaceIndex(null);
           return;
         }
       }
 
       const meshes = [...objects.values()].filter((object): object is THREE.Mesh => object instanceof THREE.Mesh);
       const meshHit = raycaster.intersectObjects(meshes, false)[0];
-      if (meshHit) {
-        setSelectedNodeId(meshHit.object.userData.nodeId as string);
+      if (!meshHit) return;
+      const nodeId = meshHit.object.userData.nodeId as string;
+      setSelectedNodeId(nodeId);
+
+      if (mode === "edge") {
         setSelectedVertexIndex(null);
+        setSelectedFaceIndex(null);
+        setSelectedEdge(closestEdge(meshHit));
+      } else if (mode === "face") {
+        setSelectedVertexIndex(null);
+        setSelectedEdge(null);
+        setSelectedFaceIndex(meshHit.faceIndex ?? null);
+      } else {
+        setSelectedVertexIndex(null);
+        setSelectedEdge(null);
+        setSelectedFaceIndex(null);
       }
     };
     canvas.addEventListener("click", pick);
@@ -248,9 +388,13 @@ export function SceneEditorLab() {
       scene,
       camera,
       controls,
+      transform,
       objects,
       vertexPoints: null,
+      vertexTarget: null,
+      componentOverlay: null,
       resizeObserver,
+      suppressNextPick: false,
       frameId,
     };
     render();
@@ -260,15 +404,18 @@ export function SceneEditorLab() {
       cancelAnimationFrame(runtimeRef.current?.frameId ?? frameId);
       resizeObserver.disconnect();
       controls.dispose();
+      transform.detach();
+      transform.getHelper().removeFromParent();
+      transform.dispose();
       objects.forEach((object) => {
         if (!(object instanceof THREE.Mesh)) return;
         object.geometry.dispose();
         const materials = Array.isArray(object.material) ? object.material : [object.material];
         materials.forEach((material) => material.dispose());
       });
-      const points = runtimeRef.current?.vertexPoints;
-      points?.geometry.dispose();
-      points?.material.dispose();
+      disposeRenderable(runtimeRef.current?.vertexPoints ?? null);
+      disposeRenderable(runtimeRef.current?.componentOverlay ?? null);
+      runtimeRef.current?.vertexTarget?.removeFromParent();
       renderer.dispose();
       runtimeRef.current = null;
     };
@@ -304,15 +451,10 @@ export function SceneEditorLab() {
   useEffect(() => {
     const runtime = runtimeRef.current;
     if (!runtime) return;
+    disposeRenderable(runtime.vertexPoints);
+    runtime.vertexPoints = null;
 
-    if (runtime.vertexPoints) {
-      runtime.vertexPoints.removeFromParent();
-      runtime.vertexPoints.geometry.dispose();
-      runtime.vertexPoints.material.dispose();
-      runtime.vertexPoints = null;
-    }
-
-    if (!showVertices || !selectedNode.mesh) return;
+    if (!showVertices || selectionMode !== "vertex" || !selectedNode.mesh) return;
     const selectedObject = runtime.objects.get(selectedNode.id);
     if (!selectedObject) return;
 
@@ -328,21 +470,133 @@ export function SceneEditorLab() {
     points.renderOrder = 4;
     selectedObject.add(points);
     runtime.vertexPoints = points;
-  }, [editorScene, selectedNode, selectedVertexIndex, showVertices]);
+  }, [editorScene, selectedNode, selectedVertexIndex, selectionMode, showVertices]);
 
   useEffect(() => {
-    if (!selectedNode.mesh && selectedVertexIndex !== null) setSelectedVertexIndex(null);
-  }, [selectedNode, selectedVertexIndex]);
+    const runtime = runtimeRef.current;
+    if (!runtime) return;
+    disposeRenderable(runtime.componentOverlay);
+    runtime.componentOverlay = null;
+    if (!selectedNode.mesh) return;
+    const selectedObject = runtime.objects.get(selectedNode.id);
+    if (!selectedObject) return;
+
+    if (selectionMode === "edge" && selectedEdge) {
+      const positions = [
+        ...selectedNode.mesh.vertices[selectedEdge[0]],
+        ...selectedNode.mesh.vertices[selectedEdge[1]],
+      ];
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+      const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0x79a9ff, depthTest: false }));
+      line.renderOrder = 6;
+      selectedObject.add(line);
+      runtime.componentOverlay = line;
+    }
+
+    if (selectionMode === "face" && selectedFaceVertices) {
+      const positions = selectedFaceVertices.flatMap((index) => [...selectedNode.mesh!.vertices[index]]);
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+      geometry.setIndex([0, 1, 2]);
+      const face = new THREE.Mesh(
+        geometry,
+        new THREE.MeshBasicMaterial({
+          color: 0x79a9ff,
+          transparent: true,
+          opacity: 0.34,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+          polygonOffset: true,
+          polygonOffsetFactor: -2,
+        }),
+      );
+      face.renderOrder = 5;
+      selectedObject.add(face);
+      runtime.componentOverlay = face;
+    }
+  }, [editorScene, selectedEdge, selectedFaceVertices, selectedNode, selectionMode]);
+
+  useEffect(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime) return;
+
+    runtime.transform.detach();
+    runtime.vertexTarget?.removeFromParent();
+    runtime.vertexTarget = null;
+    runtime.transform.setSpace(gizmoSpace);
+
+    const selectedObject = runtime.objects.get(selectedNode.id);
+    if (!selectedObject) return;
+
+    if (vertexGizmoActive && selectedVertex) {
+      const target = new THREE.Object3D();
+      target.position.set(...selectedVertex);
+      target.userData.editorTargetKind = "vertex";
+      target.userData.nodeId = selectedNode.id;
+      target.userData.vertexIndex = selectedVertexIndex;
+      selectedObject.add(target);
+      runtime.vertexTarget = target;
+      runtime.transform.setMode("translate");
+      runtime.transform.attach(target);
+      return;
+    }
+
+    runtime.transform.setMode(gizmoMode);
+    runtime.transform.attach(selectedObject);
+  }, [editorScene, gizmoMode, gizmoSpace, selectedNode.id, selectedVertex, selectedVertexIndex, vertexGizmoActive]);
+
+  useEffect(() => {
+    if (!selectedNode.mesh) {
+      setSelectedVertexIndex(null);
+      setSelectedEdge(null);
+      setSelectedFaceIndex(null);
+    }
+  }, [selectedNode]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (isEditableTarget(event.target)) return;
+      const modifier = event.ctrlKey || event.metaKey;
+      if (modifier && event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        setHistory((current) => event.shiftKey ? redoEditorHistory(current) : undoEditorHistory(current));
+        return;
+      }
+      if (modifier && event.key.toLowerCase() === "y") {
+        event.preventDefault();
+        setHistory((current) => redoEditorHistory(current));
+        return;
+      }
+      if (event.key.toLowerCase() === "w") setGizmoMode("translate");
+      if (event.key.toLowerCase() === "e") setGizmoMode("rotate");
+      if (event.key.toLowerCase() === "r") setGizmoMode("scale");
+      if (event.key.toLowerCase() === "q") setGizmoSpace((current) => current === "local" ? "world" : "local");
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  const clearComponentSelection = () => {
+    setSelectedVertexIndex(null);
+    setSelectedEdge(null);
+    setSelectedFaceIndex(null);
+  };
 
   const selectNode = (nodeId: string) => {
     setSelectedNodeId(nodeId);
-    setSelectedVertexIndex(null);
+    clearComponentSelection();
+  };
+
+  const chooseSelectionMode = (mode: SelectionMode) => {
+    setSelectionMode(mode);
+    clearComponentSelection();
   };
 
   const updateTransformVector = (field: keyof EditableTransform, axis: Axis, value: number) => {
-    setEditorScene((scene) => {
-      const node = scene.nodes.find((candidate) => candidate.id === selectedNodeId);
-      if (!node) return scene;
+    setHistory((current) => {
+      const node = current.present.nodes.find((candidate) => candidate.id === selectedNodeId);
+      if (!node) return current;
       const source = mutableVec3(node.transform[field]);
       source[axis] = field === "rotation" ? toRadians(value) : value;
       const patch: Partial<EditableTransform> =
@@ -351,19 +605,19 @@ export function SceneEditorLab() {
           : field === "rotation"
             ? { rotation: source }
             : { scale: source };
-      return updateNodeTransform(scene, selectedNodeId, patch);
+      return commitNodeTransform(current, selectedNodeId, patch);
     });
   };
 
   const updateVertexAxis = (axis: Axis, value: number) => {
     if (selectedVertexIndex === null) return;
-    setEditorScene((scene) => {
-      const node = scene.nodes.find((candidate) => candidate.id === selectedNodeId);
+    setHistory((current) => {
+      const node = current.present.nodes.find((candidate) => candidate.id === selectedNodeId);
       const vertex = node?.mesh?.vertices[selectedVertexIndex];
-      if (!vertex) return scene;
+      if (!vertex) return current;
       const next = mutableVec3(vertex);
       next[axis] = value;
-      return updateMeshVertex(scene, selectedNodeId, selectedVertexIndex, next);
+      return commitMeshVertex(current, selectedNodeId, selectedVertexIndex, next);
     });
   };
 
@@ -386,9 +640,9 @@ export function SceneEditorLab() {
   };
 
   const resetScene = () => {
-    setEditorScene(createEditorScene());
+    setHistory((current) => replaceEditorScene(current, createEditorScene()));
     setSelectedNodeId("body");
-    setSelectedVertexIndex(null);
+    clearComponentSelection();
   };
 
   const rotationDegrees: Vec3 = [
@@ -397,13 +651,21 @@ export function SceneEditorLab() {
     toDegrees(selectedNode.transform.rotation[2]),
   ];
 
+  const selectionSummary = selectedVertexIndex !== null
+    ? `vertex ${selectedVertexIndex}`
+    : selectedEdge
+      ? `edge ${selectedEdge[0]}–${selectedEdge[1]}`
+      : selectedFaceIndex !== null
+        ? `face ${selectedFaceIndex}`
+        : selectionMode;
+
   return (
     <section className={styles.editor} aria-labelledby="scene-editor-heading">
       <aside className={styles.hierarchyPanel}>
         <p className="eyebrow">Hierarchy</p>
         <h2 id="scene-editor-heading">Scene graph</h2>
-        <p className={styles.panelCopy}>Select a node here or click a mesh in the viewport.</p>
-        <HierarchyTree scene={editorScene} selectedNodeId={selectedNodeId} onSelect={selectNode} />
+        <p className={styles.panelCopy}>Select a node here or pick geometry in the viewport.</p>
+        <HierarchyTree nodes={editorScene.nodes} selectedNodeId={selectedNodeId} onSelect={selectNode} />
       </aside>
 
       <div className={styles.viewportPanel}>
@@ -411,9 +673,25 @@ export function SceneEditorLab() {
           <div>
             <p className="eyebrow">Authoring viewport</p>
             <strong>{selectedNode.name}</strong>
-            {selectedVertexIndex !== null && <span> / vertex {selectedVertexIndex}</span>}
+            <span> / {selectionSummary}</span>
           </div>
           <div className={styles.toolbarActions}>
+            <button
+              type="button"
+              className={styles.toolButton}
+              onClick={() => setHistory((current) => undoEditorHistory(current))}
+              disabled={history.undo.length === 0}
+            >
+              Undo
+            </button>
+            <button
+              type="button"
+              className={styles.toolButton}
+              onClick={() => setHistory((current) => redoEditorHistory(current))}
+              disabled={history.redo.length === 0}
+            >
+              Redo
+            </button>
             <button type="button" className={styles.toolButton} onClick={frameSelected}>
               Frame selected
             </button>
@@ -435,13 +713,61 @@ export function SceneEditorLab() {
             </button>
           </div>
         </div>
+
+        <div className={styles.modeBar} aria-label="Editor interaction modes">
+          <div className={styles.modeGroup}>
+            <span>Select</span>
+            {SELECTION_MODES.map(([mode, label]) => (
+              <button
+                key={mode}
+                type="button"
+                className={selectionMode === mode ? styles.modeButtonActive : styles.modeButton}
+                onClick={() => chooseSelectionMode(mode)}
+                aria-pressed={selectionMode === mode}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className={styles.modeGroup}>
+            <span>Gizmo</span>
+            {GIZMO_MODES.map(([mode, label, shortcut]) => (
+              <button
+                key={mode}
+                type="button"
+                className={effectiveGizmoMode === mode ? styles.modeButtonActive : styles.modeButton}
+                onClick={() => setGizmoMode(mode)}
+                disabled={vertexGizmoActive && mode !== "translate"}
+                aria-pressed={effectiveGizmoMode === mode}
+                title={`${label} (${shortcut})`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className={styles.modeGroup}>
+            <span>Space</span>
+            {(["local", "world"] as const).map((space) => (
+              <button
+                key={space}
+                type="button"
+                className={gizmoSpace === space ? styles.modeButtonActive : styles.modeButton}
+                onClick={() => setGizmoSpace(space)}
+                aria-pressed={gizmoSpace === space}
+              >
+                {space === "local" ? "Local" : "World"}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <canvas
           ref={canvasRef}
           className={styles.canvas}
-          aria-label="Interactive 3D scene editor. Orbit the camera, click meshes, and select visible vertex handles."
+          aria-label="Interactive 3D scene editor with transform gizmos and object, vertex, edge, and face picking."
         />
         <p className={styles.viewportHint}>
-          Drag to orbit, scroll to zoom, click a mesh to select it, then click a vertex handle to edit that position.
+          Drag the gizmo to edit the selected node. In vertex mode, pick a handle and the same gizmo edits that local position. W/E/R change gizmo mode, Q toggles local/world, and Ctrl/Cmd+Z undoes.
         </p>
       </div>
 
@@ -474,23 +800,36 @@ export function SceneEditorLab() {
         />
 
         {selectedNode.mesh && (
-          <section className={styles.vertexSection}>
+          <section className={styles.componentSection}>
             <div className={styles.vertexHeading}>
               <div>
-                <span className={styles.sectionLabel}>Vertex editing</span>
-                <strong>{selectedVertexIndex === null ? "Pick a handle in the viewport" : `Vertex ${selectedVertexIndex}`}</strong>
+                <span className={styles.sectionLabel}>Component selection</span>
+                <strong>
+                  {selectedVertexIndex !== null && `Vertex ${selectedVertexIndex}`}
+                  {selectedEdge && `Edge ${selectedEdge[0]}–${selectedEdge[1]}`}
+                  {selectedFaceIndex !== null && `Face ${selectedFaceIndex}`}
+                  {selectedVertexIndex === null && !selectedEdge && selectedFaceIndex === null && `Pick a ${selectionMode}`}
+                </strong>
               </div>
-              {selectedVertexIndex !== null && (
-                <button type="button" className={styles.clearButton} onClick={() => setSelectedVertexIndex(null)}>
+              {(selectedVertexIndex !== null || selectedEdge || selectedFaceIndex !== null) && (
+                <button type="button" className={styles.clearButton} onClick={clearComponentSelection}>
                   Clear
                 </button>
               )}
             </div>
             {selectedVertex && (
-              <VectorEditor label="Local position" value={selectedVertex} step={0.05} onChange={updateVertexAxis} />
+              <VectorEditor label="Vertex local position" value={selectedVertex} step={0.05} onChange={updateVertexAxis} />
+            )}
+            {selectedEdge && (
+              <p>Indexed edge connects vertices <code>{selectedEdge[0]}</code> and <code>{selectedEdge[1]}</code>.</p>
+            )}
+            {selectedFaceVertices && (
+              <p>
+                Indexed triangle references vertices <code>{selectedFaceVertices.join(", ")}</code>.
+              </p>
             )}
             <p>
-              Position edits mutate the format-neutral mesh draft. Derived normals/tangents are treated as stale and rebuilt downstream.
+              Component ids come from the indexed mesh, not Three.js object identity. Position edits invalidate derived normals and tangents.
             </p>
           </section>
         )}
@@ -498,7 +837,7 @@ export function SceneEditorLab() {
         <section className={styles.boundary}>
           <strong>Ownership boundary</strong>
           <p>
-            The editor owns selection and draft edits. Mesh validity stays aligned with <code>three-d-core</code>; hierarchy ordering stays aligned with <code>three-d-animation</code>. Three.js only renders and ray-picks the current model.
+            Gizmos commit local model values only when a drag finishes. Undo/redo replays bounded format-neutral edit commands. Three.js stays responsible for rendering, ray picking, and transient manipulation handles.
           </p>
         </section>
 
