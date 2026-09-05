@@ -34,10 +34,7 @@ pub(crate) fn convert_normal_texture(
     .map_err(Into::into)
 }
 
-fn convert_image(
-    image: gltf::Image<'_>,
-    buffers: &[Vec<u8>],
-) -> Result<EncodedImage, FormatError> {
+fn convert_image(image: gltf::Image<'_>, buffers: &[Vec<u8>]) -> Result<EncodedImage, FormatError> {
     let image_index = image.index();
     let name = image.name().map(str::to_owned);
     let (mime_type, bytes) = match image.source() {
@@ -45,33 +42,34 @@ fn convert_image(
             let buffer_index = view.buffer().index();
             let offset = view.offset();
             let length = view.length();
-            let buffer = buffers.get(buffer_index).ok_or(
-                FormatError::GltfImageViewOutOfBounds {
-                    image_index,
-                    buffer_index,
-                    offset,
-                    length,
-                    buffer_length: 0,
-                },
-            )?;
-            let end = offset.checked_add(length).ok_or(
-                FormatError::GltfImageViewOutOfBounds {
-                    image_index,
-                    buffer_index,
-                    offset,
-                    length,
-                    buffer_length: buffer.len(),
-                },
-            )?;
-            let bytes = buffer.get(offset..end).ok_or(
-                FormatError::GltfImageViewOutOfBounds {
+            let buffer =
+                buffers
+                    .get(buffer_index)
+                    .ok_or(FormatError::GltfImageViewOutOfBounds {
+                        image_index,
+                        buffer_index,
+                        offset,
+                        length,
+                        buffer_length: 0,
+                    })?;
+            let end = offset
+                .checked_add(length)
+                .ok_or(FormatError::GltfImageViewOutOfBounds {
                     image_index,
                     buffer_index,
                     offset,
                     length,
                     buffer_length: buffer.len(),
-                },
-            )?;
+                })?;
+            let bytes = buffer
+                .get(offset..end)
+                .ok_or(FormatError::GltfImageViewOutOfBounds {
+                    image_index,
+                    buffer_index,
+                    offset,
+                    length,
+                    buffer_length: buffer.len(),
+                })?;
             (mime_type.to_owned(), bytes.to_vec())
         }
         gltf::image::Source::Uri { uri, mime_type } => {
