@@ -36,15 +36,16 @@ function createNormalMap(): THREE.DataTexture {
 export function NormalMappingLab() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const materialRef = useRef<THREE.MeshStandardMaterial | null>(null);
+  const normalMapRef = useRef<THREE.DataTexture | null>(null);
   const basisRef = useRef<THREE.Group | null>(null);
   const [normalMapEnabled, setNormalMapEnabled] = useState(true);
   const [showBasis, setShowBasis] = useState(true);
   const [strength, setStrength] = useState(1);
   const tangents = useMemo(() => deriveTangents(uvQuadMesh), []);
   const tangent = tangents[0];
-  const normal = uvQuadMesh.attributes?.normals?.[0] ?? [0, 0, 1];
+  const normal = uvQuadMesh.attributes?.normals?.[0] ?? ([0, 0, 1] as const);
   const bitangent = useMemo(() => {
-    const normalVector = new THREE.Vector3(...normal);
+    const normalVector = new THREE.Vector3(normal[0], normal[1], normal[2]);
     const tangentVector = new THREE.Vector3(tangent[0], tangent[1], tangent[2]);
     return normalVector.cross(tangentVector).multiplyScalar(tangent[3]).toArray();
   }, [normal, tangent]);
@@ -70,6 +71,7 @@ export function NormalMappingLab() {
     geometry.setIndex([...uvQuadMesh.indices]);
 
     const normalMap = createNormalMap();
+    normalMapRef.current = normalMap;
     const material = new THREE.MeshStandardMaterial({
       color: 0xa9b8d5,
       roughness: 0.58,
@@ -87,8 +89,8 @@ export function NormalMappingLab() {
     const basis = new THREE.Group();
     const origin = new THREE.Vector3(-0.76, -0.76, 0.035);
     const tangentDirection = new THREE.Vector3(tangent[0], tangent[1], tangent[2]);
-    const normalDirection = new THREE.Vector3(...normal);
-    const bitangentDirection = new THREE.Vector3(...bitangent);
+    const normalDirection = new THREE.Vector3(normal[0], normal[1], normal[2]);
+    const bitangentDirection = new THREE.Vector3(bitangent[0], bitangent[1], bitangent[2]);
     basis.add(
       new THREE.ArrowHelper(tangentDirection, origin, 0.72, 0xff887a, 0.12, 0.07),
       new THREE.ArrowHelper(bitangentDirection, origin, 0.72, 0x8ee0a1, 0.12, 0.07),
@@ -131,6 +133,7 @@ export function NormalMappingLab() {
       material.dispose();
       renderer.dispose();
       materialRef.current = null;
+      normalMapRef.current = null;
       basisRef.current = null;
     };
   }, [bitangent, normal, tangent, tangents]);
@@ -139,10 +142,7 @@ export function NormalMappingLab() {
     const material = materialRef.current;
     if (!material) return;
     material.normalScale.set(strength, strength);
-    material.normalMap = normalMapEnabled ? material.normalMap : null;
-    if (normalMapEnabled && !material.normalMap) {
-      material.normalMap = createNormalMap();
-    }
+    material.normalMap = normalMapEnabled ? normalMapRef.current : null;
     material.needsUpdate = true;
   }, [normalMapEnabled, strength]);
 
