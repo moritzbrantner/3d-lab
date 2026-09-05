@@ -2,6 +2,7 @@
 members = [
     "crates/three-d-core",
     "crates/three-d-animation",
+    "crates/three-d-camera",
     "examples/wgpu-native",
 ]
 resolver = "2"
