@@ -51,7 +51,8 @@
 ### Slice 6 — authoring and inspection
 
 - [x] Add an interactive scene editor with node-hierarchy selection, viewport mesh picking, vertex handles, transform editing, and direct vertex-position editing.
-- [ ] Add drag gizmos for node transforms and selected vertices with explicit local/world coordinate modes.
-- [ ] Add face and edge selection plus bounded topology operations such as split, inset, and extrude.
-- [ ] Add undo/redo as a deterministic edit-command log instead of renderer snapshots.
+- [x] Add drag gizmos for node transforms and selected vertices with explicit local/world coordinate modes.
+- [x] Add object, vertex, edge, and face selection using stable indexed-mesh references.
+- [ ] Add bounded topology operations such as split, inset, extrude, and weld.
+- [x] Add undo/redo as a bounded deterministic edit-command log instead of renderer snapshots.
 - [ ] Add format-neutral scene snapshot import/export before teaching glTF authoring round-trips.
