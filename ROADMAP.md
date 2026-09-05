@@ -33,14 +33,15 @@
 
 ### Slice 4 — renderer comparison
 
-- Add a native Rust `wgpu` example beside the Three.js lessons.
-- Keep the browser teaching surface Three.js-first.
-- Compare vertex/index buffers, uniforms, camera matrices, and draw calls across APIs.
-- Add WebGPU in the browser only where the comparison itself teaches something.
+- [x] Add an offscreen native Rust `wgpu` baseline that consumes `three-d-core` mesh data and submits an indexed draw without moving GPU types into the core crate.
+- [ ] Add a Three.js ↔ `wgpu` teaching comparison for vertex/index buffers and draw calls.
+- [ ] Add deterministic parity fixtures for mesh packing and matrix conventions across renderer adapters.
+- [ ] Compare uniforms and camera matrices across APIs using the existing renderer-independent math boundary.
+- [ ] Add browser WebGPU only where the comparison itself teaches something.
 
 ### Slice 5 — model pipeline
 
-- Expand glTF anatomy from animation-only to meshes/materials/assets.
-- Add OBJ and glTF mesh loading and validation.
-- Add tangents and normal maps.
-- Add level-of-detail and mesh simplification experiments.
+- [ ] Expand glTF anatomy from animation-only to meshes/materials/assets.
+- [ ] Add OBJ and glTF mesh loading and validation.
+- [ ] Add tangents and normal maps.
+- [ ] Add level-of-detail and mesh simplification experiments.

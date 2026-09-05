@@ -1,0 +1,13 @@
+[package]
+name = "three-d-wgpu-example"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Native wgpu renderer comparison baseline for 3d-lab"
+license = "MIT"
+
+[dependencies]
+bytemuck = { version = "1", features = ["derive"] }
+pollster = "0.4"
+three-d-core = { path = "../../crates/three-d-core" }
+wgpu = "30.0.1"
