@@ -179,10 +179,8 @@ pub fn load_gltf(bytes: &[u8]) -> Result<Asset, FormatError> {
 pub fn load_obj(bytes: &[u8]) -> Result<Asset, FormatError> {
     let mut reader = Cursor::new(bytes);
     let options = tobj::LoadOptions {
-        merge_identical_points: false,
-        reorder_data: false,
-        single_index: true,
         triangulate: true,
+        single_index: true,
         ignore_points: true,
         ignore_lines: true,
     };
