@@ -29,15 +29,15 @@
 - [x] Load a minimal glTF 2.0 translation animation with `GLTFLoader` and `AnimationMixer`.
 - [x] Add renderer-independent `Mat4`, `Quat`, `Transform`, hierarchy, keyframe/clip, skeleton, and skin-influence types in Rust.
 
-## Next implementation horizon
-
 ### Slice 4 — renderer comparison
 
 - [x] Add an offscreen native Rust `wgpu` baseline that consumes `three-d-core` mesh data and submits an indexed draw without moving GPU types into the core crate.
 - [x] Add a Three.js ↔ `wgpu` teaching comparison for vertex/index buffers and draw calls.
 - [x] Add deterministic parity fixtures for mesh packing and matrix conventions across renderer adapters.
 - [x] Compare uniforms and camera matrices across APIs using renderer-independent camera math.
-- [ ] Add browser WebGPU only where the comparison itself teaches something.
+- [x] Add browser WebGPU only where the comparison itself teaches something.
+
+## Next implementation horizon
 
 ### Slice 5 — model pipeline
 

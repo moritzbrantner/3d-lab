@@ -9,6 +9,7 @@ The repository deliberately has parallel surfaces:
 - **Rust / `three-d-animation`** — renderer-independent matrices, transforms, animation tracks/clips, and skeletal data.
 - **Rust / `three-d-camera`** — renderer-independent right-handed view and WebGPU-depth perspective camera matrices.
 - **Native / `wgpu` example** — a narrow renderer-comparison adapter that consumes the Rust mesh and camera models without moving GPU ownership into the core crates.
+- **Raw browser WebGPU experiment** — one intentionally tiny indexed draw that exposes browser GPU setup without replacing Three.js as the teaching renderer.
 
 The web renderer is intentionally Three.js-first. The Rust core crates do not depend on Three.js, WebGL, WebGPU, a windowing stack, or a glTF loader; native/WebGPU rendering and asset adapters stay downstream of the renderer-independent models.
 
@@ -32,11 +33,12 @@ The GitHub Pages curriculum currently covers:
 14. Mesh subdivision and procedural generation
 15. Explicit 4×4 matrix composition
 16. Parent/child transform hierarchies
-17. Keyframes, interpolation, easing, and reusable clips
+17. Keyframes, interpolation, easing, playback, and reusable clips
 18. Euler angles vs. quaternion SLERP
 19. Skeletons, joints, weights, and skinning
 20. A minimal glTF 2.0 animation loaded through Three.js
 21. Three.js versus native `wgpu` renderer responsibilities
+22. Raw browser WebGPU pipeline setup for one indexed draw
 
 Every topic combines a concise explanation with an interactive scene and a small data inspector. The Rust side mirrors the durable, renderer-independent concepts rather than wrapping Three.js APIs.
 
