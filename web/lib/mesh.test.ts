@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   coloredTriangleMesh,
   cubeMesh,
+  deriveTangents,
   expandedVertexCount,
   smoothVertexNormals,
   subdividedPlane,
@@ -44,6 +45,26 @@ describe("mesh lesson data", () => {
       [0, 0, 1],
       [0, 0, 1],
     ]);
+  });
+
+  test("UV quad derives an orthonormal positive-handed tangent basis", () => {
+    expect(deriveTangents(uvQuadMesh)).toEqual([
+      [1, 0, 0, 1],
+      [1, 0, 0, 1],
+      [1, 0, 0, 1],
+      [1, 0, 0, 1],
+    ]);
+  });
+
+  test("tangent derivation rejects degenerate UV parameterization", () => {
+    expect(() => deriveTangents({
+      vertices: triangleMesh.vertices,
+      indices: triangleMesh.indices,
+      attributes: {
+        normals: [[0, 0, 1], [0, 0, 1], [0, 0, 1]],
+        uvs: [[0, 0], [0, 0], [0, 0]],
+      },
+    })).toThrow("triangle 0 has a degenerate UV parameterization");
   });
 
   test("subdivision grows vertices and triangles predictably", () => {

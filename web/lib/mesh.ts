@@ -1,9 +1,11 @@
 export type Vec2 = readonly [u: number, v: number];
 export type Vec3 = readonly [x: number, y: number, z: number];
+export type Vec4 = readonly [x: number, y: number, z: number, w: number];
 export type Color3 = readonly [r: number, g: number, b: number];
 
 export type VertexAttributes = {
   normals?: readonly Vec3[];
+  tangents?: readonly Vec4[];
   uvs?: readonly Vec2[];
   colors?: readonly Color3[];
 };
@@ -15,6 +17,7 @@ export type IndexedMesh = {
 };
 
 export const MAX_SUBDIVISIONS = 256;
+const TANGENT_EPSILON = 1e-8;
 
 export const triangleMesh: IndexedMesh = {
   vertices: [
@@ -105,6 +108,7 @@ export function validateMesh(mesh: IndexedMesh): void {
 
   const entries = [
     ["normal", attributes.normals],
+    ["tangent", attributes.tangents],
     ["uv", attributes.uvs],
     ["color", attributes.colors],
   ] as const;
@@ -132,6 +136,14 @@ export function expandedVertexCount(mesh: IndexedMesh): number {
 
 function subtract(a: Vec3, b: Vec3): Vec3 {
   return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+}
+
+function scale(value: Vec3, factor: number): Vec3 {
+  return [value[0] * factor, value[1] * factor, value[2] * factor];
+}
+
+function dot(a: Vec3, b: Vec3): number {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 }
 
 function cross(a: Vec3, b: Vec3): Vec3 {
@@ -182,6 +194,71 @@ export function smoothVertexNormals(mesh: IndexedMesh): Vec3[] {
   }
 
   return sums.map((sum) => normalize(sum) ?? [0, 0, 0]);
+}
+
+export function deriveTangents(mesh: IndexedMesh): Vec4[] {
+  validateMesh(mesh);
+  const normals = mesh.attributes?.normals;
+  const uvs = mesh.attributes?.uvs;
+  if (!normals) throw new Error("tangent derivation requires vertex normals");
+  if (!uvs) throw new Error("tangent derivation requires UV coordinates");
+
+  const tangentSums = mesh.vertices.map(() => [0, 0, 0] as [number, number, number]);
+  const bitangentSums = mesh.vertices.map(() => [0, 0, 0] as [number, number, number]);
+
+  for (let index = 0; index < mesh.indices.length; index += 3) {
+    const triangleIndex = index / 3;
+    const ia = mesh.indices[index];
+    const ib = mesh.indices[index + 1];
+    const ic = mesh.indices[index + 2];
+    const a = mesh.vertices[ia];
+    const b = mesh.vertices[ib];
+    const c = mesh.vertices[ic];
+    const uvA = uvs[ia];
+    const uvB = uvs[ib];
+    const uvC = uvs[ic];
+    const edgeAB = subtract(b, a);
+    const edgeAC = subtract(c, a);
+    const duAB = uvB[0] - uvA[0];
+    const dvAB = uvB[1] - uvA[1];
+    const duAC = uvC[0] - uvA[0];
+    const dvAC = uvC[1] - uvA[1];
+    const determinant = duAB * dvAC - dvAB * duAC;
+    if (Math.abs(determinant) <= TANGENT_EPSILON) {
+      throw new Error(`triangle ${triangleIndex} has a degenerate UV parameterization`);
+    }
+
+    const reciprocal = 1 / determinant;
+    const tangent: Vec3 = [
+      (edgeAB[0] * dvAC - edgeAC[0] * dvAB) * reciprocal,
+      (edgeAB[1] * dvAC - edgeAC[1] * dvAB) * reciprocal,
+      (edgeAB[2] * dvAC - edgeAC[2] * dvAB) * reciprocal,
+    ];
+    const bitangent: Vec3 = [
+      (edgeAC[0] * duAB - edgeAB[0] * duAC) * reciprocal,
+      (edgeAC[1] * duAB - edgeAB[1] * duAC) * reciprocal,
+      (edgeAC[2] * duAB - edgeAB[2] * duAC) * reciprocal,
+    ];
+
+    [ia, ib, ic].forEach((vertexIndex) => {
+      tangentSums[vertexIndex][0] += tangent[0];
+      tangentSums[vertexIndex][1] += tangent[1];
+      tangentSums[vertexIndex][2] += tangent[2];
+      bitangentSums[vertexIndex][0] += bitangent[0];
+      bitangentSums[vertexIndex][1] += bitangent[1];
+      bitangentSums[vertexIndex][2] += bitangent[2];
+    });
+  }
+
+  return normals.map((sourceNormal, vertexIndex) => {
+    const normal = normalize(sourceNormal);
+    if (!normal) throw new Error(`vertex ${vertexIndex} has a zero-length normal`);
+    const tangentSum = tangentSums[vertexIndex];
+    const tangent = normalize(subtract(tangentSum, scale(normal, dot(normal, tangentSum))));
+    if (!tangent) throw new Error(`vertex ${vertexIndex} does not produce a stable tangent direction`);
+    const handedness = dot(cross(normal, tangent), bitangentSums[vertexIndex]) < 0 ? -1 : 1;
+    return [tangent[0], tangent[1], tangent[2], handedness] as const;
+  });
 }
 
 export function subdividedPlane(segments: number): IndexedMesh {

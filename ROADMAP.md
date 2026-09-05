@@ -43,5 +43,7 @@
 
 - [x] Expand glTF anatomy from animation-only to meshes/materials/assets.
 - [x] Add OBJ and glTF mesh loading and validation.
-- [ ] Add tangents and normal maps.
+- [x] Add renderer-independent tangent attributes and deterministic tangent derivation.
+- [x] Preserve glTF `TANGENT` attributes and teach tangent-space normal-map shading interactively.
+- [ ] Preserve encoded image/texture data and glTF normal-texture bindings through `three-d-assets`.
 - [ ] Add level-of-detail and mesh simplification experiments.
