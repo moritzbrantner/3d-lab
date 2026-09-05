@@ -250,7 +250,9 @@ pub enum TangentError {
 impl fmt::Display for TangentError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::MissingNormals => formatter.write_str("tangent derivation requires vertex normals"),
+            Self::MissingNormals => {
+                formatter.write_str("tangent derivation requires vertex normals")
+            }
             Self::MissingUvs => formatter.write_str("tangent derivation requires UV coordinates"),
             Self::DegenerateUv { triangle_index } => write!(
                 formatter,
@@ -484,21 +486,12 @@ impl Mesh {
                 let tangent = (tangent_sum - normal * normal.dot(tangent_sum))
                     .normalized()
                     .ok_or(TangentError::DegenerateTangent { vertex_index })?;
-                let handedness = if normal
-                    .cross(tangent)
-                    .dot(bitangent_sums[vertex_index])
-                    < 0.0
-                {
+                let handedness = if normal.cross(tangent).dot(bitangent_sums[vertex_index]) < 0.0 {
                     -1.0
                 } else {
                     1.0
                 };
-                Ok(Tangent4::new(
-                    tangent.x,
-                    tangent.y,
-                    tangent.z,
-                    handedness,
-                ))
+                Ok(Tangent4::new(tangent.x, tangent.y, tangent.z, handedness))
             })
             .collect()
     }
