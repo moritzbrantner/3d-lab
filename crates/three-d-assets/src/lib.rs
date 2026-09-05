@@ -1,10 +1,18 @@
 //! Renderer-independent asset and material semantics for `3d-lab`.
 //!
 //! File formats are deliberately downstream. This crate models the durable result of
-//! loading an asset without owning glTF/OBJ parsing, byte buffers, renderer APIs, or images.
+//! loading an asset without owning glTF/OBJ parsing, byte buffers, renderer APIs, or image
+//! decoding.
+
+mod resources;
 
 use core::fmt;
 use three_d_core::Mesh;
+
+pub use resources::{
+    EncodedImage, MagnificationFilter, MinificationFilter, NormalTextureBinding, Texture,
+    TextureSampler, TextureWrap,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BaseColorFactor {
@@ -48,6 +56,7 @@ pub struct Material {
     metallic_factor: f32,
     roughness_factor: f32,
     double_sided: bool,
+    normal_texture: Option<NormalTextureBinding>,
 }
 
 impl Material {
@@ -71,7 +80,13 @@ impl Material {
             metallic_factor,
             roughness_factor,
             double_sided,
+            normal_texture: None,
         })
+    }
+
+    pub fn with_normal_texture(mut self, normal_texture: NormalTextureBinding) -> Self {
+        self.normal_texture = Some(normal_texture);
+        self
     }
 
     pub fn name(&self) -> Option<&str> {
@@ -92,6 +107,10 @@ impl Material {
 
     pub const fn double_sided(&self) -> bool {
         self.double_sided
+    }
+
+    pub const fn normal_texture(&self) -> Option<NormalTextureBinding> {
+        self.normal_texture
     }
 }
 
@@ -142,10 +161,25 @@ impl AssetMesh {
 pub struct Asset {
     meshes: Vec<AssetMesh>,
     materials: Vec<Material>,
+    images: Vec<EncodedImage>,
+    samplers: Vec<TextureSampler>,
+    textures: Vec<Texture>,
 }
 
 impl Asset {
     pub fn new(meshes: Vec<AssetMesh>, materials: Vec<Material>) -> Result<Self, AssetError> {
+        Self::with_resources(meshes, materials, Vec::new(), Vec::new(), Vec::new())
+    }
+
+    pub fn with_resources(
+        meshes: Vec<AssetMesh>,
+        materials: Vec<Material>,
+        images: Vec<EncodedImage>,
+        samplers: Vec<TextureSampler>,
+        textures: Vec<Texture>,
+    ) -> Result<Self, AssetError> {
+        resources::validate_resource_references(&materials, &images, &samplers, &textures)?;
+
         for (mesh_index, mesh) in meshes.iter().enumerate() {
             for (primitive_index, primitive) in mesh.primitives().iter().enumerate() {
                 if let Some(material_index) = primitive.material()
@@ -161,7 +195,13 @@ impl Asset {
             }
         }
 
-        Ok(Self { meshes, materials })
+        Ok(Self {
+            meshes,
+            materials,
+            images,
+            samplers,
+            textures,
+        })
     }
 
     pub fn meshes(&self) -> &[AssetMesh] {
@@ -171,6 +211,18 @@ impl Asset {
     pub fn materials(&self) -> &[Material] {
         &self.materials
     }
+
+    pub fn images(&self) -> &[EncodedImage] {
+        &self.images
+    }
+
+    pub fn samplers(&self) -> &[TextureSampler] {
+        &self.samplers
+    }
+
+    pub fn textures(&self) -> &[Texture] {
+        &self.textures
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -178,7 +230,25 @@ pub enum AssetError {
     InvalidBaseColorFactor,
     InvalidMetallicFactor,
     InvalidRoughnessFactor,
+    InvalidImageMimeType,
+    EmptyEncodedImage,
+    InvalidNormalTextureScale,
     EmptyAssetMesh,
+    TextureImageIndexOutOfBounds {
+        texture_index: usize,
+        image_index: usize,
+        image_count: usize,
+    },
+    TextureSamplerIndexOutOfBounds {
+        texture_index: usize,
+        sampler_index: usize,
+        sampler_count: usize,
+    },
+    MaterialTextureIndexOutOfBounds {
+        material_index: usize,
+        texture_index: usize,
+        texture_count: usize,
+    },
     MaterialIndexOutOfBounds {
         mesh_index: usize,
         primitive_index: usize,
@@ -198,9 +268,40 @@ impl fmt::Display for AssetError {
             Self::InvalidRoughnessFactor => {
                 formatter.write_str("roughness factor must be a finite value from 0 to 1")
             }
+            Self::InvalidImageMimeType => {
+                formatter.write_str("encoded image MIME type must not be empty")
+            }
+            Self::EmptyEncodedImage => formatter.write_str("encoded image data must not be empty"),
+            Self::InvalidNormalTextureScale => {
+                formatter.write_str("normal texture scale must be finite")
+            }
             Self::EmptyAssetMesh => {
                 formatter.write_str("an asset mesh must contain at least one primitive")
             }
+            Self::TextureImageIndexOutOfBounds {
+                texture_index,
+                image_index,
+                image_count,
+            } => write!(
+                formatter,
+                "texture {texture_index} references image {image_index}, but the asset has {image_count} images"
+            ),
+            Self::TextureSamplerIndexOutOfBounds {
+                texture_index,
+                sampler_index,
+                sampler_count,
+            } => write!(
+                formatter,
+                "texture {texture_index} references sampler {sampler_index}, but the asset has {sampler_count} samplers"
+            ),
+            Self::MaterialTextureIndexOutOfBounds {
+                material_index,
+                texture_index,
+                texture_count,
+            } => write!(
+                formatter,
+                "material {material_index} references texture {texture_index}, but the asset has {texture_count} textures"
+            ),
             Self::MaterialIndexOutOfBounds {
                 mesh_index,
                 primitive_index,
