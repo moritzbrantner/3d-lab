@@ -41,7 +41,7 @@
 
 ### Slice 5 — model pipeline
 
-- [ ] Expand glTF anatomy from animation-only to meshes/materials/assets.
+- [x] Expand glTF anatomy from animation-only to meshes/materials/assets.
 - [ ] Add OBJ and glTF mesh loading and validation.
 - [ ] Add tangents and normal maps.
 - [ ] Add level-of-detail and mesh simplification experiments.

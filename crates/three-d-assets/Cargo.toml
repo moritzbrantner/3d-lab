@@ -1,0 +1,9 @@
+[package]
+name = "three-d-assets"
+version = "0.1.0"
+edition = "2024"
+description = "Renderer-independent asset and material semantics for 3d-lab"
+license = "MIT"
+
+[dependencies]
+three-d-core = { path = "../three-d-core" }
