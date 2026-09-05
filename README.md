@@ -1,11 +1,11 @@
 # 3d-lab
 
-`3d-lab` is an interactive learning repository for 3D fundamentals: vertices, triangles, indexed meshes, attributes, normals, transforms, cameras, lighting, procedural geometry, animation, skinning, and asset pipelines.
+`3d-lab` is an interactive learning repository for 3D fundamentals: vertices, triangles, indexed meshes, attributes, normals, tangents, transforms, cameras, lighting, procedural geometry, animation, skinning, and asset pipelines.
 
 The repository deliberately has parallel surfaces:
 
 - **Web / Three.js** — visual, interactive lessons that can be published with GitHub Pages.
-- **Rust / `three-d-core`** — renderer-independent mesh geometry and topology.
+- **Rust / `three-d-core`** — renderer-independent mesh geometry, topology, normals, UVs, and tangent-space derivation.
 - **Rust / `three-d-animation`** — renderer-independent matrices, transforms, animation tracks/clips, and skeletal data.
 - **Rust / `three-d-camera`** — renderer-independent right-handed view and WebGPU-depth perspective camera matrices.
 - **Rust / `three-d-assets`** — renderer-independent asset meshes, primitives, PBR material factors, and material-reference validation.
@@ -43,6 +43,7 @@ The GitHub Pages curriculum currently covers:
 22. Raw browser WebGPU pipeline setup for one indexed draw
 23. glTF scene/node/mesh/primitive/accessor/buffer/material anatomy
 24. OBJ and glTF decoding into one renderer-independent asset model
+25. Tangent derivation, handedness, and tangent-space normal-map shading
 
 Every topic combines a concise explanation with an interactive scene and a small data inspector. The Rust side mirrors the durable, renderer-independent concepts rather than wrapping Three.js APIs or asset-file structures.
 
@@ -76,7 +77,7 @@ Then run `bun run dev` for the local teaching site.
 
 ## Architecture
 
-See [`docs/contracts/mesh-model.md`](docs/contracts/mesh-model.md) for the mesh parity contract.
+See [`docs/contracts/mesh-model.md`](docs/contracts/mesh-model.md) for the mesh and tangent-space parity contract.
 
 See [`docs/contracts/animation-model.md`](docs/contracts/animation-model.md) for transform, keyframe, hierarchy, and skeleton ownership.
 
