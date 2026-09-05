@@ -8,7 +8,7 @@ The repository deliberately has parallel surfaces:
 - **Rust / `three-d-core`** — renderer-independent mesh geometry, topology, normals, UVs, and tangent-space derivation.
 - **Rust / `three-d-animation`** — renderer-independent matrices, transforms, animation tracks/clips, and skeletal data.
 - **Rust / `three-d-camera`** — renderer-independent right-handed view and WebGPU-depth perspective camera matrices.
-- **Rust / `three-d-assets`** — renderer-independent asset meshes, primitives, PBR material factors, and material-reference validation.
+- **Rust / `three-d-assets`** — renderer-independent asset meshes, PBR material factors, encoded texture resources, normal-map bindings, and cross-resource validation.
 - **Rust / `three-d-formats`** — loss-aware OBJ/glTF decoding adapters that normalize supported file semantics into `three-d-assets`.
 - **Native / `wgpu` example** — a narrow renderer-comparison adapter that consumes the Rust mesh and camera models without moving GPU ownership into the core crates.
 - **Raw browser WebGPU experiment** — one intentionally tiny indexed draw that exposes browser GPU setup without replacing Three.js as the teaching renderer.

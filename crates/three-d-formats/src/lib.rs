@@ -4,6 +4,8 @@
 //! `three-d-assets::Asset`; unsupported source semantics fail explicitly instead of being
 //! silently discarded.
 
+mod gltf_resources;
+
 use std::fmt;
 use std::io::Cursor;
 
@@ -17,12 +19,21 @@ pub enum FormatError {
     InvalidGltf(String),
     InvalidObj(String),
     UnsupportedGltfBufferUri(String),
+    UnsupportedGltfImageUri(String),
     MissingGltfBinaryBuffer,
     InvalidGltfDataUri,
+    InvalidGltfImageDataUri,
     GltfBufferTooShort {
         buffer_index: usize,
         expected: usize,
         actual: usize,
+    },
+    GltfImageViewOutOfBounds {
+        image_index: usize,
+        buffer_index: usize,
+        offset: usize,
+        length: usize,
+        buffer_length: usize,
     },
     NoMeshes,
     MissingPositions {
@@ -70,10 +81,16 @@ impl fmt::Display for FormatError {
             Self::UnsupportedGltfBufferUri(uri) => {
                 write!(formatter, "unsupported glTF buffer URI: {uri}")
             }
+            Self::UnsupportedGltfImageUri(uri) => {
+                write!(formatter, "unsupported glTF image URI: {uri}")
+            }
             Self::MissingGltfBinaryBuffer => {
                 formatter.write_str("glTF references a binary buffer but has no GLB BIN chunk")
             }
             Self::InvalidGltfDataUri => formatter.write_str("invalid base64 glTF data URI"),
+            Self::InvalidGltfImageDataUri => {
+                formatter.write_str("invalid base64 glTF image data URI")
+            }
             Self::GltfBufferTooShort {
                 buffer_index,
                 expected,
@@ -81,6 +98,17 @@ impl fmt::Display for FormatError {
             } => write!(
                 formatter,
                 "glTF buffer {buffer_index} declares {expected} bytes but only {actual} were loaded"
+            ),
+            Self::GltfImageViewOutOfBounds {
+                image_index,
+                buffer_index,
+                offset,
+                length,
+                buffer_length,
+            } => write!(
+                formatter,
+                "glTF image {image_index} references buffer {buffer_index} bytes {offset}..{}, but the loaded buffer has {buffer_length} bytes",
+                offset.saturating_add(*length)
             ),
             Self::NoMeshes => formatter.write_str("asset contains no mesh geometry"),
             Self::MissingPositions {
@@ -115,7 +143,7 @@ impl fmt::Display for FormatError {
             ),
             Self::UnsupportedMaterialFeature { material_index } => write!(
                 formatter,
-                "glTF material {material_index} uses texture, emissive, or alpha semantics that three-d-assets does not yet preserve"
+                "glTF material {material_index} uses base-color/metallic-roughness textures, occlusion, emissive, or alpha semantics that three-d-assets does not yet preserve"
             ),
             Self::TooManyVertices {
                 mesh_index,
@@ -160,6 +188,9 @@ pub fn load_gltf(bytes: &[u8]) -> Result<Asset, FormatError> {
     let gltf = gltf::Gltf::from_slice(bytes)
         .map_err(|error| FormatError::InvalidGltf(error.to_string()))?;
     let buffers = load_gltf_buffers(&gltf)?;
+    let images = gltf_resources::load_images(&gltf, &buffers)?;
+    let samplers = gltf_resources::load_samplers(&gltf);
+    let textures = gltf_resources::load_textures(&gltf);
     let materials = gltf
         .materials()
         .map(convert_gltf_material)
@@ -173,7 +204,7 @@ pub fn load_gltf(bytes: &[u8]) -> Result<Asset, FormatError> {
         return Err(FormatError::NoMeshes);
     }
 
-    Asset::new(meshes, materials).map_err(Into::into)
+    Asset::with_resources(meshes, materials, images, samplers, textures).map_err(Into::into)
 }
 
 pub fn load_obj(bytes: &[u8]) -> Result<Asset, FormatError> {
@@ -240,7 +271,6 @@ fn convert_gltf_material(material: gltf::Material<'_>) -> Result<Material, Forma
     let pbr = material.pbr_metallic_roughness();
     let has_unsupported_feature = pbr.base_color_texture().is_some()
         || pbr.metallic_roughness_texture().is_some()
-        || material.normal_texture().is_some()
         || material.occlusion_texture().is_some()
         || material.emissive_texture().is_some()
         || material.emissive_factor() != [0.0, 0.0, 0.0]
@@ -250,14 +280,18 @@ fn convert_gltf_material(material: gltf::Material<'_>) -> Result<Material, Forma
     }
 
     let [r, g, b, a] = pbr.base_color_factor();
-    Material::pbr_metallic_roughness(
+    let mut converted = Material::pbr_metallic_roughness(
         material.name().map(str::to_owned),
         BaseColorFactor::new(r, g, b, a)?,
         pbr.metallic_factor(),
         pbr.roughness_factor(),
         material.double_sided(),
-    )
-    .map_err(Into::into)
+    )?;
+    if let Some(normal_texture) = material.normal_texture() {
+        converted =
+            converted.with_normal_texture(gltf_resources::convert_normal_texture(normal_texture)?);
+    }
+    Ok(converted)
 }
 
 fn convert_gltf_mesh(mesh: gltf::Mesh<'_>, buffers: &[Vec<u8>]) -> Result<AssetMesh, FormatError> {

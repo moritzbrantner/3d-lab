@@ -45,5 +45,5 @@
 - [x] Add OBJ and glTF mesh loading and validation.
 - [x] Add renderer-independent tangent attributes and deterministic tangent derivation.
 - [x] Preserve glTF `TANGENT` attributes and teach tangent-space normal-map shading interactively.
-- [ ] Preserve encoded image/texture data and glTF normal-texture bindings through `three-d-assets`.
+- [x] Preserve encoded image/texture data and glTF normal-texture bindings through `three-d-assets`.
 - [ ] Add level-of-detail and mesh simplification experiments.
