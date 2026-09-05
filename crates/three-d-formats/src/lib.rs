@@ -10,7 +10,7 @@ use std::io::Cursor;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use gltf::mesh::{Mode, Semantic};
 use three_d_assets::{Asset, AssetError, AssetMesh, BaseColorFactor, Material, MeshPrimitive};
-use three_d_core::{Color3, Mesh, MeshError, Vec2, Vec3, VertexAttributes};
+use three_d_core::{Color3, Mesh, MeshError, Tangent4, Vec2, Vec3, VertexAttributes};
 
 #[derive(Debug)]
 pub enum FormatError {
@@ -293,6 +293,7 @@ fn convert_gltf_primitive(
         match semantic {
             Semantic::Positions
             | Semantic::Normals
+            | Semantic::Tangents
             | Semantic::Colors(0)
             | Semantic::TexCoords(0) => {}
             other => {
@@ -328,6 +329,11 @@ fn convert_gltf_primitive(
     let normals = reader
         .read_normals()
         .map(|values| values.map(|[x, y, z]| Vec3::new(x, y, z)).collect());
+    let tangents = reader.read_tangents().map(|values| {
+        values
+            .map(|[x, y, z, w]| Tangent4::new(x, y, z, w))
+            .collect()
+    });
     let uvs = reader
         .read_tex_coords(0)
         .map(|values| values.into_f32().map(|[u, v]| Vec2::new(u, v)).collect());
@@ -342,6 +348,7 @@ fn convert_gltf_primitive(
         indices,
         VertexAttributes {
             normals,
+            tangents,
             uvs,
             colors,
         },
@@ -419,6 +426,7 @@ fn convert_obj_model(model_index: usize, model: tobj::Model) -> Result<AssetMesh
         source.indices,
         VertexAttributes {
             normals,
+            tangents: None,
             uvs,
             colors,
         },
@@ -445,7 +453,7 @@ f 1//1 2//1 3//1
   "meshes": [{
     "name": "Triangle",
     "primitives": [{
-      "attributes": { "POSITION": 0, "NORMAL": 1 },
+      "attributes": { "POSITION": 0, "NORMAL": 1, "TANGENT": 3 },
       "indices": 2,
       "material": 0,
       "mode": 4
@@ -460,18 +468,20 @@ f 1//1 2//1 3//1
     }
   }],
   "buffers": [{
-    "byteLength": 78,
-    "uri": "data:application/octet-stream;base64,ZmZmv2ZmJr8AAAAAZmZmP2ZmJr8AAAAAAAAAAGZmZj8AAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAABAAIA"
+    "byteLength": 128,
+    "uri": "data:application/octet-stream;base64,ZmZmv2ZmJr8AAAAAZmZmP2ZmJr8AAAAAAAAAAGZmZj8AAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAABAAIAAAAAAIA/AAAAAAAAAAAAAIA/AACAPwAAAAAAAAAAAACAPwAAgD8AAAAAAAAAAAAAgD8="
   }],
   "bufferViews": [
     { "buffer": 0, "byteOffset": 0, "byteLength": 36, "target": 34962 },
     { "buffer": 0, "byteOffset": 36, "byteLength": 36, "target": 34962 },
-    { "buffer": 0, "byteOffset": 72, "byteLength": 6, "target": 34963 }
+    { "buffer": 0, "byteOffset": 72, "byteLength": 6, "target": 34963 },
+    { "buffer": 0, "byteOffset": 80, "byteLength": 48, "target": 34962 }
   ],
   "accessors": [
     { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-0.9, -0.65, 0.0], "max": [0.9, 0.9, 0.0] },
     { "bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC3" },
-    { "bufferView": 2, "componentType": 5123, "count": 3, "type": "SCALAR" }
+    { "bufferView": 2, "componentType": 5123, "count": 3, "type": "SCALAR" },
+    { "bufferView": 3, "componentType": 5126, "count": 3, "type": "VEC4" }
   ]
 }"#;
 
@@ -487,6 +497,10 @@ f 1//1 2//1 3//1
         assert_eq!(
             obj_mesh.attributes().normals,
             gltf_mesh.attributes().normals
+        );
+        assert_eq!(
+            gltf_mesh.attributes().tangents,
+            Some(vec![Tangent4::new(1.0, 0.0, 0.0, 1.0); 3])
         );
         assert_eq!(gltf.materials()[0].name(), Some("Blue PBR"));
     }
