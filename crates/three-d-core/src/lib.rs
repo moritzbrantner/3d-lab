@@ -7,6 +7,7 @@ use core::fmt;
 use core::ops::{Add, Mul, Sub};
 
 pub const MAX_SUBDIVISIONS: u32 = 256;
+const TANGENT_EPSILON: f32 = 1.0e-8;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Vec2 {
@@ -89,6 +90,28 @@ impl Mul<f32> for Vec3 {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Tangent4 {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    pub w: f32,
+}
+
+impl Tangent4 {
+    pub const fn new(x: f32, y: f32, z: f32, w: f32) -> Self {
+        Self { x, y, z, w }
+    }
+
+    pub const fn direction(self) -> Vec3 {
+        Vec3::new(self.x, self.y, self.z)
+    }
+
+    fn is_finite(self) -> bool {
+        self.x.is_finite() && self.y.is_finite() && self.z.is_finite() && self.w.is_finite()
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Color3 {
     pub r: f32,
     pub g: f32,
@@ -117,6 +140,7 @@ pub struct Bounds3 {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VertexAttributeKind {
     Normal,
+    Tangent,
     Uv,
     Color,
 }
@@ -125,6 +149,7 @@ impl fmt::Display for VertexAttributeKind {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Normal => formatter.write_str("normal"),
+            Self::Tangent => formatter.write_str("tangent"),
             Self::Uv => formatter.write_str("uv"),
             Self::Color => formatter.write_str("color"),
         }
@@ -134,6 +159,7 @@ impl fmt::Display for VertexAttributeKind {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct VertexAttributes {
     pub normals: Option<Vec<Vec3>>,
+    pub tangents: Option<Vec<Tangent4>>,
     pub uvs: Option<Vec<Vec2>>,
     pub colors: Option<Vec<Color3>>,
 }
@@ -212,6 +238,37 @@ impl fmt::Display for MeshError {
 
 impl std::error::Error for MeshError {}
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TangentError {
+    MissingNormals,
+    MissingUvs,
+    DegenerateUv { triangle_index: usize },
+    InvalidNormal { vertex_index: usize },
+    DegenerateTangent { vertex_index: usize },
+}
+
+impl fmt::Display for TangentError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MissingNormals => formatter.write_str("tangent derivation requires vertex normals"),
+            Self::MissingUvs => formatter.write_str("tangent derivation requires UV coordinates"),
+            Self::DegenerateUv { triangle_index } => write!(
+                formatter,
+                "triangle {triangle_index} has a degenerate UV parameterization"
+            ),
+            Self::InvalidNormal { vertex_index } => {
+                write!(formatter, "vertex {vertex_index} has a zero-length normal")
+            }
+            Self::DegenerateTangent { vertex_index } => write!(
+                formatter,
+                "vertex {vertex_index} does not produce a stable tangent direction"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for TangentError {}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Mesh {
     vertices: Vec<Vec3>,
@@ -256,6 +313,12 @@ impl Mesh {
         Self::validate_attribute(
             VertexAttributeKind::Normal,
             attributes.normals.as_deref(),
+            vertices.len(),
+            |value| value.is_finite(),
+        )?;
+        Self::validate_attribute(
+            VertexAttributeKind::Tangent,
+            attributes.tangents.as_deref(),
             vertices.len(),
             |value| value.is_finite(),
         )?;
@@ -363,6 +426,83 @@ impl Mesh {
             .collect()
     }
 
+    pub fn derived_tangents(&self) -> Result<Vec<Tangent4>, TangentError> {
+        let normals = self
+            .attributes
+            .normals
+            .as_deref()
+            .ok_or(TangentError::MissingNormals)?;
+        let uvs = self
+            .attributes
+            .uvs
+            .as_deref()
+            .ok_or(TangentError::MissingUvs)?;
+        let mut tangent_sums = vec![Vec3::ZERO; self.vertices.len()];
+        let mut bitangent_sums = vec![Vec3::ZERO; self.vertices.len()];
+
+        for (triangle_index, &[a_index, b_index, c_index]) in
+            self.indices.as_chunks::<3>().0.iter().enumerate()
+        {
+            let a_index = a_index as usize;
+            let b_index = b_index as usize;
+            let c_index = c_index as usize;
+            let a = self.vertices[a_index];
+            let b = self.vertices[b_index];
+            let c = self.vertices[c_index];
+            let uv_a = uvs[a_index];
+            let uv_b = uvs[b_index];
+            let uv_c = uvs[c_index];
+            let edge_ab = b - a;
+            let edge_ac = c - a;
+            let du_ab = uv_b.x - uv_a.x;
+            let dv_ab = uv_b.y - uv_a.y;
+            let du_ac = uv_c.x - uv_a.x;
+            let dv_ac = uv_c.y - uv_a.y;
+            let determinant = du_ab * dv_ac - dv_ab * du_ac;
+            if determinant.abs() <= TANGENT_EPSILON {
+                return Err(TangentError::DegenerateUv { triangle_index });
+            }
+
+            let reciprocal = 1.0 / determinant;
+            let tangent = (edge_ab * dv_ac - edge_ac * dv_ab) * reciprocal;
+            let bitangent = (edge_ac * du_ab - edge_ab * du_ac) * reciprocal;
+            for vertex_index in [a_index, b_index, c_index] {
+                tangent_sums[vertex_index] = tangent_sums[vertex_index] + tangent;
+                bitangent_sums[vertex_index] = bitangent_sums[vertex_index] + bitangent;
+            }
+        }
+
+        normals
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(vertex_index, normal)| {
+                let normal = normal
+                    .normalized()
+                    .ok_or(TangentError::InvalidNormal { vertex_index })?;
+                let tangent_sum = tangent_sums[vertex_index];
+                let tangent = (tangent_sum - normal * normal.dot(tangent_sum))
+                    .normalized()
+                    .ok_or(TangentError::DegenerateTangent { vertex_index })?;
+                let handedness = if normal
+                    .cross(tangent)
+                    .dot(bitangent_sums[vertex_index])
+                    < 0.0
+                {
+                    -1.0
+                } else {
+                    1.0
+                };
+                Ok(Tangent4::new(
+                    tangent.x,
+                    tangent.y,
+                    tangent.z,
+                    handedness,
+                ))
+            })
+            .collect()
+    }
+
     pub fn bounds(&self) -> Option<Bounds3> {
         let first = *self.vertices.first()?;
         let mut min = first;
@@ -420,6 +560,7 @@ impl Mesh {
             indices,
             VertexAttributes {
                 normals: Some(normals),
+                tangents: None,
                 uvs: Some(uvs),
                 colors: None,
             },
@@ -449,6 +590,29 @@ impl Mesh {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn uv_quad() -> Mesh {
+        Mesh::with_attributes(
+            vec![
+                Vec3::new(-1.0, -1.0, 0.0),
+                Vec3::new(1.0, -1.0, 0.0),
+                Vec3::new(1.0, 1.0, 0.0),
+                Vec3::new(-1.0, 1.0, 0.0),
+            ],
+            vec![0, 1, 2, 0, 2, 3],
+            VertexAttributes {
+                normals: Some(vec![Vec3::new(0.0, 0.0, 1.0); 4]),
+                uvs: Some(vec![
+                    Vec2::new(0.0, 0.0),
+                    Vec2::new(1.0, 0.0),
+                    Vec2::new(1.0, 1.0),
+                    Vec2::new(0.0, 1.0),
+                ]),
+                ..VertexAttributes::default()
+            },
+        )
+        .expect("UV quad fixture is valid")
+    }
 
     #[test]
     fn rejects_non_finite_vertices() {
@@ -517,6 +681,25 @@ mod tests {
     }
 
     #[test]
+    fn rejects_non_finite_tangent_attributes() {
+        let result = Mesh::with_attributes(
+            vec![Vec3::ZERO],
+            vec![],
+            VertexAttributes {
+                tangents: Some(vec![Tangent4::new(1.0, 0.0, 0.0, f32::NAN)]),
+                ..VertexAttributes::default()
+            },
+        );
+        assert_eq!(
+            result,
+            Err(MeshError::NonFiniteAttribute {
+                attribute: VertexAttributeKind::Tangent,
+                vertex_index: 0,
+            })
+        );
+    }
+
+    #[test]
     fn computes_triangle_normal_from_winding_order() {
         let mesh = Mesh::new(
             vec![
@@ -547,6 +730,35 @@ mod tests {
         assert_eq!(
             mesh.smooth_vertex_normals(),
             vec![Vec3::new(0.0, 0.0, 1.0); 4]
+        );
+    }
+
+    #[test]
+    fn derives_tangent_basis_from_normals_and_uvs() {
+        let tangents = uv_quad().derived_tangents().unwrap();
+        assert_eq!(tangents, vec![Tangent4::new(1.0, 0.0, 0.0, 1.0); 4]);
+    }
+
+    #[test]
+    fn tangent_derivation_rejects_degenerate_uvs() {
+        let mesh = Mesh::with_attributes(
+            vec![
+                Vec3::new(0.0, 0.0, 0.0),
+                Vec3::new(1.0, 0.0, 0.0),
+                Vec3::new(0.0, 1.0, 0.0),
+            ],
+            vec![0, 1, 2],
+            VertexAttributes {
+                normals: Some(vec![Vec3::new(0.0, 0.0, 1.0); 3]),
+                uvs: Some(vec![Vec2::new(0.0, 0.0); 3]),
+                ..VertexAttributes::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            mesh.derived_tangents(),
+            Err(TangentError::DegenerateUv { triangle_index: 0 })
         );
     }
 
