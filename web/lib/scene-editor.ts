@@ -33,6 +33,8 @@ export type EditorCommand =
       vertexIndex: number;
       before: Vec3;
       after: Vec3;
+      beforeMesh: IndexedMesh;
+      afterMesh: IndexedMesh;
     }
   | {
       kind: "replace-scene";
@@ -281,6 +283,16 @@ export function updateMeshVertex(scene: EditorScene, nodeId: string, vertexIndex
   return next;
 }
 
+function replaceNodeMesh(scene: EditorScene, nodeId: string, mesh: IndexedMesh): EditorScene {
+  const index = findNodeIndex(scene, nodeId);
+  const nodes = scene.nodes.map((candidate, candidateIndex) =>
+    candidateIndex === index ? { ...candidate, mesh: cloneMesh(mesh) } : candidate,
+  );
+  const next = { nodes };
+  validateEditorScene(next);
+  return next;
+}
+
 export function createEditorHistory(scene: EditorScene = createEditorScene()): EditorHistory {
   validateEditorScene(scene);
   return { present: cloneEditorScene(scene), undo: [], redo: [] };
@@ -311,16 +323,21 @@ export function commitMeshVertex(
   position: Vec3,
 ): EditorHistory {
   const index = findNodeIndex(history.present, nodeId);
-  const before = history.present.nodes[index].mesh?.vertices[vertexIndex];
-  if (!before) throw new Error(`vertex ${vertexIndex} is outside node ${nodeId}`);
+  const sourceMesh = history.present.nodes[index].mesh;
+  const before = sourceMesh?.vertices[vertexIndex];
+  if (!sourceMesh || !before) throw new Error(`vertex ${vertexIndex} is outside node ${nodeId}`);
   if (vec3Equal(before, position)) return history;
+  const beforeMesh = cloneMesh(sourceMesh);
   const present = updateMeshVertex(history.present, nodeId, vertexIndex, position);
+  const afterMesh = cloneMesh(present.nodes[index].mesh!);
   return pushCommand(history, {
     kind: "vertex-position",
     nodeId,
     vertexIndex,
     before: cloneVec3(before),
     after: cloneVec3(position),
+    beforeMesh,
+    afterMesh,
   }, present);
 }
 
@@ -340,7 +357,7 @@ function applyCommand(scene: EditorScene, command: EditorCommand, forward: boole
     case "node-transform":
       return updateNodeTransform(scene, command.nodeId, forward ? command.after : command.before);
     case "vertex-position":
-      return updateMeshVertex(scene, command.nodeId, command.vertexIndex, forward ? command.after : command.before);
+      return replaceNodeMesh(scene, command.nodeId, forward ? command.afterMesh : command.beforeMesh);
     case "replace-scene":
       return cloneEditorScene(forward ? command.after : command.before);
   }
