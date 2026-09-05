@@ -9,5 +9,6 @@ license = "MIT"
 [dependencies]
 bytemuck = { version = "1", features = ["derive"] }
 pollster = "0.4"
+three-d-camera = { path = "../../crates/three-d-camera" }
 three-d-core = { path = "../../crates/three-d-core" }
 wgpu = "30.0.1"

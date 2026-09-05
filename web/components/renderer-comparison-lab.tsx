@@ -17,14 +17,19 @@ const comparisonRows = [
     wgpu: "u32 bytes → INDEX buffer, Uint32 format",
   },
   {
+    concept: "Camera matrices",
+    three: "camera.matrixWorldInverse + projectionMatrix",
+    wgpu: "three-d-camera view_projection → UNIFORM buffer",
+  },
+  {
     concept: "Shader / pipeline",
     three: "MeshNormalMaterial chooses and configures renderer programs",
-    wgpu: "WGSL module + explicit RenderPipelineDescriptor",
+    wgpu: "WGSL module + explicit RenderPipelineDescriptor + bind group",
   },
   {
     concept: "Submission",
     three: "renderer.render(scene, camera)",
-    wgpu: "render pass → set buffers → draw_indexed → queue.submit",
+    wgpu: "render pass → bind uniform/buffers → draw_indexed → queue.submit",
   },
 ] as const;
 
@@ -159,11 +164,11 @@ export function RendererComparisonLab() {
             <code> Float32x3</code> vertex while preserving index order.
           </li>
           <li>
-            <strong>Upload.</strong> Create one vertex buffer and one <code>u32</code> index buffer with their
-            intended GPU usages.
+            <strong>Upload.</strong> Create vertex/index buffers plus one column-major view-projection uniform.
           </li>
           <li>
-            <strong>Describe.</strong> Bind the vertex layout and WGSL entry points into a render pipeline.
+            <strong>Describe.</strong> Bind the vertex layout and WGSL entry points into a render pipeline, then
+            bind the camera uniform at group 0.
           </li>
           <li>
             <strong>Encode.</strong> Begin a render pass, select the pipeline and buffers, then call
@@ -177,14 +182,15 @@ export function RendererComparisonLab() {
 
       <aside className={styles.nextBoundary}>
         <div>
-          <p className="eyebrow">Deliberately next</p>
-          <h2>Camera matrices and uniforms are not hidden inside this comparison.</h2>
+          <p className="eyebrow">Projection convention</p>
+          <h2>View semantics can agree even when clip-space depth conventions differ.</h2>
         </div>
         <p>
-          The current native baseline renders already-positioned vertices into clip space. The next renderer slice
-          should introduce one shared matrix fixture, then compare Three.js model/view/projection matrices with an
-          explicit wgpu uniform buffer. That keeps camera semantics renderer-independent instead of smuggling them
-          into this first GPU adapter.
+          The Three.js preview above uses its WebGL renderer, whose projection targets WebGL clip-space depth. The
+          native adapter uses the renderer-independent WebGPU <code>0..1</code> depth projection. Parity tests ask
+          Three.js to build its WebGPU-coordinate-system perspective matrix before comparing it with
+          <code> three-d-camera</code>. The remaining Slice 4 experiment can now focus specifically on browser
+          WebGPU pipeline mechanics instead of camera ambiguity.
         </p>
       </aside>
     </article>

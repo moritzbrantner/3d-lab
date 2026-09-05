@@ -1,19 +1,27 @@
 use std::{error::Error, mem};
 
 use bytemuck::{Pod, Zeroable};
+use three_d_camera::PerspectiveCamera;
 use three_d_core::{Mesh, Vec3};
 use wgpu::util::DeviceExt;
 
 const TARGET_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 const TARGET_SIZE: u32 = 64;
 const SHADER: &str = r#"
+struct Camera {
+    view_projection: mat4x4<f32>,
+};
+
+@group(0) @binding(0)
+var<uniform> camera: Camera;
+
 struct VertexInput {
     @location(0) position: vec3<f32>,
 };
 
 @vertex
 fn vs_main(input: VertexInput) -> @builtin(position) vec4<f32> {
-    return vec4<f32>(input.position.xy, input.position.z + 0.5, 1.0);
+    return camera.view_projection * vec4<f32>(input.position, 1.0);
 }
 
 @fragment
@@ -48,6 +56,12 @@ impl From<Vec3> for GpuVertex {
     }
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Pod, Zeroable)]
+struct CameraUniform {
+    view_projection: [f32; 16],
+}
+
 #[derive(Debug, PartialEq)]
 struct PackedMesh {
     vertices: Vec<GpuVertex>,
@@ -78,6 +92,19 @@ async fn render_once(mesh: &Mesh) -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
 
+    let camera = PerspectiveCamera::new(
+        Vec3::new(2.4, 1.8, 3.2),
+        Vec3::ZERO,
+        Vec3::new(0.0, 1.0, 0.0),
+        core::f32::consts::FRAC_PI_3,
+        1.0,
+        0.1,
+        100.0,
+    )?;
+    let camera_uniform = CameraUniform {
+        view_projection: camera.view_projection_matrix().elements,
+    };
+
     let instance = wgpu::Instance::default();
     let adapter = instance
         .request_adapter(&wgpu::RequestAdapterOptions::default())
@@ -99,6 +126,11 @@ async fn render_once(mesh: &Mesh) -> Result<(), Box<dyn Error>> {
         label: Some("3d-lab mesh indices"),
         contents: bytemuck::cast_slice(&packed.indices),
         usage: wgpu::BufferUsages::INDEX,
+    });
+    let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("3d-lab camera uniform"),
+        contents: bytemuck::bytes_of(&camera_uniform),
+        usage: wgpu::BufferUsages::UNIFORM,
     });
 
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -134,6 +166,16 @@ async fn render_once(mesh: &Mesh) -> Result<(), Box<dyn Error>> {
         }),
         multiview_mask: None,
         cache: None,
+    });
+    let camera_layout = pipeline.get_bind_group_layout(0);
+    let camera_entries = [wgpu::BindGroupEntry {
+        binding: 0,
+        resource: camera_buffer.as_entire_binding(),
+    }];
+    let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("3d-lab camera bind group"),
+        layout: &camera_layout,
+        entries: &camera_entries,
     });
 
     let target = device.create_texture(&wgpu::TextureDescriptor {
@@ -174,6 +216,7 @@ async fn render_once(mesh: &Mesh) -> Result<(), Box<dyn Error>> {
             multiview_mask: None,
         });
         render_pass.set_pipeline(&pipeline);
+        render_pass.set_bind_group(0, &camera_bind_group, &[]);
         render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
         render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         render_pass.draw_indexed(0..packed.index_count(), 0, 0..1);
@@ -181,7 +224,7 @@ async fn render_once(mesh: &Mesh) -> Result<(), Box<dyn Error>> {
 
     queue.submit(std::iter::once(encoder.finish()));
     println!(
-        "submitted three-d-core cube draw through native wgpu adapter {}",
+        "submitted three-d-core cube draw through native wgpu adapter {} with renderer-independent camera matrices",
         adapter_info.name
     );
     Ok(())
@@ -231,5 +274,10 @@ mod tests {
         assert_eq!(layout.attributes[0].offset, 0);
         assert_eq!(layout.attributes[0].shader_location, 0);
         assert_eq!(layout.attributes[0].format, wgpu::VertexFormat::Float32x3);
+    }
+
+    #[test]
+    fn camera_uniform_is_one_column_major_mat4() {
+        assert_eq!(mem::size_of::<CameraUniform>(), 64);
     }
 }
