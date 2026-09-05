@@ -37,7 +37,7 @@
 - [x] Compare uniforms and camera matrices across APIs using renderer-independent camera math.
 - [x] Add browser WebGPU only where the comparison itself teaches something.
 
-## Next implementation horizon
+## Active implementation horizon
 
 ### Slice 5 — model pipeline
 
@@ -47,3 +47,11 @@
 - [x] Preserve glTF `TANGENT` attributes and teach tangent-space normal-map shading interactively.
 - [x] Preserve encoded image/texture data and glTF normal-texture bindings through `three-d-assets`.
 - [ ] Add level-of-detail and mesh simplification experiments.
+
+### Slice 6 — authoring and inspection
+
+- [x] Add an interactive scene editor with node-hierarchy selection, viewport mesh picking, vertex handles, transform editing, and direct vertex-position editing.
+- [ ] Add drag gizmos for node transforms and selected vertices with explicit local/world coordinate modes.
+- [ ] Add face and edge selection plus bounded topology operations such as split, inset, and extrude.
+- [ ] Add undo/redo as a deterministic edit-command log instead of renderer snapshots.
+- [ ] Add format-neutral scene snapshot import/export before teaching glTF authoring round-trips.
