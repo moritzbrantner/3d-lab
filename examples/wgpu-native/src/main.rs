@@ -13,7 +13,7 @@ struct VertexInput {
 
 @vertex
 fn vs_main(input: VertexInput) -> @builtin(position) vec4<f32> {
-    return vec4<f32>(input.position, 1.0);
+    return vec4<f32>(input.position.xy, input.position.z + 0.5, 1.0);
 }
 
 @fragment
