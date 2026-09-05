@@ -1,6 +1,7 @@
 import { ModelPipelineTeaser } from "@/components/model-pipeline-teaser";
 import { NormalMappingTeaser } from "@/components/normal-mapping-teaser";
 import { RendererComparisonTeaser } from "@/components/renderer-comparison-teaser";
+import { SceneEditorTeaser } from "@/components/scene-editor-teaser";
 import { SkeletalAnimationTeaser } from "@/components/skeletal-animation-teaser";
 import { ThreeLab } from "@/components/three-lab";
 
@@ -15,6 +16,7 @@ export default function Home() {
           exposes the underlying data, and connects the Three.js view to renderer-independent Rust models.
         </p>
       </header>
+      <SceneEditorTeaser />
       <NormalMappingTeaser />
       <ModelPipelineTeaser />
       <RendererComparisonTeaser />

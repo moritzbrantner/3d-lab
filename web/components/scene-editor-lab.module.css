@@ -1,0 +1,397 @@
+.editor {
+  display: grid;
+  grid-template-columns: minmax(190px, 0.72fr) minmax(0, 2.25fr) minmax(250px, 0.95fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.hierarchyPanel,
+.viewportPanel,
+.inspectorPanel {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--panel);
+}
+
+.hierarchyPanel,
+.inspectorPanel {
+  padding: 20px;
+}
+
+.hierarchyPanel h2,
+.inspectorPanel h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  letter-spacing: -0.025em;
+}
+
+.panelCopy,
+.viewportHint,
+.vertexSection p,
+.boundary p {
+  color: var(--muted);
+  line-height: 1.55;
+  font-size: 0.84rem;
+}
+
+.panelCopy {
+  margin: 8px 0 18px;
+}
+
+.treeRoot,
+.treeBranch {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.treeBranch {
+  margin-left: 14px;
+  padding-left: 11px;
+  border-left: 1px solid var(--border);
+}
+
+.treeNode {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 9px;
+  align-items: center;
+  min-height: 42px;
+  margin: 2px 0;
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  text-align: left;
+  cursor: pointer;
+}
+
+.treeNode:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.treeNodeActive {
+  border-color: #31527e;
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.treeNode strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.86rem;
+}
+
+.nodeKind,
+.kindBadge,
+.sectionLabel {
+  color: var(--muted);
+  font: 700 0.67rem ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.viewportPanel {
+  overflow: hidden;
+}
+
+.toolbar {
+  min-height: 72px;
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: center;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.toolbar strong {
+  font-size: 0.96rem;
+}
+
+.toolbar span {
+  color: var(--muted);
+  font: 0.8rem ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.toolbarActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.toolButton,
+.clearButton,
+.resetButton {
+  min-height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  cursor: pointer;
+}
+
+.toolButton {
+  padding: 0 11px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.toolButton:hover,
+.clearButton:hover,
+.resetButton:hover {
+  border-color: #50627a;
+  color: var(--text);
+}
+
+.toolButtonActive {
+  border-color: #31527e;
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.canvas {
+  display: block;
+  width: 100%;
+  height: 640px;
+  background: #0c111a;
+  cursor: crosshair;
+}
+
+.viewportHint {
+  margin: 0;
+  padding: 11px 16px 13px;
+  border-top: 1px solid var(--border);
+}
+
+.inspectorPanel {
+  display: grid;
+  gap: 17px;
+}
+
+.inspectorHeading,
+.vertexHeading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: start;
+}
+
+.kindBadge {
+  padding: 5px 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.vectorEditor {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.vectorEditor legend {
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.vectorGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.vectorGrid label {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #0b111a;
+}
+
+.vectorGrid span {
+  display: grid;
+  place-items: center;
+  align-self: stretch;
+  color: var(--muted);
+  font: 700 0.7rem ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--panel-2);
+}
+
+.vectorGrid input {
+  min-width: 0;
+  width: 100%;
+  height: 40px;
+  padding: 0 7px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: 0.8rem ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.vertexSection,
+.boundary {
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.vertexHeading strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.86rem;
+}
+
+.clearButton {
+  min-height: 34px;
+  padding: 0 9px;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.vertexSection .vectorEditor {
+  margin-top: 13px;
+}
+
+.vertexSection p,
+.boundary p {
+  margin: 10px 0 0;
+}
+
+.boundary code {
+  color: #d7e5ff;
+}
+
+.resetButton {
+  width: 100%;
+  padding: 0 14px;
+  color: var(--muted);
+}
+
+.backLink {
+  display: inline-flex;
+  margin-top: 28px;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.backLink:hover {
+  color: var(--text);
+}
+
+@media (max-width: 1120px) {
+  .editor {
+    grid-template-columns: minmax(180px, 0.7fr) minmax(0, 2fr);
+  }
+
+  .inspectorPanel {
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .inspectorHeading,
+  .vertexSection,
+  .boundary,
+  .resetButton {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 760px) {
+  .editor {
+    grid-template-columns: 1fr;
+  }
+
+  .hierarchyPanel,
+  .inspectorPanel {
+    padding: 16px;
+  }
+
+  .canvas {
+    height: 450px;
+  }
+
+  .toolbar {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .toolbarActions {
+    justify-content: flex-start;
+  }
+
+  .inspectorPanel {
+    grid-column: auto;
+    grid-template-columns: 1fr;
+  }
+
+  .inspectorHeading,
+  .vertexSection,
+  .boundary,
+  .resetButton {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 430px) {
+  .canvas {
+    height: 360px;
+  }
+
+  .vectorGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.teaser {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 28px;
+  align-items: end;
+  margin: 0 0 20px;
+  padding: 24px 26px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel);
+}
+
+.teaser h2 {
+  margin: 0;
+  max-width: 780px;
+  font-size: clamp(1.4rem, 2.5vw, 2rem);
+  letter-spacing: -0.03em;
+}
+
+.teaserCopy {
+  max-width: 780px;
+  margin: 12px 0 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.teaserLink {
+  color: var(--text);
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.teaserLink:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 720px) {
+  .teaser {
+    grid-template-columns: 1fr;
+    align-items: start;
+    padding: 18px;
+  }
+}
