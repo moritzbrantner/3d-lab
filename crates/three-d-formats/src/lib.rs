@@ -288,9 +288,8 @@ fn convert_gltf_material(material: gltf::Material<'_>) -> Result<Material, Forma
         material.double_sided(),
     )?;
     if let Some(normal_texture) = material.normal_texture() {
-        converted = converted.with_normal_texture(gltf_resources::convert_normal_texture(
-            normal_texture,
-        )?);
+        converted =
+            converted.with_normal_texture(gltf_resources::convert_normal_texture(normal_texture)?);
     }
     Ok(converted)
 }
