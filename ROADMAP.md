@@ -35,7 +35,7 @@
 
 - [x] Add an offscreen native Rust `wgpu` baseline that consumes `three-d-core` mesh data and submits an indexed draw without moving GPU types into the core crate.
 - [x] Add a Three.js ↔ `wgpu` teaching comparison for vertex/index buffers and draw calls.
-- [ ] Add deterministic parity fixtures for mesh packing and matrix conventions across renderer adapters.
+- [x] Add deterministic parity fixtures for mesh packing and matrix conventions across renderer adapters.
 - [ ] Compare uniforms and camera matrices across APIs using the existing renderer-independent math boundary.
 - [ ] Add browser WebGPU only where the comparison itself teaches something.
 
