@@ -1,3 +1,4 @@
+import { RendererComparisonTeaser } from "@/components/renderer-comparison-teaser";
 import { SkeletalAnimationTeaser } from "@/components/skeletal-animation-teaser";
 import { ThreeLab } from "@/components/three-lab";
 
@@ -12,6 +13,7 @@ export default function Home() {
           exposes the underlying data, and connects the Three.js view to the renderer-independent Rust model.
         </p>
       </header>
+      <RendererComparisonTeaser />
       <SkeletalAnimationTeaser />
       <ThreeLab />
     </main>
