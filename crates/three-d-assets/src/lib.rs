@@ -122,10 +122,7 @@ pub struct AssetMesh {
 }
 
 impl AssetMesh {
-    pub fn new(
-        name: Option<String>,
-        primitives: Vec<MeshPrimitive>,
-    ) -> Result<Self, AssetError> {
+    pub fn new(name: Option<String>, primitives: Vec<MeshPrimitive>) -> Result<Self, AssetError> {
         if primitives.is_empty() {
             return Err(AssetError::EmptyAssetMesh);
         }
@@ -193,16 +190,17 @@ pub enum AssetError {
 impl fmt::Display for AssetError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InvalidBaseColorFactor => {
-                formatter.write_str("base color factor components must be finite values from 0 to 1")
-            }
+            Self::InvalidBaseColorFactor => formatter
+                .write_str("base color factor components must be finite values from 0 to 1"),
             Self::InvalidMetallicFactor => {
                 formatter.write_str("metallic factor must be a finite value from 0 to 1")
             }
             Self::InvalidRoughnessFactor => {
                 formatter.write_str("roughness factor must be a finite value from 0 to 1")
             }
-            Self::EmptyAssetMesh => formatter.write_str("an asset mesh must contain at least one primitive"),
+            Self::EmptyAssetMesh => {
+                formatter.write_str("an asset mesh must contain at least one primitive")
+            }
             Self::MaterialIndexOutOfBounds {
                 mesh_index,
                 primitive_index,
@@ -277,7 +275,10 @@ mod tests {
 
     #[test]
     fn asset_mesh_rejects_empty_primitive_list() {
-        assert_eq!(AssetMesh::new(None, vec![]), Err(AssetError::EmptyAssetMesh));
+        assert_eq!(
+            AssetMesh::new(None, vec![]),
+            Err(AssetError::EmptyAssetMesh)
+        );
     }
 
     #[test]
