@@ -14,6 +14,14 @@ The crate models:
 
 The geometry inside every primitive remains owned by `three-d-core`; `three-d-assets` composes that geometry into an asset rather than duplicating mesh validation.
 
+## Format adapter boundary
+
+`three-d-formats` is the downstream decoding layer. It uses dedicated OBJ and glTF parsers, normalizes accepted geometry into `three-d-core::Mesh`, and terminates in `three-d-assets::Asset`.
+
+The adapter is deliberately loss-aware. It rejects source semantics that cannot currently be represented faithfully rather than silently deleting them. The current glTF path accepts triangle primitives with positions plus optional normals, UV0, and color0, embedded/GLB buffer data, and factor-only metallic-roughness materials. Tangents, extra attribute sets, skinning attributes, morph targets, textures, emissive/alpha material behavior, and external buffer URIs remain explicit unsupported boundaries. The current in-memory OBJ path triangulates and single-indexes geometry, but rejects MTL-backed material references until an explicit MTL-to-material policy exists.
+
+This separation means support can grow format-by-format without importing parser vocabulary into the semantic crates.
+
 ## Deliberately downstream
 
 Format adapters own details that should not leak into the durable asset model:
@@ -23,7 +31,7 @@ Format adapters own details that should not leak into the durable asset model:
 - byte-order, component-type, stride, sparse-accessor, and image decoding;
 - Three.js objects, GPU buffers, shader materials, and renderer-specific resource lifetime.
 
-A glTF or OBJ adapter should validate and decode its source, construct `three-d-core::Mesh` values, then build `three-d-assets::Asset` values. The next model-pipeline slice can therefore add file loaders without moving file-format vocabulary into the semantic core.
+A format adapter validates and decodes its source, constructs `three-d-core::Mesh` values, then builds `three-d-assets::Asset` values. Renderer adapters consume that result rather than reopening the source format.
 
 ## Teaching surface
 
