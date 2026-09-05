@@ -21,9 +21,10 @@ The fixture is test evidence, not a new domain owner. `three-d-core` still owns 
 - `three-d-camera` must produce the canonical view matrix and WebGPU `0..1` depth projection matrix.
 - Three.js must produce the same view matrix and, when explicitly asked for its WebGPU coordinate system, the same projection matrix.
 - the native `wgpu` example must preserve the position and index order supplied by `three-d-core` and upload the renderer-independent view-projection matrix as a uniform.
+- the raw browser WebGPU experiment must pack the existing TypeScript mesh without reordering it; it owns only browser GPU setup and draw submission.
 
-Together these checks make the renderer seam explicit: geometry, transforms, and camera semantics agree before either adapter performs API-specific upload or drawing work.
+Together these checks make the renderer seam explicit: geometry, transforms, and camera semantics agree before adapters perform API-specific upload or drawing work.
 
 ## Coordinate-system boundary
 
-The teaching site currently renders through `WebGLRenderer`, while the native example targets WebGPU. Their default projection matrices therefore have different normalized-device-coordinate depth conventions. This is not treated as a semantic mismatch: parity is checked against the WebGPU projection convention explicitly, while the browser display remains Three.js/WebGL-first.
+The main teaching site renders through `WebGLRenderer`, while the native example and raw browser experiment target WebGPU. Their default projection/depth conventions are therefore not assumed to be interchangeable. Camera parity is checked against the WebGPU projection convention explicitly, while the ordinary browser curriculum remains Three.js/WebGL-first.
