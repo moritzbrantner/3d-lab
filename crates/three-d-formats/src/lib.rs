@@ -179,11 +179,12 @@ pub fn load_gltf(bytes: &[u8]) -> Result<Asset, FormatError> {
 pub fn load_obj(bytes: &[u8]) -> Result<Asset, FormatError> {
     let mut reader = Cursor::new(bytes);
     let options = tobj::LoadOptions {
-        triangulate: true,
+        merge_identical_points: false,
+        reorder_data: false,
         single_index: true,
+        triangulate: true,
         ignore_points: true,
         ignore_lines: true,
-        ..Default::default()
     };
     let (models, materials) = tobj::load_obj_buf(&mut reader, &options, |_| {
         Ok((Vec::new(), Default::default()))
@@ -383,28 +384,36 @@ fn convert_obj_model(model_index: usize, model: tobj::Model) -> Result<AssetMesh
 
     let vertices = source
         .positions
-        .chunks_exact(3)
-        .map(|value| Vec3::new(value[0] as f32, value[1] as f32, value[2] as f32))
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .map(|&[x, y, z]| Vec3::new(x, y, z))
         .collect();
     let normals = (!source.normals.is_empty()).then(|| {
         source
             .normals
-            .chunks_exact(3)
-            .map(|value| Vec3::new(value[0] as f32, value[1] as f32, value[2] as f32))
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .map(|&[x, y, z]| Vec3::new(x, y, z))
             .collect()
     });
     let uvs = (!source.texcoords.is_empty()).then(|| {
         source
             .texcoords
-            .chunks_exact(2)
-            .map(|value| Vec2::new(value[0] as f32, value[1] as f32))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|&[u, v]| Vec2::new(u, v))
             .collect()
     });
     let colors = (!source.vertex_color.is_empty()).then(|| {
         source
             .vertex_color
-            .chunks_exact(3)
-            .map(|value| Color3::new(value[0] as f32, value[1] as f32, value[2] as f32))
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .map(|&[r, g, b]| Color3::new(r, g, b))
             .collect()
     });
     let mesh = Mesh::with_attributes(
