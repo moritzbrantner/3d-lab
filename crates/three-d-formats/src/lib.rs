@@ -157,7 +157,8 @@ impl From<AssetError> for FormatError {
 }
 
 pub fn load_gltf(bytes: &[u8]) -> Result<Asset, FormatError> {
-    let gltf = gltf::Gltf::from_slice(bytes).map_err(|error| FormatError::InvalidGltf(error.to_string()))?;
+    let gltf = gltf::Gltf::from_slice(bytes)
+        .map_err(|error| FormatError::InvalidGltf(error.to_string()))?;
     let buffers = load_gltf_buffers(&gltf)?;
     let materials = gltf
         .materials()
@@ -291,7 +292,10 @@ fn convert_gltf_primitive(
     }
     for (semantic, _) in primitive.attributes() {
         match semantic {
-            Semantic::Positions | Semantic::Normals | Semantic::Colors(0) | Semantic::TexCoords(0) => {}
+            Semantic::Positions
+            | Semantic::Normals
+            | Semantic::Colors(0)
+            | Semantic::TexCoords(0) => {}
             other => {
                 return Err(FormatError::UnsupportedVertexAttribute {
                     mesh_index,
@@ -314,22 +318,20 @@ fn convert_gltf_primitive(
     let indices = if let Some(indices) = reader.read_indices() {
         indices.into_u32().collect()
     } else {
-        let vertex_count = u32::try_from(vertices.len()).map_err(|_| FormatError::TooManyVertices {
-            mesh_index,
-            primitive_index,
-            vertex_count: vertices.len(),
-        })?;
+        let vertex_count =
+            u32::try_from(vertices.len()).map_err(|_| FormatError::TooManyVertices {
+                mesh_index,
+                primitive_index,
+                vertex_count: vertices.len(),
+            })?;
         (0..vertex_count).collect()
     };
     let normals = reader
         .read_normals()
         .map(|values| values.map(|[x, y, z]| Vec3::new(x, y, z)).collect());
-    let uvs = reader.read_tex_coords(0).map(|values| {
-        values
-            .into_f32()
-            .map(|[u, v]| Vec2::new(u, v))
-            .collect()
-    });
+    let uvs = reader
+        .read_tex_coords(0)
+        .map(|values| values.into_f32().map(|[u, v]| Vec2::new(u, v)).collect());
     let colors = reader.read_colors(0).map(|values| {
         values
             .into_rgb_f32()
@@ -475,7 +477,10 @@ f 1//1 2//1 3//1
 
         assert_eq!(obj_mesh.vertices(), gltf_mesh.vertices());
         assert_eq!(obj_mesh.indices(), gltf_mesh.indices());
-        assert_eq!(obj_mesh.attributes().normals, gltf_mesh.attributes().normals);
+        assert_eq!(
+            obj_mesh.attributes().normals,
+            gltf_mesh.attributes().normals
+        );
         assert_eq!(gltf.materials()[0].name(), Some("Blue PBR"));
     }
 
