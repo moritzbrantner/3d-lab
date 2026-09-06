@@ -12,6 +12,7 @@ import {
   type EditorNode,
   type EditorScene,
 } from "@/lib/scene-editor";
+import { shouldSelectVertexHit } from "@/lib/scene-editor-picking";
 import type { Vec3 } from "@/lib/mesh";
 import styles from "./scene-editor-lab.module.css";
 
@@ -214,10 +215,16 @@ export function SceneEditorLab() {
       pointer.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1;
       raycaster.setFromCamera(pointer, camera);
 
+      const meshes = [...objects.values()].filter((object): object is THREE.Mesh => object instanceof THREE.Mesh);
+      const meshHit = raycaster.intersectObjects(meshes, false)[0];
       const runtime = runtimeRef.current;
       if (runtime?.vertexPoints) {
         const vertexHit = raycaster.intersectObject(runtime.vertexPoints, false)[0];
-        if (vertexHit && vertexHit.index !== undefined) {
+        if (
+          vertexHit &&
+          vertexHit.index !== undefined &&
+          shouldSelectVertexHit(vertexHit.distance, meshHit?.distance ?? null)
+        ) {
           const nodeId = runtime.vertexPoints.userData.nodeId as string;
           setSelectedNodeId(nodeId);
           setSelectedVertexIndex(vertexHit.index);
@@ -225,8 +232,6 @@ export function SceneEditorLab() {
         }
       }
 
-      const meshes = [...objects.values()].filter((object): object is THREE.Mesh => object instanceof THREE.Mesh);
-      const meshHit = raycaster.intersectObjects(meshes, false)[0];
       if (meshHit) {
         setSelectedNodeId(meshHit.object.userData.nodeId as string);
         setSelectedVertexIndex(null);
