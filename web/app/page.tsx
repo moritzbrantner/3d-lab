@@ -1,3 +1,4 @@
+import { MaterialTextureTeaser } from "@/components/material-texture-teaser";
 import { ModelPipelineTeaser } from "@/components/model-pipeline-teaser";
 import { NormalMappingTeaser } from "@/components/normal-mapping-teaser";
 import { RendererComparisonTeaser } from "@/components/renderer-comparison-teaser";
@@ -17,6 +18,7 @@ export default function Home() {
         </p>
       </header>
       <SceneEditorTeaser />
+      <MaterialTextureTeaser />
       <NormalMappingTeaser />
       <ModelPipelineTeaser />
       <RendererComparisonTeaser />
