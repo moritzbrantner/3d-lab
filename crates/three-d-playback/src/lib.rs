@@ -20,6 +20,7 @@ pub enum PlaybackError {
     InvalidDelta,
     InvalidSeekTime,
     InvalidBlendFactor,
+    InvalidSampleTime,
     PoseLengthMismatch { base: usize, output: usize },
     SourceClip(ClipError),
     TargetClip(ClipError),
@@ -38,6 +39,9 @@ impl fmt::Display for PlaybackError {
             Self::InvalidSeekTime => formatter.write_str("seek time must be finite"),
             Self::InvalidBlendFactor => formatter
                 .write_str("blend factor must be finite and within the inclusive range 0..=1"),
+            Self::InvalidSampleTime => {
+                formatter.write_str("cross-fade sample times must be finite")
+            }
             Self::PoseLengthMismatch { base, output } => write!(
                 formatter,
                 "base pose contains {base} nodes but output pose contains {output} nodes"
@@ -141,6 +145,9 @@ pub fn sample_cross_fade(
     base_pose: &[Transform],
     output_pose: &mut [Transform],
 ) -> Result<(), PlaybackError> {
+    if !source_time.is_finite() || !target_time.is_finite() {
+        return Err(PlaybackError::InvalidSampleTime);
+    }
     if !factor.is_finite() || !(0.0..=1.0).contains(&factor) {
         return Err(PlaybackError::InvalidBlendFactor);
     }
@@ -243,6 +250,30 @@ mod tests {
 
         sample_cross_fade(&source, 1.0, &target, 1.0, 0.25, &base, &mut output).unwrap();
         assert!((output[0].translation.x + 1.0).abs() < 1.0e-6);
+    }
+
+    #[test]
+    fn cross_fade_rejects_non_finite_sample_times() {
+        let clip = translation_clip("move", Vec3::new(1.0, 0.0, 0.0));
+        let base = [Transform::IDENTITY];
+        let mut output = [Transform::IDENTITY];
+
+        assert_eq!(
+            sample_cross_fade(&clip, f32::NAN, &clip, 0.0, 0.5, &base, &mut output),
+            Err(PlaybackError::InvalidSampleTime)
+        );
+        assert_eq!(
+            sample_cross_fade(
+                &clip,
+                0.0,
+                &clip,
+                f32::INFINITY,
+                0.5,
+                &base,
+                &mut output,
+            ),
+            Err(PlaybackError::InvalidSampleTime)
+        );
     }
 
     #[test]
