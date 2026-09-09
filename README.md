@@ -70,7 +70,7 @@ cargo run -p three-d-wgpu-example
 cd web
 bun install
 bun run typecheck
-bun test
+bun run test
 bun run build
 ```
 
