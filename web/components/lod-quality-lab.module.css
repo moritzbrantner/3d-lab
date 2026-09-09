@@ -1,0 +1,265 @@
+.lab {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--panel);
+}
+
+.viewportPanel,
+.controlPanel {
+  min-width: 0;
+  padding: 28px;
+}
+
+.viewportPanel {
+  border-right: 1px solid var(--border);
+}
+
+.headingRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: end;
+  margin-bottom: 18px;
+}
+
+.headingRow h2,
+.controlPanel h2 {
+  margin: 0;
+  font-size: clamp(1.55rem, 3vw, 2.45rem);
+  letter-spacing: -0.04em;
+}
+
+.headingRow > p {
+  max-width: 330px;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+  text-align: right;
+}
+
+.comparisonLabels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font: 700 0.78rem ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-align: center;
+}
+
+.canvas {
+  display: block;
+  width: 100%;
+  height: 520px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #0c111a;
+  touch-action: none;
+}
+
+.status {
+  margin: 14px 0 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.error {
+  color: #ffc0c0;
+}
+
+.controlPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.controlGroup {
+  display: grid;
+  gap: 10px;
+}
+
+.controlGroup > label,
+.rangeLabel {
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.rangeLabel span {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.rangeLabel output {
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.rangeLabel input {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.toggle {
+  display: flex !important;
+  grid-template-columns: none !important;
+  min-height: 42px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel-2);
+}
+
+.toggle input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
+.levelButtons {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.levelButtons button {
+  min-height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.levelButtons button:hover {
+  color: var(--text);
+}
+
+.levelButtons .activeLevel {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.readout {
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
+.readout p {
+  margin: 0 0 10px;
+  color: var(--muted);
+  line-height: 1.62;
+}
+
+.readout strong,
+.readout code {
+  color: var(--text);
+}
+
+.boundary {
+  margin-top: auto;
+  padding: 16px;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+}
+
+.boundary p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  line-height: 1.58;
+}
+
+.teaser {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 28px;
+  align-items: end;
+  margin: 0 0 20px;
+  padding: 24px 26px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel);
+}
+
+.teaser h2 {
+  max-width: 760px;
+  margin: 0;
+  font-size: clamp(1.4rem, 2.5vw, 2rem);
+  letter-spacing: -0.03em;
+}
+
+.teaserCopy {
+  max-width: 760px;
+  margin: 12px 0 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.teaserLink,
+.backLink {
+  color: var(--text);
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.teaserLink:hover,
+.backLink:hover {
+  text-decoration: underline;
+}
+
+.pageHeader {
+  max-width: 940px;
+  margin: 24px 0 36px;
+}
+
+.pageHeader h1 {
+  margin-top: 8px;
+}
+
+@media (max-width: 1000px) {
+  .lab {
+    grid-template-columns: 1fr;
+  }
+
+  .viewportPanel {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+}
+
+@media (max-width: 720px) {
+  .viewportPanel,
+  .controlPanel {
+    padding: 18px;
+  }
+
+  .headingRow,
+  .teaser {
+    display: grid;
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .headingRow > p {
+    max-width: none;
+    text-align: left;
+  }
+
+  .canvas {
+    height: 410px;
+  }
+
+  .levelButtons {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
