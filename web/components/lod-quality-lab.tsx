@@ -7,6 +7,9 @@ import { allLodLevels, lodFixtureUrl, type LodFixture, type LodFixtureLevel } fr
 import { projectedErrorPixels, selectLodLevel } from "@/lib/lod-selection";
 import styles from "./lod-quality-lab.module.css";
 
+const CAMERA_DIRECTION = new THREE.Vector3(0, 0.34, 0.94).normalize();
+const COMPARISON_OFFSET = 1.3;
+
 type Runtime = {
   renderer: THREE.WebGLRenderer;
   camera: THREE.PerspectiveCamera;
@@ -29,7 +32,7 @@ function createGeometry(fixture: LodFixture, level: LodFixtureLevel) {
 }
 
 function cameraPosition(distance: number) {
-  return new THREE.Vector3(0, distance * 0.34, distance * 0.94);
+  return CAMERA_DIRECTION.clone().multiplyScalar(distance);
 }
 
 export function LodQualityLab() {
@@ -138,10 +141,16 @@ export function LodQualityLab() {
     });
 
     const sourceMesh = new THREE.Mesh(geometries[0], sourceMaterial);
-    sourceMesh.position.x = -1.3;
     const selectedMesh = new THREE.Mesh(geometries[currentLevel] ?? geometries[0], selectedMaterial);
-    selectedMesh.position.x = 1.3;
     scene.add(sourceMesh, selectedMesh);
+
+    const screenRight = new THREE.Vector3();
+    const alignComparisonMeshes = () => {
+      screenRight.set(1, 0, 0).applyQuaternion(camera.quaternion).normalize();
+      sourceMesh.position.copy(screenRight).multiplyScalar(-COMPARISON_OFFSET);
+      selectedMesh.position.copy(screenRight).multiplyScalar(COMPARISON_OFFSET);
+    };
+    alignComparisonMeshes();
 
     const key = new THREE.DirectionalLight(0xffffff, 3.2);
     key.position.set(3.5, 5, 4);
@@ -166,6 +175,7 @@ export function LodQualityLab() {
     let frameId = 0;
     const render = () => {
       controls.update();
+      alignComparisonMeshes();
       renderer.render(scene, camera);
       frameId = requestAnimationFrame(render);
     };
