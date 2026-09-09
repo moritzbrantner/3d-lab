@@ -271,11 +271,11 @@ impl ScreenSpaceLodPolicy {
 
         let selected_level = if ideal_level > current_level {
             let coarsen_threshold = self.target_pixel_error * (1.0 - self.hysteresis_fraction);
-            if projected_errors[ideal_level] <= coarsen_threshold {
-                ideal_level
-            } else {
-                current_level
-            }
+            projected_errors
+                .iter()
+                .rposition(|projected_error| *projected_error <= coarsen_threshold)
+                .unwrap_or(current_level)
+                .max(current_level)
         } else if ideal_level < current_level {
             let refine_threshold = self.target_pixel_error * (1.0 + self.hysteresis_fraction);
             if projected_errors[current_level] > refine_threshold {
@@ -580,6 +580,25 @@ mod tests {
         );
         assert_eq!(policy.select_level(&errors, 1, view(9.0)).unwrap().level, 1);
         assert_eq!(policy.select_level(&errors, 1, view(7.0)).unwrap().level, 0);
+    }
+
+    #[test]
+    fn coarsening_uses_the_best_intermediate_level_inside_the_hysteresis_margin() {
+        let policy = ScreenSpaceLodPolicy::new(2.0, 0.2);
+        let selection = policy
+            .select_level(
+                &[0.0, 1.0, 1.8],
+                0,
+                LodView {
+                    mesh_extent: 1.0,
+                    distance: 1.0,
+                    viewport_height_pixels: 2.0,
+                    vertical_fov_radians: core::f32::consts::FRAC_PI_2,
+                },
+            )
+            .unwrap();
+        assert_eq!(selection.level, 1);
+        assert!((selection.projected_error_pixels - 1.0).abs() < 1.0e-6);
     }
 
     #[test]
