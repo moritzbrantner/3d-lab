@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "web/**"
+      - "crates/three-d-core/**"
       - "crates/three-d-animation/**"
       - "crates/three-d-playback/**"
       - "Cargo.toml"
@@ -13,6 +14,7 @@ on:
   pull_request:
     paths:
       - "web/**"
+      - "crates/three-d-core/**"
       - "crates/three-d-animation/**"
       - "crates/three-d-playback/**"
       - "Cargo.toml"
