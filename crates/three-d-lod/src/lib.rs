@@ -35,6 +35,7 @@ impl SimplificationSettings {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SimplificationError {
     EmptyMesh,
+    SourceCannotBeReduced,
     ZeroTarget,
     TargetExceedsSource {
         target_triangle_count: usize,
@@ -52,7 +53,12 @@ pub enum SimplificationError {
 impl fmt::Display for SimplificationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::EmptyMesh => formatter.write_str("mesh simplification requires at least one triangle"),
+            Self::EmptyMesh => {
+                formatter.write_str("mesh simplification requires at least one triangle")
+            }
+            Self::SourceCannotBeReduced => {
+                formatter.write_str("LOD generation requires a source mesh with at least two triangles")
+            }
             Self::ZeroTarget => formatter.write_str("target triangle count must be positive"),
             Self::TargetExceedsSource {
                 target_triangle_count,
@@ -61,9 +67,8 @@ impl fmt::Display for SimplificationError {
                 formatter,
                 "target triangle count {target_triangle_count} exceeds source triangle count {source_triangle_count}"
             ),
-            Self::InvalidTargetError => {
-                formatter.write_str("target error must be finite and within the inclusive range 0..=1")
-            }
+            Self::InvalidTargetError => formatter
+                .write_str("target error must be finite and within the inclusive range 0..=1"),
             Self::InvalidLodRatio { level } => write!(
                 formatter,
                 "LOD level {level} must use a finite triangle ratio strictly between 0 and 1"
@@ -168,12 +173,9 @@ pub fn simplify_mesh(
         options,
         Some(&mut relative_error),
     );
-    let simplified = Mesh::with_attributes(
-        mesh.vertices().to_vec(),
-        indices,
-        mesh.attributes().clone(),
-    )
-    .expect("meshopt returns indices into the validated source vertex buffer");
+    let simplified =
+        Mesh::with_attributes(mesh.vertices().to_vec(), indices, mesh.attributes().clone())
+            .expect("meshopt returns indices into the validated source vertex buffer");
     let result_triangle_count = simplified.triangle_count();
 
     Ok(SimplificationResult {
@@ -186,10 +188,16 @@ pub fn simplify_mesh(
     })
 }
 
-pub fn build_lod_chain(mesh: &Mesh, specs: &[LodSpec]) -> Result<Vec<LodLevel>, SimplificationError> {
+pub fn build_lod_chain(
+    mesh: &Mesh,
+    specs: &[LodSpec],
+) -> Result<Vec<LodLevel>, SimplificationError> {
     let source_triangle_count = mesh.triangle_count();
     if source_triangle_count == 0 {
         return Err(SimplificationError::EmptyMesh);
+    }
+    if source_triangle_count < 2 && !specs.is_empty() {
+        return Err(SimplificationError::SourceCannotBeReduced);
     }
 
     let mut previous_target = source_triangle_count;
@@ -306,22 +314,39 @@ mod tests {
             .map(|level| level.simplification.requested_triangle_count)
             .collect::<Vec<_>>();
         assert!(requested.windows(2).all(|pair| pair[0] > pair[1]));
-        assert!(levels
-            .iter()
-            .all(|level| level.simplification.source_triangle_count == mesh.triangle_count()));
+        assert!(
+            levels
+                .iter()
+                .all(|level| level.simplification.source_triangle_count == mesh.triangle_count())
+        );
     }
 
     #[test]
     fn lod_chain_rejects_duplicate_effective_budgets() {
         let mesh = Mesh::unit_cube();
-        let result = build_lod_chain(
-            &mesh,
-            &[LodSpec::new(0.51, 1.0), LodSpec::new(0.50, 1.0)],
-        );
+        let result = build_lod_chain(&mesh, &[LodSpec::new(0.51, 1.0), LodSpec::new(0.50, 1.0)]);
 
         assert_eq!(
             result,
             Err(SimplificationError::LodRatiosNotStrictlyDecreasing { level: 1 })
+        );
+    }
+
+    #[test]
+    fn lod_chain_rejects_single_triangle_sources() {
+        let mesh = Mesh::new(
+            vec![
+                Vec3::new(0.0, 0.0, 0.0),
+                Vec3::new(1.0, 0.0, 0.0),
+                Vec3::new(0.0, 1.0, 0.0),
+            ],
+            vec![0, 1, 2],
+        )
+        .unwrap();
+
+        assert_eq!(
+            build_lod_chain(&mesh, &[LodSpec::new(0.5, 1.0)]),
+            Err(SimplificationError::SourceCannotBeReduced)
         );
     }
 }
