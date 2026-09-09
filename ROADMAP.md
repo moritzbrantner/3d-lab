@@ -48,7 +48,10 @@
 - [x] Preserve glTF `TANGENT` attributes and teach tangent-space normal-map shading interactively.
 - [x] Preserve encoded image/texture data and glTF normal-texture bindings through `three-d-assets`.
 - [x] Add deterministic source-based mesh simplification and LOD-chain generation with explicit error budgets.
-- [ ] Add an interactive LOD comparison with actual triangle counts, simplification error, silhouette/wireframe inspection, and switching hysteresis.
+- [x] Add renderer-independent screen-space LOD selection with hysteresis and browser parity evidence.
+- [x] Add an interactive LOD comparison using Rust-generated topology, actual triangle counts, simplification error, wireframe/silhouette inspection, and stable switching.
+- [ ] Add appearance-aware simplification with explicit normal/UV/color error weights.
+- [ ] Add compact per-LOD vertex buffers plus cache/fetch optimization as reproducible asset-processing operations.
 - [ ] Add deformation-aware simplification only after mesh vertices have an explicit format-neutral association with skin influences.
 
 ### Slice 6 — authoring and inspection
