@@ -20,10 +20,7 @@ pub enum PlaybackError {
     InvalidDelta,
     InvalidSeekTime,
     InvalidBlendFactor,
-    PoseLengthMismatch {
-        base: usize,
-        output: usize,
-    },
+    PoseLengthMismatch { base: usize, output: usize },
     SourceClip(ClipError),
     TargetClip(ClipError),
 }
@@ -39,9 +36,8 @@ impl fmt::Display for PlaybackError {
                 formatter.write_str("elapsed playback time must be finite and non-negative")
             }
             Self::InvalidSeekTime => formatter.write_str("seek time must be finite"),
-            Self::InvalidBlendFactor => {
-                formatter.write_str("blend factor must be finite and within the inclusive range 0..=1")
-            }
+            Self::InvalidBlendFactor => formatter
+                .write_str("blend factor must be finite and within the inclusive range 0..=1"),
             Self::PoseLengthMismatch { base, output } => write!(
                 formatter,
                 "base pose contains {base} nodes but output pose contains {output} nodes"
@@ -164,11 +160,7 @@ pub fn sample_cross_fade(
         .sample(target_time, &mut target_pose)
         .map_err(PlaybackError::TargetClip)?;
 
-    for ((output, source), target) in output_pose
-        .iter_mut()
-        .zip(source_pose)
-        .zip(target_pose)
-    {
+    for ((output, source), target) in output_pose.iter_mut().zip(source_pose).zip(target_pose) {
         *output = blend_transform(source, target, factor)?;
     }
     Ok(())
@@ -196,11 +188,7 @@ mod tests {
             Interpolation::Linear,
         )
         .unwrap();
-        AnimationClip::new(
-            name,
-            vec![AnimationTrack::Translation { node: 0, track }],
-        )
-        .unwrap()
+        AnimationClip::new(name, vec![AnimationTrack::Translation { node: 0, track }]).unwrap()
     }
 
     #[test]
@@ -241,9 +229,7 @@ mod tests {
         .unwrap();
 
         assert!((blended.rotation.length() - 1.0).abs() < 1.0e-5);
-        let transformed = blended
-            .matrix()
-            .transform_point(Vec3::new(1.0, 0.0, 0.0));
+        let transformed = blended.matrix().transform_point(Vec3::new(1.0, 0.0, 0.0));
         assert!(transformed.x.abs() < 1.0e-4);
         assert!((transformed.z.abs() - 1.0).abs() < 1.0e-4);
     }
@@ -263,7 +249,10 @@ mod tests {
     fn playback_rejects_non_finite_runtime_inputs() {
         let mut clock = PlaybackClock::new(1.0, PlaybackMode::Loop).unwrap();
         assert_eq!(clock.advance(f32::NAN), Err(PlaybackError::InvalidDelta));
-        assert_eq!(clock.set_speed(f32::INFINITY), Err(PlaybackError::InvalidSpeed));
+        assert_eq!(
+            clock.set_speed(f32::INFINITY),
+            Err(PlaybackError::InvalidSpeed)
+        );
         assert_eq!(clock.seek(f32::NAN), Err(PlaybackError::InvalidSeekTime));
     }
 }
