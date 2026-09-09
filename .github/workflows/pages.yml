@@ -5,10 +5,20 @@ on:
     branches: [main]
     paths:
       - "web/**"
+      - "crates/three-d-core/**"
+      - "crates/three-d-animation/**"
+      - "crates/three-d-playback/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
       - ".github/workflows/pages.yml"
   pull_request:
     paths:
       - "web/**"
+      - "crates/three-d-core/**"
+      - "crates/three-d-animation/**"
+      - "crates/three-d-playback/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
       - ".github/workflows/pages.yml"
 
 permissions:
@@ -28,10 +38,12 @@ jobs:
         working-directory: web
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0
       - run: bun install
+      - run: bun run generate:playback
       - run: bun run typecheck
       - run: bun test
       - run: bun run build
