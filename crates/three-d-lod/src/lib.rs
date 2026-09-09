@@ -410,8 +410,7 @@ fn validate_selection_inputs(
     if !policy.target_pixel_error.is_finite() || policy.target_pixel_error <= 0.0 {
         return Err(SelectionError::InvalidTargetPixelError);
     }
-    if !policy.hysteresis_fraction.is_finite()
-        || !(0.0..1.0).contains(&policy.hysteresis_fraction)
+    if !policy.hysteresis_fraction.is_finite() || !(0.0..1.0).contains(&policy.hysteresis_fraction)
     {
         return Err(SelectionError::InvalidHysteresisFraction);
     }
@@ -571,16 +570,22 @@ mod tests {
         let policy = ScreenSpaceLodPolicy::new(2.0, 0.2);
         let errors = [0.0, 0.01, 0.03];
 
-        assert_eq!(policy.select_level(&errors, 0, view(10.0)).unwrap().level, 0);
-        assert_eq!(policy.select_level(&errors, 0, view(12.0)).unwrap().level, 1);
+        assert_eq!(
+            policy.select_level(&errors, 0, view(10.0)).unwrap().level,
+            0
+        );
+        assert_eq!(
+            policy.select_level(&errors, 0, view(12.0)).unwrap().level,
+            1
+        );
         assert_eq!(policy.select_level(&errors, 1, view(9.0)).unwrap().level, 1);
         assert_eq!(policy.select_level(&errors, 1, view(7.0)).unwrap().level, 0);
     }
 
     #[test]
     fn selector_rejects_misordered_error_levels() {
-        let result = ScreenSpaceLodPolicy::new(2.0, 0.1)
-            .select_level(&[0.0, 0.02, 0.01], 0, view(10.0));
+        let result =
+            ScreenSpaceLodPolicy::new(2.0, 0.1).select_level(&[0.0, 0.02, 0.01], 0, view(10.0));
         assert_eq!(
             result,
             Err(SelectionError::RelativeErrorsNotNondecreasing { level: 2 })
