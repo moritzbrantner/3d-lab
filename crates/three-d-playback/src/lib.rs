@@ -377,7 +377,10 @@ mod tests {
         let mut playback = PlaybackClock::new(1.0, PlaybackMode::Loop).unwrap();
         let mut transition = TransitionClock::new(1.0, TransitionCurve::Linear).unwrap();
         assert_eq!(playback.advance(f32::NAN), Err(PlaybackError::InvalidDelta));
-        assert_eq!(transition.advance(f32::NAN), Err(PlaybackError::InvalidDelta));
+        assert_eq!(
+            transition.advance(f32::NAN),
+            Err(PlaybackError::InvalidDelta)
+        );
         assert_eq!(
             playback.set_speed(f32::INFINITY),
             Err(PlaybackError::InvalidSpeed)
