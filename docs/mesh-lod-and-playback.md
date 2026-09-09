@@ -5,7 +5,7 @@ This slice separates two performance concerns that are easy to conflate: reducin
 ## Ownership
 
 - `three-d-core` remains authoritative for mesh positions, indices, aligned vertex attributes, and topology validity.
-- `three-d-lod` derives deterministic alternate index buffers from a validated source mesh. It does not own rendering, asset formats, or mutable mesh truth.
+- `three-d-lod` derives deterministic alternate index buffers from a validated source mesh and owns renderer-independent screen-space LOD selection policy. It does not own rendering, asset formats, or mutable mesh truth.
 - `three-d-animation` remains authoritative for transforms, keyframe tracks, interpolation, clips, skeletons, skin influences, and quaternion SLERP.
 - `three-d-playback` owns only runtime clock and clip-transition policy.
 - Renderer adapters such as Three.js consume these results. They must not invent their own simplification or animation truth.
@@ -14,7 +14,9 @@ This slice separates two performance concerns that are easy to conflate: reducin
 
 A useful LOD system is not simply "delete every other triangle". A simplifier should minimize visible geometric error while reducing the index budget, preserve topological constraints where possible, and make the quality limit explicit.
 
-`three-d-lod` pins `meshopt` 0.6.2 and records `meshopt-0.6.2` in every simplification result. The simplifier receives only source positions when evaluating geometric error. Its resulting index buffer continues to reference the original vertex buffer, so existing normals, tangents, UVs, and colors remain byte-for-byte aligned with their source vertices.
+`three-d-lod` pins `meshopt` 0.6.2 and records `meshopt-0.6.2` in every simplification result. The current simplifier receives only source positions when evaluating geometric error. Its resulting index buffer continues to reference the original vertex buffer, so existing normals, tangents, UVs, and colors remain byte-for-byte aligned with their source vertices.
+
+That structural attribute preservation is not the same as appearance-aware simplification. Normals, UVs, colors, or skinning data are not yet weighted in the error metric. A later quality tier can use attribute-aware simplification once the repository has explicit semantics for which attributes matter and how strongly.
 
 A target triangle count is a budget, not a promise. Topology and the requested error limit can make the simplifier stop before reaching that budget. Callers must therefore inspect both the requested and resulting triangle counts and the reported relative error.
 
@@ -24,11 +26,34 @@ A target triangle count is a budget, not a promise. Topology and the requested e
 
 Each LOD is generated from the original source mesh, never from the previous simplified LOD. Cascading simplification compounds approximation error and makes results depend on the chosen intermediate levels.
 
-LOD specifications use strictly decreasing source-triangle ratios. Runtime selection is intentionally not part of this first slice. A later renderer-facing experiment should select levels from projected/screen-space error and use hysteresis (or an explicit transition technique) so small camera movements do not rapidly toggle levels or cause obvious popping. Distance-only magic constants should not become model truth.
+LOD specifications use strictly decreasing source-triangle ratios. Each level keeps its actual resulting triangle count and relative error because the requested budget alone is not acceptance evidence.
+
+### Screen-space selection
+
+`ScreenSpaceLodPolicy` converts a level's relative geometric error into projected pixel error using the source mesh extent, camera distance, viewport height, and vertical field of view:
+
+`projected_error_pixels = relative_error × mesh_extent × projection_scale / distance`
+
+where `projection_scale = viewport_height / (2 × tan(vertical_fov / 2))`.
+
+Levels are ordered from finest to coarsest with nondecreasing relative error. The selector chooses the coarsest level inside the configured pixel-error budget instead of relying on model-specific distance constants.
+
+Hysteresis creates separate transition margins:
+
+- moving to a coarser level requires the candidate to fit inside `target × (1 - hysteresis)`;
+- moving back to a finer level is delayed until the current level exceeds `target × (1 + hysteresis)`.
+
+This prevents camera jitter near one threshold from alternating levels every frame. It does not itself hide a visible topology pop when a genuine level transition occurs; optional geometric morphing or renderer-level dithered transitions remain separate presentation techniques.
+
+### Browser parity
+
+The browser does not simplify meshes. `three-d-lod/examples/export_lod_fixture.rs` deterministically builds a teaching surface, runs the Rust simplifier, and exports the shared source vertex buffer, every generated index buffer, triangle counts, relative errors, and a reference screen-space transition sequence.
+
+Web development, tests, CI, and Pages builds regenerate that fixture before use. The TypeScript selection mirror is tested against the Rust-generated transition samples. Three.js owns only visualization and interactive controls.
 
 ### Static versus skinned meshes
 
-The current `three-d-core::Mesh` does not contain per-vertex joint indices or skin weights; those semantics currently live separately in `three-d-animation`. Therefore this first simplification slice is deliberately a static-mesh contract.
+The current `three-d-core::Mesh` does not contain per-vertex joint indices or skin weights; those semantics currently live separately in `three-d-animation`. Therefore this simplification contract remains deliberately static-mesh-only.
 
 Skinned-mesh simplification must not silently discard or misalign skinning data. Before enabling it, the repository needs an explicit format-neutral association between mesh vertices and skin influences, plus a simplification policy that accounts for deformation-relevant attributes. That work should be validated on animated poses, not only on the bind pose.
 
@@ -50,8 +75,11 @@ The playback layer does not change keyframe interpolation inside a clip. Easing 
 
 Mesh LOD primarily reduces vertex processing, rasterization pressure, bandwidth, and asset/runtime memory when followed by an appropriate compacting/packing pipeline. Animation playback primarily affects CPU pose evaluation and, for skinned meshes, joint/vertex deformation work. They should be measured separately.
 
-A production asset pipeline can additionally optimize vertex-cache order, overdraw, vertex-fetch order, quantization, and compression after the final topology for each asset variant is known. Those transformations belong in reproducible asset processing, not in the renderer's frame loop.
+The current LODs intentionally share the source vertex buffer because that makes attribute preservation explicit and keeps the first contract narrow. A later asset-processing stage can compact each LOD's used vertices and then optimize vertex-cache order, overdraw, vertex-fetch order, quantization, and compression. Those transformations belong in reproducible asset processing, not in the renderer's frame loop.
 
 ## Next experiments
 
-The next visual experiment should render the same source model beside several generated LODs and expose requested triangles, actual triangles, simplification error, wireframe/silhouette comparison, and an automatic screen-space selector with hysteresis. A separate animation experiment should visualize frame-rate-independent sampling and clip cross-fading under deliberately uneven render intervals.
+- Add appearance-aware simplification that can weight normals, UVs, and colors without changing the source ownership boundary.
+- Add compact per-LOD vertex/index asset variants plus cache/fetch optimization and reproducibility receipts.
+- Add deformation-aware simplification only after vertex-to-skin-influence ownership is explicit.
+- Add a separate animation timing lab that visualizes uneven render intervals and clip cross-fading against the frame-rate-independent playback contract.
