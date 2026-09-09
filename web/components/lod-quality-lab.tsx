@@ -40,6 +40,7 @@ export function LodQualityLab() {
   const [distance, setDistance] = useState(8);
   const [targetPixelError, setTargetPixelError] = useState(2);
   const [hysteresisFraction, setHysteresisFraction] = useState(0.15);
+  const [viewportHeightPixels, setViewportHeightPixels] = useState(720);
   const [currentLevel, setCurrentLevel] = useState(0);
   const [autoSelect, setAutoSelect] = useState(true);
   const [wireframe, setWireframe] = useState(false);
@@ -61,6 +62,7 @@ export function LodQualityLab() {
           throw new Error("LOD fixture does not match schema version 1");
         }
         setFixture(value);
+        setViewportHeightPixels(value.selector.viewportHeightPixels);
         setCurrentLevel(0);
       })
       .catch((error: unknown) => {
@@ -80,12 +82,20 @@ export function LodQualityLab() {
         {
           meshExtent: fixture.meshExtent,
           distance,
-          viewportHeightPixels: fixture.selector.viewportHeightPixels,
+          viewportHeightPixels,
           verticalFovRadians: fixture.selector.verticalFovRadians,
         },
       ).level,
     );
-  }, [autoSelect, distance, fixture, hysteresisFraction, relativeErrors, targetPixelError]);
+  }, [
+    autoSelect,
+    distance,
+    fixture,
+    hysteresisFraction,
+    relativeErrors,
+    targetPixelError,
+    viewportHeightPixels,
+  ]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -139,10 +149,13 @@ export function LodQualityLab() {
     fill.position.set(-4, 2, 1.5);
     scene.add(key, fill, new THREE.AmbientLight(0xffffff, 0.5));
 
+    const drawingBufferSize = new THREE.Vector2();
     const resize = () => {
       const width = Math.max(canvas.clientWidth, 1);
       const height = Math.max(canvas.clientHeight, 1);
       renderer.setSize(width, height, false);
+      renderer.getDrawingBufferSize(drawingBufferSize);
+      setViewportHeightPixels(drawingBufferSize.y);
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
     };
@@ -209,7 +222,7 @@ export function LodQualityLab() {
     ? projectedErrorPixels(selectedLevel.relativeError, {
         meshExtent: fixture.meshExtent,
         distance,
-        viewportHeightPixels: fixture.selector.viewportHeightPixels,
+        viewportHeightPixels,
         verticalFovRadians: fixture.selector.verticalFovRadians,
       })
     : 0;
@@ -297,7 +310,7 @@ export function LodQualityLab() {
                 <p>The requested budget was {selectedLevel.requestedTriangleCount.toLocaleString()} triangles; topology and the error limit determine the actual result.</p>
               ) : null}
               <p>
-                Relative simplification error is <code>{selectedLevel.relativeError.toFixed(5)}</code>, which projects to about <code>{projectedError.toFixed(2)} px</code> at this distance.
+                Relative simplification error is <code>{selectedLevel.relativeError.toFixed(5)}</code>, which projects to about <code>{projectedError.toFixed(2)} px</code> at this distance and a <code>{Math.round(viewportHeightPixels)} px</code> drawing-buffer height.
               </p>
             </>
           ) : null}
