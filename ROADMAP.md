@@ -24,6 +24,7 @@
 - [x] Teach explicit translation × rotation × scale matrix composition.
 - [x] Demonstrate parent/child/grandchild transform composition.
 - [x] Add keyframes, interpolation/easing, playback, and reusable clips.
+- [x] Add frame-rate-independent playback clocks plus deterministic clip cross-fades around the existing clip semantics.
 - [x] Compare Euler interpolation with quaternion SLERP around a 90° middle-axis rotation.
 - [x] Build a three-joint skinned strip from explicit bone weights before introducing file formats.
 - [x] Load a minimal glTF 2.0 translation animation with `GLTFLoader` and `AnimationMixer`.
@@ -46,7 +47,9 @@
 - [x] Add renderer-independent tangent attributes and deterministic tangent derivation.
 - [x] Preserve glTF `TANGENT` attributes and teach tangent-space normal-map shading interactively.
 - [x] Preserve encoded image/texture data and glTF normal-texture bindings through `three-d-assets`.
-- [ ] Add level-of-detail and mesh simplification experiments.
+- [x] Add deterministic source-based mesh simplification and LOD-chain generation with explicit error budgets.
+- [ ] Add an interactive LOD comparison with actual triangle counts, simplification error, silhouette/wireframe inspection, and switching hysteresis.
+- [ ] Add deformation-aware simplification only after mesh vertices have an explicit format-neutral association with skin influences.
 
 ### Slice 6 — authoring and inspection
 

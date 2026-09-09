@@ -1,0 +1,10 @@
+[package]
+name = "three-d-playback"
+version = "0.1.0"
+edition = "2024"
+description = "Frame-rate-independent playback and animation blending for 3d-lab"
+license = "MIT"
+
+[dependencies]
+three-d-animation = { path = "../three-d-animation" }
+three-d-core = { path = "../three-d-core" }
