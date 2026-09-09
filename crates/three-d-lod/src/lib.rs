@@ -1,7 +1,8 @@
-//! Deterministic level-of-detail generation for renderer-independent meshes.
+//! Deterministic level-of-detail generation and selection for renderer-independent meshes.
 //!
 //! `three-d-core` remains the authority for mesh validity and vertex attributes.
-//! This crate only derives alternate index buffers from that source mesh.
+//! This crate derives alternate index buffers from that source mesh and owns the
+//! renderer-independent policy for deciding which level is acceptable on screen.
 
 use core::fmt;
 
@@ -228,6 +229,195 @@ pub fn build_lod_chain(
     Ok(levels)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LodView {
+    pub mesh_extent: f32,
+    pub distance: f32,
+    pub viewport_height_pixels: f32,
+    pub vertical_fov_radians: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ScreenSpaceLodPolicy {
+    pub target_pixel_error: f32,
+    pub hysteresis_fraction: f32,
+}
+
+impl ScreenSpaceLodPolicy {
+    pub const fn new(target_pixel_error: f32, hysteresis_fraction: f32) -> Self {
+        Self {
+            target_pixel_error,
+            hysteresis_fraction,
+        }
+    }
+
+    pub fn select_level(
+        self,
+        relative_errors: &[f32],
+        current_level: usize,
+        view: LodView,
+    ) -> Result<LodSelection, SelectionError> {
+        validate_selection_inputs(self, relative_errors, current_level, view)?;
+
+        let projected_errors = relative_errors
+            .iter()
+            .copied()
+            .map(|relative_error| projected_error_pixels(relative_error, view))
+            .collect::<Vec<_>>();
+        let ideal_level = projected_errors
+            .iter()
+            .rposition(|projected_error| *projected_error <= self.target_pixel_error)
+            .unwrap_or(0);
+
+        let selected_level = if ideal_level > current_level {
+            let coarsen_threshold = self.target_pixel_error * (1.0 - self.hysteresis_fraction);
+            if projected_errors[ideal_level] <= coarsen_threshold {
+                ideal_level
+            } else {
+                current_level
+            }
+        } else if ideal_level < current_level {
+            let refine_threshold = self.target_pixel_error * (1.0 + self.hysteresis_fraction);
+            if projected_errors[current_level] > refine_threshold {
+                ideal_level
+            } else {
+                current_level
+            }
+        } else {
+            current_level
+        };
+
+        Ok(LodSelection {
+            level: selected_level,
+            projected_error_pixels: projected_errors[selected_level],
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LodSelection {
+    pub level: usize,
+    pub projected_error_pixels: f32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SelectionError {
+    EmptyLevels,
+    CurrentLevelOutOfBounds {
+        current_level: usize,
+        level_count: usize,
+    },
+    InvalidRelativeError {
+        level: usize,
+    },
+    RelativeErrorsNotNondecreasing {
+        level: usize,
+    },
+    InvalidMeshExtent,
+    InvalidDistance,
+    InvalidViewportHeight,
+    InvalidVerticalFov,
+    InvalidTargetPixelError,
+    InvalidHysteresisFraction,
+}
+
+impl fmt::Display for SelectionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::EmptyLevels => formatter.write_str("LOD selection requires at least one level"),
+            Self::CurrentLevelOutOfBounds {
+                current_level,
+                level_count,
+            } => write!(
+                formatter,
+                "current LOD level {current_level} is outside {level_count} available levels"
+            ),
+            Self::InvalidRelativeError { level } => write!(
+                formatter,
+                "LOD level {level} must have a finite non-negative relative error"
+            ),
+            Self::RelativeErrorsNotNondecreasing { level } => write!(
+                formatter,
+                "LOD level {level} has less relative error than the preceding finer level"
+            ),
+            Self::InvalidMeshExtent => {
+                formatter.write_str("mesh extent must be finite and positive")
+            }
+            Self::InvalidDistance => {
+                formatter.write_str("camera distance must be finite and positive")
+            }
+            Self::InvalidViewportHeight => {
+                formatter.write_str("viewport height must be finite and positive")
+            }
+            Self::InvalidVerticalFov => formatter
+                .write_str("vertical FOV must be finite and strictly between 0 and PI radians"),
+            Self::InvalidTargetPixelError => {
+                formatter.write_str("target pixel error must be finite and positive")
+            }
+            Self::InvalidHysteresisFraction => formatter.write_str(
+                "hysteresis fraction must be finite and within the inclusive-exclusive range 0..1",
+            ),
+        }
+    }
+}
+
+impl std::error::Error for SelectionError {}
+
+pub fn projected_error_pixels(relative_error: f32, view: LodView) -> f32 {
+    let projection_scale =
+        view.viewport_height_pixels / (2.0 * (view.vertical_fov_radians * 0.5).tan());
+    relative_error * view.mesh_extent * projection_scale / view.distance
+}
+
+fn validate_selection_inputs(
+    policy: ScreenSpaceLodPolicy,
+    relative_errors: &[f32],
+    current_level: usize,
+    view: LodView,
+) -> Result<(), SelectionError> {
+    if relative_errors.is_empty() {
+        return Err(SelectionError::EmptyLevels);
+    }
+    if current_level >= relative_errors.len() {
+        return Err(SelectionError::CurrentLevelOutOfBounds {
+            current_level,
+            level_count: relative_errors.len(),
+        });
+    }
+    for (level, relative_error) in relative_errors.iter().copied().enumerate() {
+        if !relative_error.is_finite() || relative_error < 0.0 {
+            return Err(SelectionError::InvalidRelativeError { level });
+        }
+        if level > 0 && relative_error < relative_errors[level - 1] {
+            return Err(SelectionError::RelativeErrorsNotNondecreasing { level });
+        }
+    }
+    if !view.mesh_extent.is_finite() || view.mesh_extent <= 0.0 {
+        return Err(SelectionError::InvalidMeshExtent);
+    }
+    if !view.distance.is_finite() || view.distance <= 0.0 {
+        return Err(SelectionError::InvalidDistance);
+    }
+    if !view.viewport_height_pixels.is_finite() || view.viewport_height_pixels <= 0.0 {
+        return Err(SelectionError::InvalidViewportHeight);
+    }
+    if !view.vertical_fov_radians.is_finite()
+        || view.vertical_fov_radians <= 0.0
+        || view.vertical_fov_radians >= core::f32::consts::PI
+    {
+        return Err(SelectionError::InvalidVerticalFov);
+    }
+    if !policy.target_pixel_error.is_finite() || policy.target_pixel_error <= 0.0 {
+        return Err(SelectionError::InvalidTargetPixelError);
+    }
+    if !policy.hysteresis_fraction.is_finite()
+        || !(0.0..1.0).contains(&policy.hysteresis_fraction)
+    {
+        return Err(SelectionError::InvalidHysteresisFraction);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -235,6 +425,15 @@ mod tests {
 
     fn detailed_plane() -> Mesh {
         Mesh::subdivided_plane(8).expect("fixture is valid")
+    }
+
+    fn view(distance: f32) -> LodView {
+        LodView {
+            mesh_extent: 2.0,
+            distance,
+            viewport_height_pixels: 1080.0,
+            vertical_fov_radians: core::f32::consts::FRAC_PI_3,
+        }
     }
 
     #[test]
@@ -346,6 +545,45 @@ mod tests {
         assert_eq!(
             build_lod_chain(&mesh, &[LodSpec::new(0.5, 1.0)]),
             Err(SimplificationError::SourceCannotBeReduced)
+        );
+    }
+
+    #[test]
+    fn projected_error_decreases_with_camera_distance() {
+        let near = projected_error_pixels(0.01, view(5.0));
+        let far = projected_error_pixels(0.01, view(10.0));
+        assert!(near > far);
+        assert!((near - far * 2.0).abs() < 1.0e-4);
+    }
+
+    #[test]
+    fn selector_chooses_coarsest_level_inside_pixel_budget() {
+        let policy = ScreenSpaceLodPolicy::new(2.0, 0.0);
+        let selection = policy
+            .select_level(&[0.0, 0.01, 0.03], 0, view(10.0))
+            .unwrap();
+        assert_eq!(selection.level, 1);
+        assert!(selection.projected_error_pixels <= 2.0);
+    }
+
+    #[test]
+    fn hysteresis_prevents_threshold_flicker_in_both_directions() {
+        let policy = ScreenSpaceLodPolicy::new(2.0, 0.2);
+        let errors = [0.0, 0.01, 0.03];
+
+        assert_eq!(policy.select_level(&errors, 0, view(10.0)).unwrap().level, 0);
+        assert_eq!(policy.select_level(&errors, 0, view(12.0)).unwrap().level, 1);
+        assert_eq!(policy.select_level(&errors, 1, view(9.0)).unwrap().level, 1);
+        assert_eq!(policy.select_level(&errors, 1, view(7.0)).unwrap().level, 0);
+    }
+
+    #[test]
+    fn selector_rejects_misordered_error_levels() {
+        let result = ScreenSpaceLodPolicy::new(2.0, 0.1)
+            .select_level(&[0.0, 0.02, 0.01], 0, view(10.0));
+        assert_eq!(
+            result,
+            Err(SelectionError::RelativeErrorsNotNondecreasing { level: 2 })
         );
     }
 }
