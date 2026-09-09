@@ -26,6 +26,9 @@ jobs:
         working-directory: web
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Generate LOD fixture from Rust authority
+        run: cargo run --manifest-path ../Cargo.toml -p three-d-lod --example export_lod_fixture -- public/generated/lod-fixture.json
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0
