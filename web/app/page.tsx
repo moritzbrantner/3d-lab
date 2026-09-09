@@ -1,3 +1,4 @@
+import { LodQualityTeaser } from "@/components/lod-quality-teaser";
 import { MaterialTextureTeaser } from "@/components/material-texture-teaser";
 import { ModelPipelineTeaser } from "@/components/model-pipeline-teaser";
 import { NormalMappingTeaser } from "@/components/normal-mapping-teaser";
@@ -18,6 +19,7 @@ export default function Home() {
         </p>
       </header>
       <SceneEditorTeaser />
+      <LodQualityTeaser />
       <MaterialTextureTeaser />
       <NormalMappingTeaser />
       <ModelPipelineTeaser />
