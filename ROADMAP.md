@@ -25,6 +25,8 @@
 - [x] Demonstrate parent/child/grandchild transform composition.
 - [x] Add keyframes, interpolation/easing, playback, and reusable clips.
 - [x] Add frame-rate-independent playback clocks plus deterministic clip cross-fades around the existing clip semantics.
+- [x] Add frame-rate-independent transition clocks with explicit linear/smoothstep weighting and completion semantics.
+- [x] Add a Rust-generated uneven-frame timing lab that exposes drift, transition progress, and blended poses on GitHub Pages.
 - [x] Compare Euler interpolation with quaternion SLERP around a 90° middle-axis rotation.
 - [x] Build a three-joint skinned strip from explicit bone weights before introducing file formats.
 - [x] Load a minimal glTF 2.0 translation animation with `GLTFLoader` and `AnimationMixer`.
