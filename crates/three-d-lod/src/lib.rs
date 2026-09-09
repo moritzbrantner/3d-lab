@@ -56,9 +56,8 @@ impl fmt::Display for SimplificationError {
             Self::EmptyMesh => {
                 formatter.write_str("mesh simplification requires at least one triangle")
             }
-            Self::SourceCannotBeReduced => {
-                formatter.write_str("LOD generation requires a source mesh with at least two triangles")
-            }
+            Self::SourceCannotBeReduced => formatter
+                .write_str("LOD generation requires a source mesh with at least two triangles"),
             Self::ZeroTarget => formatter.write_str("target triangle count must be positive"),
             Self::TargetExceedsSource {
                 target_triangle_count,
