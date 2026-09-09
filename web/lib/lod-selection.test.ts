@@ -34,6 +34,22 @@ describe("Rust-generated LOD fixture", () => {
     }
   });
 
+  test("coarsening chooses an intermediate level that satisfies the hysteresis margin", () => {
+    const selection = selectLodLevel(
+      [0, 1, 1.8],
+      0,
+      { targetPixelError: 2, hysteresisFraction: 0.2 },
+      {
+        meshExtent: 1,
+        distance: 1,
+        viewportHeightPixels: 2,
+        verticalFovRadians: Math.PI / 2,
+      },
+    );
+    expect(selection.level).toBe(1);
+    expect(selection.projectedErrorPixels).toBeCloseTo(1, 6);
+  });
+
   test("generated indices always reference the shared source vertex buffer", () => {
     const vertexCount = fixture.positions.length;
     for (const level of allLodLevels(fixture)) {
