@@ -7,6 +7,8 @@ use core::fmt;
 
 use three_d_animation::{AnimationClip, ClipError, Transform};
 
+const TRANSITION_COMPLETION_RELATIVE_EPSILON: f64 = 1.0e-7;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlaybackMode {
     Clamp,
@@ -171,8 +173,13 @@ impl TransitionClock {
         if !elapsed_seconds.is_finite() || elapsed_seconds < 0.0 {
             return Err(PlaybackError::InvalidDelta);
         }
-        self.elapsed_seconds =
-            (self.elapsed_seconds + f64::from(elapsed_seconds)).min(self.duration_seconds);
+        let next = self.elapsed_seconds + f64::from(elapsed_seconds);
+        let completion_tolerance = self.duration_seconds * TRANSITION_COMPLETION_RELATIVE_EPSILON;
+        self.elapsed_seconds = if self.duration_seconds - next <= completion_tolerance {
+            self.duration_seconds
+        } else {
+            next
+        };
         Ok(self.blend_factor())
     }
 
@@ -300,6 +307,14 @@ mod tests {
         assert_eq!(uneven.blend_factor(), 1.0);
         assert!(fine.is_complete());
         assert!(uneven.is_complete());
+    }
+
+    #[test]
+    fn transition_clock_does_not_complete_outside_precision_margin() {
+        let mut clock = TransitionClock::new(1.0, TransitionCurve::Linear).unwrap();
+        clock.advance(0.999).unwrap();
+        assert!(!clock.is_complete());
+        assert!(clock.blend_factor() < 1.0);
     }
 
     #[test]
