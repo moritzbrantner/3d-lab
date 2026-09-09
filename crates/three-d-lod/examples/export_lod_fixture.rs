@@ -4,7 +4,7 @@ use std::path::Path;
 
 use serde_json::json;
 use three_d_core::{Mesh, Vec2, Vec3, VertexAttributes};
-use three_d_lod::{LodSpec, LodView, ScreenSpaceLodPolicy, SIMPLIFIER_ID, build_lod_chain};
+use three_d_lod::{LodSpec, LodView, SIMPLIFIER_ID, ScreenSpaceLodPolicy, build_lod_chain};
 
 const SEGMENTS: u32 = 28;
 const TARGET_PIXEL_ERROR: f32 = 2.0;
@@ -24,8 +24,7 @@ fn teaching_surface() -> Mesh {
         for column in 0..=SEGMENTS {
             let u = column as f32 / SEGMENTS as f32;
             let x = -1.0 + u * 2.0;
-            let y = 0.28 * (x * 2.8).sin() * (z * 2.2).cos()
-                + 0.08 * ((x + z) * 7.0).sin();
+            let y = 0.28 * (x * 2.8).sin() * (z * 2.2).cos() + 0.08 * ((x + z) * 7.0).sin();
             vertices.push(Vec3::new(x, y, z));
             uvs.push(Vec2::new(u, v));
         }
