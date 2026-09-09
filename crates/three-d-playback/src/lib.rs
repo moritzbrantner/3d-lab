@@ -263,15 +263,7 @@ mod tests {
             Err(PlaybackError::InvalidSampleTime)
         );
         assert_eq!(
-            sample_cross_fade(
-                &clip,
-                0.0,
-                &clip,
-                f32::INFINITY,
-                0.5,
-                &base,
-                &mut output,
-            ),
+            sample_cross_fade(&clip, 0.0, &clip, f32::INFINITY, 0.5, &base, &mut output,),
             Err(PlaybackError::InvalidSampleTime)
         );
     }
