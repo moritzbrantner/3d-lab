@@ -13,6 +13,22 @@ pub enum PlaybackMode {
     Loop,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransitionCurve {
+    Linear,
+    SmoothStep,
+}
+
+impl TransitionCurve {
+    fn map(self, factor: f32) -> f32 {
+        let factor = factor.clamp(0.0, 1.0);
+        match self {
+            Self::Linear => factor,
+            Self::SmoothStep => factor * factor * (3.0 - 2.0 * factor),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PlaybackError {
     InvalidDuration,
@@ -30,7 +46,7 @@ impl fmt::Display for PlaybackError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidDuration => {
-                formatter.write_str("playback duration must be finite and positive")
+                formatter.write_str("playback or transition duration must be finite and positive")
             }
             Self::InvalidSpeed => formatter.write_str("playback speed must be finite"),
             Self::InvalidDelta => {
@@ -117,6 +133,51 @@ impl PlaybackClock {
             PlaybackMode::Clamp => position.clamp(0.0, self.duration_seconds),
             PlaybackMode::Loop => position.rem_euclid(self.duration_seconds),
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TransitionClock {
+    duration_seconds: f64,
+    elapsed_seconds: f64,
+    curve: TransitionCurve,
+}
+
+impl TransitionClock {
+    pub fn new(duration_seconds: f32, curve: TransitionCurve) -> Result<Self, PlaybackError> {
+        if !duration_seconds.is_finite() || duration_seconds <= 0.0 {
+            return Err(PlaybackError::InvalidDuration);
+        }
+        Ok(Self {
+            duration_seconds: f64::from(duration_seconds),
+            elapsed_seconds: 0.0,
+            curve,
+        })
+    }
+
+    pub fn linear_progress(&self) -> f32 {
+        (self.elapsed_seconds / self.duration_seconds) as f32
+    }
+
+    pub fn blend_factor(&self) -> f32 {
+        self.curve.map(self.linear_progress())
+    }
+
+    pub fn is_complete(&self) -> bool {
+        self.elapsed_seconds >= self.duration_seconds
+    }
+
+    pub fn advance(&mut self, elapsed_seconds: f32) -> Result<f32, PlaybackError> {
+        if !elapsed_seconds.is_finite() || elapsed_seconds < 0.0 {
+            return Err(PlaybackError::InvalidDelta);
+        }
+        self.elapsed_seconds =
+            (self.elapsed_seconds + f64::from(elapsed_seconds)).min(self.duration_seconds);
+        Ok(self.blend_factor())
+    }
+
+    pub fn reset(&mut self) {
+        self.elapsed_seconds = 0.0;
     }
 }
 
@@ -223,6 +284,49 @@ mod tests {
     }
 
     #[test]
+    fn transition_clock_is_independent_of_frame_partitioning() {
+        let mut fine = TransitionClock::new(1.0, TransitionCurve::Linear).unwrap();
+        for _ in 0..100 {
+            fine.advance(0.01).unwrap();
+        }
+
+        let mut uneven = TransitionClock::new(1.0, TransitionCurve::Linear).unwrap();
+        for elapsed in [0.15, 0.05, 0.3, 0.5] {
+            uneven.advance(elapsed).unwrap();
+        }
+
+        assert!((fine.linear_progress() - uneven.linear_progress()).abs() < 1.0e-5);
+        assert_eq!(fine.blend_factor(), 1.0);
+        assert_eq!(uneven.blend_factor(), 1.0);
+        assert!(fine.is_complete());
+        assert!(uneven.is_complete());
+    }
+
+    #[test]
+    fn transition_clock_applies_curve_without_changing_elapsed_time() {
+        let mut linear = TransitionClock::new(1.0, TransitionCurve::Linear).unwrap();
+        let mut smooth = TransitionClock::new(1.0, TransitionCurve::SmoothStep).unwrap();
+        linear.advance(0.25).unwrap();
+        smooth.advance(0.25).unwrap();
+
+        assert!((linear.linear_progress() - 0.25).abs() < 1.0e-6);
+        assert!((smooth.linear_progress() - 0.25).abs() < 1.0e-6);
+        assert!((linear.blend_factor() - 0.25).abs() < 1.0e-6);
+        assert!((smooth.blend_factor() - 0.15625).abs() < 1.0e-6);
+    }
+
+    #[test]
+    fn transition_clock_clamps_and_resets() {
+        let mut clock = TransitionClock::new(0.5, TransitionCurve::SmoothStep).unwrap();
+        assert_eq!(clock.advance(1.0).unwrap(), 1.0);
+        assert!(clock.is_complete());
+        clock.reset();
+        assert_eq!(clock.linear_progress(), 0.0);
+        assert_eq!(clock.blend_factor(), 0.0);
+        assert!(!clock.is_complete());
+    }
+
+    #[test]
     fn transform_blending_uses_slerp_for_rotation() {
         let target_rotation = Quat::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), PI).unwrap();
         let blended = blend_transform(
@@ -270,12 +374,14 @@ mod tests {
 
     #[test]
     fn playback_rejects_non_finite_runtime_inputs() {
-        let mut clock = PlaybackClock::new(1.0, PlaybackMode::Loop).unwrap();
-        assert_eq!(clock.advance(f32::NAN), Err(PlaybackError::InvalidDelta));
+        let mut playback = PlaybackClock::new(1.0, PlaybackMode::Loop).unwrap();
+        let mut transition = TransitionClock::new(1.0, TransitionCurve::Linear).unwrap();
+        assert_eq!(playback.advance(f32::NAN), Err(PlaybackError::InvalidDelta));
+        assert_eq!(transition.advance(f32::NAN), Err(PlaybackError::InvalidDelta));
         assert_eq!(
-            clock.set_speed(f32::INFINITY),
+            playback.set_speed(f32::INFINITY),
             Err(PlaybackError::InvalidSpeed)
         );
-        assert_eq!(clock.seek(f32::NAN), Err(PlaybackError::InvalidSeekTime));
+        assert_eq!(playback.seek(f32::NAN), Err(PlaybackError::InvalidSeekTime));
     }
 }
