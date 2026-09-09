@@ -76,8 +76,10 @@ export function selectLodLevel(
   let selectedLevel = currentLevel;
   if (idealLevel > currentLevel) {
     const coarsenThreshold = policy.targetPixelError * (1 - policy.hysteresisFraction);
-    if (projectedErrors[idealLevel] <= coarsenThreshold) {
-      selectedLevel = idealLevel;
+    for (let level = currentLevel + 1; level < projectedErrors.length; level += 1) {
+      if (projectedErrors[level] <= coarsenThreshold) {
+        selectedLevel = level;
+      }
     }
   } else if (idealLevel < currentLevel) {
     const refineThreshold = policy.targetPixelError * (1 + policy.hysteresisFraction);
