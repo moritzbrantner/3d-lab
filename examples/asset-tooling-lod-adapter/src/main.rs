@@ -118,7 +118,11 @@ fn probe() -> Result<(), String> {
     Ok(())
 }
 
-fn generate(request_path: &Path, output_path: &Path, observations_path: &Path) -> Result<(), String> {
+fn generate(
+    request_path: &Path,
+    output_path: &Path,
+    observations_path: &Path,
+) -> Result<(), String> {
     let request: Request = serde_json::from_slice(
         &fs::read(request_path).map_err(|error| format!("failed to read request: {error}"))?,
     )
@@ -135,11 +139,14 @@ fn generate(request_path: &Path, output_path: &Path, observations_path: &Path) -
     }
 
     let input_path = resolve_input_path(&request.input_path)?;
-    let source_document: MeshDocument = serde_json::from_slice(
-        &fs::read(&input_path)
-            .map_err(|error| format!("failed to read input mesh '{}': {error}", request.input_path))?,
-    )
-    .map_err(|error| format!("invalid input mesh JSON: {error}"))?;
+    let source_document: MeshDocument =
+        serde_json::from_slice(&fs::read(&input_path).map_err(|error| {
+            format!(
+                "failed to read input mesh '{}': {error}",
+                request.input_path
+            )
+        })?)
+        .map_err(|error| format!("invalid input mesh JSON: {error}"))?;
     let source = mesh_from_document(source_document)?;
     let source_triangle_count = source.triangle_count();
     if source_triangle_count != request.parameters.source_triangle_count {
@@ -193,7 +200,10 @@ fn main() {
                 || output.is_none()
                 || observations.is_none()
             {
-                Err("usage: asset-tooling-lod-adapter probe | generate REQUEST OUTPUT OBSERVATIONS".into())
+                Err(
+                    "usage: asset-tooling-lod-adapter probe | generate REQUEST OUTPUT OBSERVATIONS"
+                        .into(),
+                )
             } else {
                 generate(
                     request.as_deref().expect("checked above"),
@@ -202,7 +212,9 @@ fn main() {
                 )
             }
         }
-        _ => Err("usage: asset-tooling-lod-adapter probe | generate REQUEST OUTPUT OBSERVATIONS".into()),
+        _ => Err(
+            "usage: asset-tooling-lod-adapter probe | generate REQUEST OUTPUT OBSERVATIONS".into(),
+        ),
     };
 
     if let Err(error) = result {
