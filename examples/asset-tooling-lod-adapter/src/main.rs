@@ -9,6 +9,7 @@ use three_d_lod::{SIMPLIFIER_ID, SimplificationSettings, simplify_mesh};
 const PROTOCOL: &str = "asset-tooling-process-adapter-v1";
 const MESH_CODEC: &str = "three-d-mesh-json-v1";
 const MESH_SCHEMA_VERSION: u32 = 1;
+const CARGO_LOCK: &str = include_str!("../../../Cargo.lock");
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -53,6 +54,7 @@ struct ProbeComponent<'a> {
     protocol: &'a str,
     codec: &'a str,
     dependencies: ProbeDependencies<'a>,
+    cargo_lock: &'a str,
 }
 
 #[derive(Debug, Serialize)]
@@ -126,6 +128,7 @@ fn probe() -> Result<(), String> {
             serde: "1.0.229",
             serde_json: "1.0.151",
         },
+        cargo_lock: CARGO_LOCK,
     }];
     println!(
         "{}",
