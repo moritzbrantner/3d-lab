@@ -1,0 +1,10 @@
+[package]
+name = "three-d-lod"
+version = "0.1.0"
+edition = "2024"
+description = "Deterministic level-of-detail and mesh simplification experiments for 3d-lab"
+license = "MIT"
+
+[dependencies]
+meshopt = "=0.6.2"
+three-d-core = { path = "../three-d-core" }
