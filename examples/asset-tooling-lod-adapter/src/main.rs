@@ -7,6 +7,7 @@ use three_d_core::{Mesh, Vec3};
 use three_d_lod::{SIMPLIFIER_ID, SimplificationSettings, simplify_mesh};
 
 const PROTOCOL: &str = "asset-tooling-process-adapter-v1";
+const MESH_CODEC: &str = "three-d-mesh-json-v1";
 const MESH_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Deserialize)]
@@ -37,11 +38,21 @@ struct MeshDocument {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct ProbeDependencies<'a> {
+    meshopt: &'a str,
+    serde: &'a str,
+    serde_json: &'a str,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct ProbeComponent<'a> {
     id: &'a str,
     version: &'a str,
     algorithm: &'a str,
     protocol: &'a str,
+    codec: &'a str,
+    dependencies: ProbeDependencies<'a>,
 }
 
 #[derive(Debug, Serialize)]
@@ -109,6 +120,12 @@ fn probe() -> Result<(), String> {
         version: env!("CARGO_PKG_VERSION"),
         algorithm: SIMPLIFIER_ID,
         protocol: PROTOCOL,
+        codec: MESH_CODEC,
+        dependencies: ProbeDependencies {
+            meshopt: "0.6.2",
+            serde: "1.0.229",
+            serde_json: "1.0.151",
+        },
     }];
     println!(
         "{}",
