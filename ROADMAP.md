@@ -46,7 +46,8 @@
 - [x] Add renderer-independent tangent attributes and deterministic tangent derivation.
 - [x] Preserve glTF `TANGENT` attributes and teach tangent-space normal-map shading interactively.
 - [x] Preserve encoded image/texture data and glTF normal-texture bindings through `three-d-assets`.
-- [ ] Add level-of-detail and mesh simplification experiments.
+- [x] Restore deterministic level-of-detail and mesh simplification through `three-d-lod`, preserving the source vertex/attribute buffers while deriving index buffers with explicit target/error/border semantics.
+- [x] Keep the asset-tooling process adapter outside `three-d-lod`, using a narrow canonical mesh JSON integration envelope so the domain crate does not depend on workflow/provenance infrastructure.
 
 ### Slice 6 — authoring and inspection
 
