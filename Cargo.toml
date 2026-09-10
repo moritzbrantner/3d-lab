@@ -5,6 +5,8 @@ members = [
     "crates/three-d-camera",
     "crates/three-d-assets",
     "crates/three-d-formats",
+    "crates/three-d-lod",
     "examples/wgpu-native",
+    "examples/asset-tooling-lod-adapter",
 ]
 resolver = "2"
