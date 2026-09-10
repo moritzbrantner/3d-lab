@@ -10,7 +10,9 @@ The repository deliberately has parallel surfaces:
 - **Rust / `three-d-camera`** — renderer-independent right-handed view and WebGPU-depth perspective camera matrices.
 - **Rust / `three-d-assets`** — renderer-independent asset meshes, PBR material factors, encoded texture resources, normal-map bindings, and cross-resource validation.
 - **Rust / `three-d-formats`** — loss-aware OBJ/glTF decoding adapters that normalize supported file semantics into `three-d-assets`.
+- **Rust / `three-d-lod`** — deterministic mesh simplification and source-based LOD derivation using meshopt while preserving the source vertex/attribute buffers.
 - **Native / `wgpu` example** — a narrow renderer-comparison adapter that consumes the Rust mesh and camera models without moving GPU ownership into the core crates.
+- **Asset-tooling LOD adapter example** — a narrow process adapter that exposes `three-d-lod` through a canonical position/index mesh JSON envelope without moving asset-tooling ownership into the LOD crate.
 - **Raw browser WebGPU experiment** — one intentionally tiny indexed draw that exposes browser GPU setup without replacing Three.js as the teaching renderer.
 
 The web renderer is intentionally Three.js-first. The Rust core crates do not depend on Three.js, WebGL, WebGPU, a windowing stack, or a glTF/OBJ parser; rendering and file-format adapters stay downstream of the renderer-independent models. The scene editor follows the same boundary: Three.js renders and ray-picks editor drafts, while mesh and hierarchy semantics stay aligned with the Rust contracts.
@@ -62,6 +64,12 @@ Run the native `wgpu` comparison on a machine with a supported graphics adapter:
 
 ```bash
 cargo run -p three-d-wgpu-example
+```
+
+The asset-tooling integration adapter is intentionally separate from the `three-d-lod` library:
+
+```bash
+cargo run -p asset-tooling-lod-adapter -- probe
 ```
 
 ### Web
