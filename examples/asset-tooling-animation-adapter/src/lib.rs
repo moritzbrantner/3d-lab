@@ -1011,10 +1011,7 @@ mod tests {
         let value = Quat::new(-0.24176553, -0.0009549775, -0.6036044, -0.7597437);
         assert_eq!(quaternion_error_radians(value, value), 0.0);
         assert_eq!(
-            quaternion_error_radians(
-                value,
-                Quat::new(-value.x, -value.y, -value.z, -value.w)
-            ),
+            quaternion_error_radians(value, Quat::new(-value.x, -value.y, -value.z, -value.w)),
             0.0
         );
     }
