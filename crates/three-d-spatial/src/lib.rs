@@ -436,7 +436,7 @@ impl SpatialEntityRef {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", rename_all_fields = "camelCase")]
 pub enum SpatialSelector {
     Point3 {
         frame: CoordinateFrameRef,
@@ -645,6 +645,8 @@ mod tests {
         assert_eq!(encoded["schemaVersion"], 1);
         assert_eq!(encoded["spatial"]["kind"], "camera_pose");
         assert_eq!(encoded["spatial"]["frame"]["unit"], "arbitrary");
+        assert_eq!(encoded["spatial"]["calibrationRef"]["entityId"], "7");
+        assert!(encoded["spatial"].get("calibration_ref").is_none());
         let decoded: SpatialBinding = serde_json::from_value(encoded).unwrap();
         assert_eq!(decoded, binding);
     }
