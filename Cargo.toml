@@ -9,5 +9,6 @@ members = [
     "crates/three-d-lod",
     "examples/wgpu-native",
     "examples/asset-tooling-lod-adapter",
+    "examples/asset-tooling-animation-adapter",
 ]
 resolver = "2"
