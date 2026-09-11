@@ -611,13 +611,7 @@ fn reduce_vec3_keyframes(
         .iter()
         .map(|keyframe| Vec3::new(keyframe.value[0], keyframe.value[1], keyframe.value[2]))
         .collect();
-    let indices = reduce_indices(
-        &times,
-        &values,
-        tolerance,
-        interpolate_vec3,
-        vec3_error,
-    );
+    let indices = reduce_indices(&times, &values, tolerance, interpolate_vec3, vec3_error);
     let reduced: Vec<_> = indices.iter().map(|index| keyframes[*index]).collect();
     let track = vec3_track(&reduced)?;
     let maximum_error = keyframes.iter().fold(0.0_f32, |maximum, keyframe| {
