@@ -160,9 +160,7 @@ fn validate_request(request: &Request) -> Result<(), String> {
     }
     let mut previous_ratio = 1.0;
     for (index, level) in request.parameters.levels.iter().enumerate() {
-        if !level.triangle_ratio.is_finite()
-            || !(0.0..1.0).contains(&level.triangle_ratio)
-        {
+        if !level.triangle_ratio.is_finite() || !(0.0..1.0).contains(&level.triangle_ratio) {
             return Err(format!(
                 "LOD level {} must use a finite triangleRatio strictly between 0 and 1",
                 index + 1
@@ -208,11 +206,8 @@ fn process(
         }
         let result = simplify_mesh(
             &source,
-            SimplificationSettings::new(
-                requested.target_triangle_count,
-                requested.target_error,
-            )
-            .with_locked_border(requested.lock_border),
+            SimplificationSettings::new(requested.target_triangle_count, requested.target_error)
+                .with_locked_border(requested.lock_border),
         )
         .map_err(|error| error.to_string())?;
         if result.requested_triangle_count != requested.target_triangle_count {
