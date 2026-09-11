@@ -545,10 +545,24 @@ fn quaternion_error_radians(left: Quat, right: Quat) -> f32 {
     let Some(left) = left.normalized() else {
         return f32::INFINITY;
     };
-    let Some(right) = right.normalized() else {
+    let Some(mut right) = right.normalized() else {
         return f32::INFINITY;
     };
-    2.0 * left.dot(right).abs().clamp(0.0, 1.0).acos()
+    if left.dot(right) < 0.0 {
+        right = Quat::new(-right.x, -right.y, -right.z, -right.w);
+    }
+
+    let dx = left.x - right.x;
+    let dy = left.y - right.y;
+    let dz = left.z - right.z;
+    let dw = left.w - right.w;
+    let sx = left.x + right.x;
+    let sy = left.y + right.y;
+    let sz = left.z + right.z;
+    let sw = left.w + right.w;
+    let difference = (dx * dx + dy * dy + dz * dz + dw * dw).sqrt();
+    let sum = (sx * sx + sy * sy + sz * sz + sw * sw).sqrt();
+    4.0 * difference.atan2(sum)
 }
 
 fn interpolate_vec3(left: Vec3, right: Vec3, factor: f32) -> Vec3 {
@@ -990,6 +1004,19 @@ mod tests {
         let (reduced, maximum_error) = reduce_vec3_keyframes(&source, 0.25).unwrap();
         assert_eq!(reduced.len(), 3);
         assert_eq!(maximum_error, 0.0);
+    }
+
+    #[test]
+    fn quaternion_error_is_stable_for_identical_and_antipodal_inputs() {
+        let value = Quat::new(-0.24176553, -0.0009549775, -0.6036044, -0.7597437);
+        assert_eq!(quaternion_error_radians(value, value), 0.0);
+        assert_eq!(
+            quaternion_error_radians(
+                value,
+                Quat::new(-value.x, -value.y, -value.z, -value.w)
+            ),
+            0.0
+        );
     }
 
     #[test]
