@@ -22,13 +22,15 @@ The processor reports source/result keyframe counts, channel count, and the elap
 
 ## `animation.reduce`
 
-Version 1 is local-transform only. Reduction is deterministic, source-key based, and endpoint-conservative. It recursively removes interior keys when every source key in the candidate span can be reconstructed within the configured tolerance from the retained endpoints.
+Version 1 is local-transform only. Reduction is deterministic, source-key based, and endpoint-conservative. It iteratively splits candidate spans and removes interior keys only when every source key in the candidate span can be reconstructed within the configured tolerance from the retained endpoints.
 
 Error metrics are:
 
-- translation: Euclidean vec3 distance;
-- rotation: shortest-arc quaternion angular distance in radians;
-- scale: Euclidean vec3 distance.
+- translation: scale-stable Euclidean vec3 distance;
+- rotation: scale-stable shortest-arc quaternion angular distance in radians;
+- scale: scale-stable Euclidean vec3 distance.
+
+Reduction work is deterministically bounded. If a pathological channel exhausts the comparison budget, the processor falls back to retaining every source key for that channel. That conservative fallback may sacrifice compression, but it cannot weaken the requested error bound or endpoint evidence.
 
 After reduction, the adapter re-samples the reduced channel at every original source key time and reports the actual maximum observed error for each transform family. Endpoints are retained even when `preserveEndpoints` is false; `false` removes the requirement, not the permission to preserve them. When `preserveEndpoints` is true, failure to retain them is an error.
 
