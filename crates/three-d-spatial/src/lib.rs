@@ -77,11 +77,7 @@ impl Vector3d {
                 "vector length must be finite and greater than zero",
             ));
         }
-        Ok(Self::new(
-            self.x / length,
-            self.y / length,
-            self.z / length,
-        ))
+        Ok(Self::new(self.x / length, self.y / length, self.z / length))
     }
 
     pub const fn to_array(self) -> [f64; 3] {
@@ -160,7 +156,9 @@ impl CameraPose3d {
             }
         }
 
-        let norm = qw.mul_add(qw, qx.mul_add(qx, qy.mul_add(qy, qz * qz))).sqrt();
+        let norm = qw
+            .mul_add(qw, qx.mul_add(qx, qy.mul_add(qy, qz * qz)))
+            .sqrt();
         if !norm.is_finite() || norm <= f64::EPSILON {
             return Err(SpatialError::invalid(
                 "COLMAP quaternion norm must be greater than zero",
@@ -260,14 +258,7 @@ pub struct PinholeIntrinsicsd {
 }
 
 impl PinholeIntrinsicsd {
-    pub fn new(
-        width: u32,
-        height: u32,
-        fx: f64,
-        fy: f64,
-        cx: f64,
-        cy: f64,
-    ) -> Result<Self> {
+    pub fn new(width: u32, height: u32, fx: f64, fy: f64, cx: f64, cy: f64) -> Result<Self> {
         let value = Self {
             width,
             height,
@@ -612,9 +603,8 @@ mod tests {
 
     #[test]
     fn preserves_colmap_camera_convention() {
-        let pose =
-            CameraPose3d::from_colmap_world_to_camera(1.0, 0.0, 0.0, 0.0, 1.25, -2.5, 3.75)
-                .unwrap();
+        let pose = CameraPose3d::from_colmap_world_to_camera(1.0, 0.0, 0.0, 0.0, 1.25, -2.5, 3.75)
+            .unwrap();
         assert_eq!(pose.position, Point3d::new(-1.25, 2.5, -3.75));
         assert_eq!(pose.right, Vector3d::X);
         assert_eq!(pose.up, Vector3d::Y);
