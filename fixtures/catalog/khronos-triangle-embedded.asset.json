@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "catalogId": "khronos.triangle-embedded-gltf",
+  "source": {
+    "provider": "khronos-gltf-sample-assets",
+    "revision": "90d7ede14c7e280af263824604b427a1ca02cb66",
+    "path": "Models/Triangle/glTF-Embedded/Triangle.gltf",
+    "gitBlobSha": "40cab5a1992a686af009bb864e47f026f68957f6",
+    "sha256": "6bf10f2d1e07643cbda968fc6941929d52d4dfd4250182c852103668997f706a",
+    "byteLength": 1122
+  },
+  "license": {
+    "spdx": "CC0-1.0",
+    "evidenceUrl": "https://github.com/KhronosGroup/glTF-Sample-Assets/blob/90d7ede14c7e280af263824604b427a1ca02cb66/Models/Triangle/LICENSE.md"
+  },
+  "vendoring": {
+    "reason": "Offline deterministic external-format conformance fixture",
+    "policy": "Keep byte-identical to the pinned canonical catalog source; do not hand-edit the glTF fixture"
+  }
+}
