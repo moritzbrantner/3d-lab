@@ -4,7 +4,7 @@ use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use three_d_core::{Mesh, Vec3};
-use three_d_lod::{LodSpec, SIMPLIFIER_ID, build_lod_chain};
+use three_d_lod::{SIMPLIFIER_ID, SimplificationSettings, simplify_mesh};
 
 const PROTOCOL: &str = "asset-tooling-process-adapter-v1";
 const CODEC: &str = "three-d-lod-chain-json-v1";
@@ -33,7 +33,7 @@ struct LodChainParameters {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct LodLevelParameters {
-    triangle_ratio: f32,
+    triangle_ratio: f64,
     target_triangle_count: usize,
     target_error: f32,
     lock_border: bool,
@@ -59,7 +59,7 @@ struct LodChainDocument {
 #[serde(rename_all = "camelCase")]
 struct LodChainLevelDocument {
     level: usize,
-    triangle_ratio: f32,
+    triangle_ratio: f64,
     indices: Vec<u32>,
 }
 
@@ -97,7 +97,7 @@ struct Observations {
 #[serde(rename_all = "camelCase")]
 struct LevelObservations {
     level: usize,
-    triangle_ratio: f32,
+    triangle_ratio: f64,
     requested_triangle_count: usize,
     result_triangle_count: usize,
     result_index_count: usize,
@@ -158,6 +158,24 @@ fn validate_request(request: &Request) -> Result<(), String> {
     if request.parameters.levels.is_empty() {
         return Err("mesh.lod_chain requires at least one level".into());
     }
+    let mut previous_ratio = 1.0;
+    for (index, level) in request.parameters.levels.iter().enumerate() {
+        if !level.triangle_ratio.is_finite()
+            || !(0.0..1.0).contains(&level.triangle_ratio)
+        {
+            return Err(format!(
+                "LOD level {} must use a finite triangleRatio strictly between 0 and 1",
+                index + 1
+            ));
+        }
+        if level.triangle_ratio >= previous_ratio {
+            return Err(format!(
+                "LOD level {} triangleRatio must be strictly smaller than the previous level",
+                index + 1
+            ));
+        }
+        previous_ratio = level.triangle_ratio;
+    }
     Ok(())
 }
 
@@ -175,57 +193,51 @@ fn process(
         ));
     }
 
-    let specs = request
-        .parameters
-        .levels
-        .iter()
-        .map(|level| {
-            LodSpec::new(level.triangle_ratio, level.target_error)
-                .with_locked_border(level.lock_border)
-        })
-        .collect::<Vec<_>>();
-    let derived = build_lod_chain(&source, &specs).map_err(|error| error.to_string())?;
-    if derived.len() != request.parameters.levels.len() {
-        return Err("LOD processor returned an unexpected number of levels".into());
-    }
-
-    let mut output_levels = Vec::with_capacity(derived.len());
-    let mut observation_levels = Vec::with_capacity(derived.len());
+    let mut output_levels = Vec::with_capacity(request.parameters.levels.len());
+    let mut observation_levels = Vec::with_capacity(request.parameters.levels.len());
     let mut shared_source_vertex_buffer = true;
-    for (index, (result, requested)) in derived
-        .into_iter()
-        .zip(request.parameters.levels.iter())
-        .enumerate()
-    {
+    let mut previous_target = source_triangle_count;
+    for (index, requested) in request.parameters.levels.iter().enumerate() {
         let level = index + 1;
-        if result.level != index {
+        if requested.target_triangle_count == 0
+            || requested.target_triangle_count >= previous_target
+        {
             return Err(format!(
-                "LOD processor returned inconsistent level index {}",
-                result.level
+                "LOD level {level} targetTriangleCount must be positive and strictly smaller than the previous level"
             ));
         }
-        if result.simplification.requested_triangle_count != requested.target_triangle_count {
+        let result = simplify_mesh(
+            &source,
+            SimplificationSettings::new(
+                requested.target_triangle_count,
+                requested.target_error,
+            )
+            .with_locked_border(requested.lock_border),
+        )
+        .map_err(|error| error.to_string())?;
+        if result.requested_triangle_count != requested.target_triangle_count {
             return Err(format!(
                 "LOD level {level} targetTriangleCount mismatch: request materialized {}, authoritative processor applied {}",
-                requested.target_triangle_count, result.simplification.requested_triangle_count
+                requested.target_triangle_count, result.requested_triangle_count
             ));
         }
-        let shares_vertices = result.simplification.mesh.vertices() == source.vertices();
+        let shares_vertices = result.mesh.vertices() == source.vertices();
         shared_source_vertex_buffer &= shares_vertices;
-        let indices = result.simplification.mesh.indices().to_vec();
+        let indices = result.mesh.indices().to_vec();
         observation_levels.push(LevelObservations {
             level,
             triangle_ratio: requested.triangle_ratio,
-            requested_triangle_count: result.simplification.requested_triangle_count,
-            result_triangle_count: result.simplification.result_triangle_count,
+            requested_triangle_count: result.requested_triangle_count,
+            result_triangle_count: result.result_triangle_count,
             result_index_count: indices.len(),
-            relative_error: result.simplification.relative_error,
+            relative_error: result.relative_error,
         });
         output_levels.push(LodChainLevelDocument {
             level,
             triangle_ratio: requested.triangle_ratio,
             indices,
         });
+        previous_target = requested.target_triangle_count;
     }
 
     let output = LodChainDocument {
@@ -372,6 +384,22 @@ mod tests {
         }
     }
 
+    fn triangle_soup(triangle_count: usize) -> MeshDocument {
+        let mut vertices = Vec::with_capacity(triangle_count * 3);
+        let mut indices = Vec::with_capacity(triangle_count * 3);
+        for triangle in 0..triangle_count {
+            let base = vertices.len() as u32;
+            let x = triangle as f32 * 2.0;
+            vertices.extend([[x, 0.0, 0.0], [x + 1.0, 0.0, 0.0], [x, 1.0, 0.0]]);
+            indices.extend([base, base + 1, base + 2]);
+        }
+        MeshDocument {
+            schema_version: 1,
+            vertices,
+            indices,
+        }
+    }
+
     fn request(source_triangle_count: usize) -> Request {
         Request {
             schema_version: 1,
@@ -384,21 +412,21 @@ mod tests {
                 levels: vec![
                     LodLevelParameters {
                         triangle_ratio: 0.75,
-                        target_triangle_count: (source_triangle_count as f32 * 0.75).round()
+                        target_triangle_count: (source_triangle_count as f64 * 0.75).round()
                             as usize,
                         target_error: 1.0,
                         lock_border: false,
                     },
                     LodLevelParameters {
                         triangle_ratio: 0.5,
-                        target_triangle_count: (source_triangle_count as f32 * 0.5).round()
+                        target_triangle_count: (source_triangle_count as f64 * 0.5).round()
                             as usize,
                         target_error: 1.0,
                         lock_border: false,
                     },
                     LodLevelParameters {
                         triangle_ratio: 0.25,
-                        target_triangle_count: (source_triangle_count as f32 * 0.25).round()
+                        target_triangle_count: (source_triangle_count as f64 * 0.25).round()
                             as usize,
                         target_error: 1.0,
                         lock_border: false,
@@ -434,12 +462,28 @@ mod tests {
     }
 
     #[test]
-    fn lod_chain_rejects_materialized_budget_drift() {
-        let mesh = grid_mesh(8);
-        let source_triangle_count = mesh.indices.len() / 3;
-        let mut invocation = request(source_triangle_count);
-        invocation.parameters.levels[0].target_triangle_count -= 1;
-        let error = process(&invocation, mesh).unwrap_err();
-        assert!(error.contains("targetTriangleCount mismatch"));
+    fn lod_chain_executes_materialized_budget_without_narrowing_ratio_precision() {
+        let mesh = triangle_soup(45);
+        let request = Request {
+            schema_version: 1,
+            operation: "mesh.lod_chain".into(),
+            input_path: "fixture.json".into(),
+            parameters: LodChainParameters {
+                source_triangle_count: 45,
+                source_based: true,
+                budget_rounding: "nearest-ties-away-from-zero".into(),
+                levels: vec![LodLevelParameters {
+                    triangle_ratio: 0.7,
+                    target_triangle_count: 31,
+                    target_error: 1.0,
+                    lock_border: false,
+                }],
+            },
+        };
+        let (output, observations) = process(&request, mesh).unwrap();
+
+        assert_eq!(output.levels[0].triangle_ratio, 0.7);
+        assert_eq!(observations.levels[0].triangle_ratio, 0.7);
+        assert_eq!(observations.levels[0].requested_triangle_count, 31);
     }
 }
