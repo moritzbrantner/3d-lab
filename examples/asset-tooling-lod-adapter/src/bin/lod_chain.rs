@@ -199,13 +199,15 @@ fn process(
     {
         let level = index + 1;
         if result.level != index {
-            return Err(format!("LOD processor returned inconsistent level index {}", result.level));
+            return Err(format!(
+                "LOD processor returned inconsistent level index {}",
+                result.level
+            ));
         }
         if result.simplification.requested_triangle_count != requested.target_triangle_count {
             return Err(format!(
                 "LOD level {level} targetTriangleCount mismatch: request materialized {}, authoritative processor applied {}",
-                requested.target_triangle_count,
-                result.simplification.requested_triangle_count
+                requested.target_triangle_count, result.simplification.requested_triangle_count
             ));
         }
         let shares_vertices = result.simplification.mesh.vertices() == source.vertices();
@@ -277,15 +279,14 @@ fn generate(
     )
     .map_err(|error| format!("invalid request JSON: {error}"))?;
     let input_path = resolve_input_path(&request.input_path)?;
-    let source_document: MeshDocument = serde_json::from_slice(
-        &fs::read(&input_path).map_err(|error| {
+    let source_document: MeshDocument =
+        serde_json::from_slice(&fs::read(&input_path).map_err(|error| {
             format!(
                 "failed to read input mesh '{}': {error}",
                 request.input_path
             )
-        })?,
-    )
-    .map_err(|error| format!("invalid input mesh JSON: {error}"))?;
+        })?)
+        .map_err(|error| format!("invalid input mesh JSON: {error}"))?;
     let (output, observations) = process(&request, source_document)?;
 
     fs::write(
@@ -317,9 +318,7 @@ fn main() {
                 || output.is_none()
                 || observations.is_none()
             {
-                Err(
-                    "usage: lod_chain probe | generate REQUEST OUTPUT OBSERVATIONS".into(),
-                )
+                Err("usage: lod_chain probe | generate REQUEST OUTPUT OBSERVATIONS".into())
             } else {
                 generate(
                     request.as_deref().expect("checked above"),
@@ -385,19 +384,22 @@ mod tests {
                 levels: vec![
                     LodLevelParameters {
                         triangle_ratio: 0.75,
-                        target_triangle_count: (source_triangle_count as f32 * 0.75).round() as usize,
+                        target_triangle_count: (source_triangle_count as f32 * 0.75).round()
+                            as usize,
                         target_error: 1.0,
                         lock_border: false,
                     },
                     LodLevelParameters {
                         triangle_ratio: 0.5,
-                        target_triangle_count: (source_triangle_count as f32 * 0.5).round() as usize,
+                        target_triangle_count: (source_triangle_count as f32 * 0.5).round()
+                            as usize,
                         target_error: 1.0,
                         lock_border: false,
                     },
                     LodLevelParameters {
                         triangle_ratio: 0.25,
-                        target_triangle_count: (source_triangle_count as f32 * 0.25).round() as usize,
+                        target_triangle_count: (source_triangle_count as f32 * 0.25).round()
+                            as usize,
                         target_error: 1.0,
                         lock_border: false,
                     },
