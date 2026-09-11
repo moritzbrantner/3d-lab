@@ -79,14 +79,14 @@ struct ReduceParameters {
     preserve_endpoints: bool,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AnimationDocument {
     schema_version: u32,
     channels: Vec<ChannelDocument>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 enum ChannelDocument {
     Translation {
@@ -195,6 +195,9 @@ fn validate_times<T>(
     for (index, keyframe) in keyframes.iter().enumerate() {
         let current = time(keyframe);
         assert_finite(current, &format!("{location}[{index}].time"))?;
+        if current < 0.0 {
+            return Err(format!("{location}[{index}].time must be non-negative"));
+        }
         if index > 0 && current <= time(&keyframes[index - 1]) {
             return Err(format!("{location} times must be strictly increasing"));
         }
@@ -282,7 +285,9 @@ impl ChannelDocument {
 
     fn first_time(&self) -> f32 {
         match self {
-            Self::Translation { keyframes, .. } | Self::Scale { keyframes, .. } => keyframes[0].time,
+            Self::Translation { keyframes, .. } | Self::Scale { keyframes, .. } => {
+                keyframes[0].time
+            }
             Self::Rotation { keyframes, .. } => keyframes[0].time,
         }
     }
@@ -293,6 +298,50 @@ impl ChannelDocument {
                 keyframes[keyframes.len() - 1].time
             }
             Self::Rotation { keyframes, .. } => keyframes[keyframes.len() - 1].time,
+        }
+    }
+
+    fn endpoints_match(&self, other: &Self) -> bool {
+        match (self, other) {
+            (
+                Self::Translation {
+                    node: left_node,
+                    keyframes: left,
+                },
+                Self::Translation {
+                    node: right_node,
+                    keyframes: right,
+                },
+            )
+            | (
+                Self::Scale {
+                    node: left_node,
+                    keyframes: left,
+                },
+                Self::Scale {
+                    node: right_node,
+                    keyframes: right,
+                },
+            ) => {
+                left_node == right_node
+                    && left.first() == right.first()
+                    && left.last() == right.last()
+            }
+            (
+                Self::Rotation {
+                    node: left_node,
+                    keyframes: left,
+                },
+                Self::Rotation {
+                    node: right_node,
+                    keyframes: right,
+                },
+            ) => {
+                left_node == right_node
+                    && left.first() == right.first()
+                    && left.last() == right.last()
+            }
+            _ => false,
         }
     }
 }
@@ -348,7 +397,10 @@ fn validate_resample_parameters(
     parameters: &ResampleParameters,
     document: &AnimationDocument,
 ) -> Result<(), String> {
-    assert_finite(parameters.source_start_seconds, "parameters.sourceStartSeconds")?;
+    assert_finite(
+        parameters.source_start_seconds,
+        "parameters.sourceStartSeconds",
+    )?;
     assert_finite(parameters.source_end_seconds, "parameters.sourceEndSeconds")?;
     if parameters.source_start_seconds < 0.0 || parameters.source_end_seconds < 0.0 {
         return Err("source time bounds must be non-negative".into());
@@ -374,7 +426,9 @@ fn validate_resample_parameters(
     for (index, time) in parameters.target_times_seconds.iter().enumerate() {
         assert_finite(*time, &format!("parameters.targetTimesSeconds[{index}]"))?;
         if *time < parameters.source_start_seconds || *time > parameters.source_end_seconds {
-            return Err("parameters.targetTimesSeconds must stay inside the source time domain".into());
+            return Err(
+                "parameters.targetTimesSeconds must stay inside the source time domain".into(),
+            );
         }
         if index > 0 && *time <= parameters.target_times_seconds[index - 1] {
             return Err("parameters.targetTimesSeconds must be strictly increasing".into());
@@ -463,7 +517,8 @@ fn resample_document(
         .sum();
     let channel_count = channels.len();
     let result_keyframe_count = channel_count * parameters.target_times_seconds.len();
-    let duration_seconds = parameters.target_times_seconds[parameters.target_times_seconds.len() - 1]
+    let duration_seconds = parameters.target_times_seconds
+        [parameters.target_times_seconds.len() - 1]
         - parameters.target_times_seconds[0];
     Ok((
         AnimationDocument {
@@ -496,6 +551,10 @@ fn quaternion_error_radians(left: Quat, right: Quat) -> f32 {
     2.0 * left.dot(right).abs().clamp(0.0, 1.0).acos()
 }
 
+fn interpolate_vec3(left: Vec3, right: Vec3, factor: f32) -> Vec3 {
+    left.interpolate(right, factor)
+}
+
 fn reduce_indices<T: Copy>(
     times: &[f32],
     values: &[T],
@@ -508,18 +567,14 @@ fn reduce_indices<T: Copy>(
         return (0..times.len()).collect();
     }
 
-    fn visit<T: Copy>(
-        start: usize,
-        end: usize,
-        times: &[f32],
-        values: &[T],
-        tolerance: f32,
-        interpolate: impl Fn(T, T, f32) -> T + Copy,
-        error: impl Fn(T, T) -> f32 + Copy,
-        keep: &mut [bool],
-    ) {
+    let mut keep = vec![false; times.len()];
+    keep[0] = true;
+    keep[times.len() - 1] = true;
+    let mut spans = vec![(0, times.len() - 1)];
+
+    while let Some((start, end)) = spans.pop() {
         if end <= start + 1 {
-            return;
+            continue;
         }
         let span = times[end] - times[start];
         let mut maximum_error = -1.0_f32;
@@ -535,45 +590,15 @@ fn reduce_indices<T: Copy>(
         }
         if maximum_error > tolerance {
             keep[maximum_index] = true;
-            visit(
-                start,
-                maximum_index,
-                times,
-                values,
-                tolerance,
-                interpolate,
-                error,
-                keep,
-            );
-            visit(
-                maximum_index,
-                end,
-                times,
-                values,
-                tolerance,
-                interpolate,
-                error,
-                keep,
-            );
+            spans.push((maximum_index, end));
+            spans.push((start, maximum_index));
         }
     }
 
-    let mut keep = vec![false; times.len()];
-    keep[0] = true;
-    keep[times.len() - 1] = true;
-    visit(
-        0,
-        times.len() - 1,
-        times,
-        values,
-        tolerance,
-        interpolate,
-        error,
-        &mut keep,
-    );
     keep.into_iter()
         .enumerate()
-        .filter_map(|(index, keep)| keep.then_some(index))
+        .filter(|(_, keep)| *keep)
+        .map(|(index, _)| index)
         .collect()
 }
 
@@ -590,7 +615,7 @@ fn reduce_vec3_keyframes(
         &times,
         &values,
         tolerance,
-        |left, right, factor| left.interpolate(right, factor),
+        interpolate_vec3,
         vec3_error,
     );
     let reduced: Vec<_> = indices.iter().map(|index| keyframes[*index]).collect();
@@ -622,7 +647,7 @@ fn reduce_quat_keyframes(
         &times,
         &values,
         tolerance,
-        |left, right, factor| left.slerp(right, factor),
+        Quat::slerp,
         quaternion_error_radians,
     );
     let reduced: Vec<_> = indices.iter().map(|index| keyframes[*index]).collect();
@@ -634,7 +659,10 @@ fn reduce_quat_keyframes(
             keyframe.value[2],
             keyframe.value[3],
         );
-        maximum.max(quaternion_error_radians(actual, track.sample(keyframe.time)))
+        maximum.max(quaternion_error_radians(
+            actual,
+            track.sample(keyframe.time),
+        ))
     });
     Ok((reduced, maximum_error))
 }
@@ -711,10 +739,7 @@ fn reduce_document(
         .channels
         .iter()
         .zip(&channels)
-        .all(|(source, reduced)| {
-            source.first_time().to_bits() == reduced.first_time().to_bits()
-                && source.last_time().to_bits() == reduced.last_time().to_bits()
-        });
+        .all(|(source, reduced)| source.endpoints_match(reduced));
     if parameters.preserve_endpoints && !endpoints_preserved {
         return Err("endpoint-preserving reduction failed to retain source endpoints".into());
     }
@@ -780,8 +805,8 @@ fn generate(
     output_path: &Path,
     observations_path: &Path,
 ) -> Result<(), String> {
-    let request_bytes = fs::read(request_path)
-        .map_err(|error| format!("failed to read request: {error}"))?;
+    let request_bytes =
+        fs::read(request_path).map_err(|error| format!("failed to read request: {error}"))?;
     match operation {
         AdapterOperation::Resample => {
             let request: Request<ResampleParameters> = serde_json::from_slice(&request_bytes)
@@ -877,10 +902,7 @@ mod tests {
         let source = AnimationDocument {
             schema_version: 1,
             channels: vec![
-                translation_channel(&[
-                    (0.0, [0.0, 0.0, 0.0]),
-                    (1.0, [2.0, 0.0, 0.0]),
-                ]),
+                translation_channel(&[(0.0, [0.0, 0.0, 0.0]), (1.0, [2.0, 0.0, 0.0])]),
                 ChannelDocument::Rotation {
                     node: 0,
                     keyframes: vec![
