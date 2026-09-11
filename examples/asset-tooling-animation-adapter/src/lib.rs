@@ -12,6 +12,7 @@ const CODEC: &str = "three-d-animation-json-v1";
 const ANIMATION_SCHEMA_VERSION: u32 = 1;
 const CARGO_LOCK: &str = include_str!("../../../Cargo.lock");
 const UNIT_QUATERNION_TOLERANCE: f32 = 1.0e-4;
+const REDUCTION_COMPARISON_FACTOR: usize = 64;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AdapterOperation {
@@ -538,7 +539,7 @@ fn vec3_error(left: Vec3, right: Vec3) -> f32 {
     let dx = left.x - right.x;
     let dy = left.y - right.y;
     let dz = left.z - right.z;
-    (dx * dx + dy * dy + dz * dz).sqrt()
+    dx.hypot(dy).hypot(dz)
 }
 
 fn quaternion_error_radians(left: Quat, right: Quat) -> f32 {
@@ -560,8 +561,8 @@ fn quaternion_error_radians(left: Quat, right: Quat) -> f32 {
     let sy = left.y + right.y;
     let sz = left.z + right.z;
     let sw = left.w + right.w;
-    let difference = (dx * dx + dy * dy + dz * dz + dw * dw).sqrt();
-    let sum = (sx * sx + sy * sy + sz * sz + sw * sw).sqrt();
+    let difference = dx.hypot(dy).hypot(dz).hypot(dw);
+    let sum = sx.hypot(sy).hypot(sz).hypot(sw);
     4.0 * difference.atan2(sum)
 }
 
@@ -581,6 +582,8 @@ fn reduce_indices<T: Copy>(
         return (0..times.len()).collect();
     }
 
+    let comparison_budget = times.len().saturating_mul(REDUCTION_COMPARISON_FACTOR);
+    let mut comparisons = 0usize;
     let mut keep = vec![false; times.len()];
     keep[0] = true;
     keep[times.len() - 1] = true;
@@ -594,6 +597,10 @@ fn reduce_indices<T: Copy>(
         let mut maximum_error = -1.0_f32;
         let mut maximum_index = start + 1;
         for index in start + 1..end {
+            comparisons = comparisons.saturating_add(1);
+            if comparisons > comparison_budget {
+                return (0..times.len()).collect();
+            }
             let factor = (times[index] - times[start]) / span;
             let predicted = interpolate(values[start], values[end], factor);
             let current_error = error(values[index], predicted);
@@ -1003,6 +1010,41 @@ mod tests {
         ];
         let (reduced, maximum_error) = reduce_vec3_keyframes(&source, 0.25).unwrap();
         assert_eq!(reduced.len(), 3);
+        assert_eq!(maximum_error, 0.0);
+    }
+
+    #[test]
+    fn vector_error_does_not_underflow_small_deviations() {
+        let deviation = Vec3::new(1.0e-23, 0.0, 0.0);
+        assert!(vec3_error(Vec3::ZERO, deviation) > 0.0);
+        let source = vec![
+            Vec3KeyframeDocument {
+                time: 0.0,
+                value: [0.0, 0.0, 0.0],
+            },
+            Vec3KeyframeDocument {
+                time: 0.5,
+                value: [1.0e-23, 0.0, 0.0],
+            },
+            Vec3KeyframeDocument {
+                time: 1.0,
+                value: [0.0, 0.0, 0.0],
+            },
+        ];
+        let (reduced, _) = reduce_vec3_keyframes(&source, 0.0).unwrap();
+        assert_eq!(reduced, source);
+    }
+
+    #[test]
+    fn pathological_reduction_falls_back_to_source_within_work_budget() {
+        let source: Vec<_> = (0..512)
+            .map(|index| Vec3KeyframeDocument {
+                time: index as f32,
+                value: [f32::from(index % 2 != 0), 0.0, 0.0],
+            })
+            .collect();
+        let (reduced, maximum_error) = reduce_vec3_keyframes(&source, 0.1).unwrap();
+        assert_eq!(reduced, source);
         assert_eq!(maximum_error, 0.0);
     }
 
