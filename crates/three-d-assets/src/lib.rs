@@ -10,8 +10,8 @@ use core::fmt;
 use three_d_core::Mesh;
 
 pub use resources::{
-    EncodedImage, MagnificationFilter, MinificationFilter, NormalTextureBinding, Texture,
-    TextureSampler, TextureWrap,
+    EncodedImage, MagnificationFilter, MaterialTextureBinding, MinificationFilter,
+    NormalTextureBinding, Texture, TextureSampler, TextureWrap,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -56,6 +56,8 @@ pub struct Material {
     metallic_factor: f32,
     roughness_factor: f32,
     double_sided: bool,
+    base_color_texture: Option<MaterialTextureBinding>,
+    metallic_roughness_texture: Option<MaterialTextureBinding>,
     normal_texture: Option<NormalTextureBinding>,
 }
 
@@ -80,8 +82,20 @@ impl Material {
             metallic_factor,
             roughness_factor,
             double_sided,
+            base_color_texture: None,
+            metallic_roughness_texture: None,
             normal_texture: None,
         })
+    }
+
+    pub fn with_base_color_texture(mut self, texture: MaterialTextureBinding) -> Self {
+        self.base_color_texture = Some(texture);
+        self
+    }
+
+    pub fn with_metallic_roughness_texture(mut self, texture: MaterialTextureBinding) -> Self {
+        self.metallic_roughness_texture = Some(texture);
+        self
     }
 
     pub fn with_normal_texture(mut self, normal_texture: NormalTextureBinding) -> Self {
@@ -107,6 +121,14 @@ impl Material {
 
     pub const fn double_sided(&self) -> bool {
         self.double_sided
+    }
+
+    pub const fn base_color_texture(&self) -> Option<MaterialTextureBinding> {
+        self.base_color_texture
+    }
+
+    pub const fn metallic_roughness_texture(&self) -> Option<MaterialTextureBinding> {
+        self.metallic_roughness_texture
     }
 
     pub const fn normal_texture(&self) -> Option<NormalTextureBinding> {
