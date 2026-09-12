@@ -23,9 +23,7 @@ pub(crate) fn load_textures(gltf: &gltf::Gltf) -> Vec<Texture> {
     gltf.textures().map(convert_texture).collect()
 }
 
-pub(crate) fn convert_material_texture(
-    texture: gltf::texture::Info<'_>,
-) -> MaterialTextureBinding {
+pub(crate) fn convert_material_texture(texture: gltf::texture::Info<'_>) -> MaterialTextureBinding {
     MaterialTextureBinding::new(texture.texture().index(), texture.tex_coord())
 }
 
