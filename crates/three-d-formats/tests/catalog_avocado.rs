@@ -22,7 +22,11 @@ fn canonical_asset_tooling_avocado_decodes() {
         "canonical Avocado should contain at least one mesh"
     );
 
-    let primitive_count: usize = asset.meshes().iter().map(|mesh| mesh.primitives().len()).sum();
+    let primitive_count: usize = asset
+        .meshes()
+        .iter()
+        .map(|mesh| mesh.primitives().len())
+        .sum();
     assert!(
         primitive_count > 0,
         "canonical Avocado should contain at least one mesh primitive"
