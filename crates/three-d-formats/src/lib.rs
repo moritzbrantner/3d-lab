@@ -286,7 +286,8 @@ fn convert_gltf_material(material: gltf::Material<'_>) -> Result<Material, Forma
         material.double_sided(),
     )?;
     if let Some(texture) = pbr.base_color_texture() {
-        converted = converted.with_base_color_texture(gltf_resources::convert_material_texture(texture));
+        converted =
+            converted.with_base_color_texture(gltf_resources::convert_material_texture(texture));
     }
     if let Some(texture) = pbr.metallic_roughness_texture() {
         converted = converted
