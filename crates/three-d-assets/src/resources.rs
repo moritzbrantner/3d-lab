@@ -139,6 +139,26 @@ impl Texture {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MaterialTextureBinding {
+    texture: usize,
+    tex_coord: u32,
+}
+
+impl MaterialTextureBinding {
+    pub const fn new(texture: usize, tex_coord: u32) -> Self {
+        Self { texture, tex_coord }
+    }
+
+    pub const fn texture(&self) -> usize {
+        self.texture
+    }
+
+    pub const fn tex_coord(&self) -> u32 {
+        self.tex_coord
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct NormalTextureBinding {
     texture: usize,
@@ -197,6 +217,21 @@ pub(crate) fn validate_resource_references(
     }
 
     for (material_index, material) in materials.iter().enumerate() {
+        for binding in [
+            material.base_color_texture(),
+            material.metallic_roughness_texture(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if binding.texture() >= textures.len() {
+                return Err(AssetError::MaterialTextureIndexOutOfBounds {
+                    material_index,
+                    texture_index: binding.texture(),
+                    texture_count: textures.len(),
+                });
+            }
+        }
         if let Some(normal_texture) = material.normal_texture()
             && normal_texture.texture() >= textures.len()
         {

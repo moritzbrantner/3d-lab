@@ -143,7 +143,7 @@ impl fmt::Display for FormatError {
             ),
             Self::UnsupportedMaterialFeature { material_index } => write!(
                 formatter,
-                "glTF material {material_index} uses base-color/metallic-roughness textures, occlusion, emissive, or alpha semantics that three-d-assets does not yet preserve"
+                "glTF material {material_index} uses occlusion, emissive, or alpha semantics that three-d-assets does not yet preserve"
             ),
             Self::TooManyVertices {
                 mesh_index,
@@ -269,9 +269,7 @@ fn decode_gltf_data_uri(uri: &str) -> Result<Vec<u8>, FormatError> {
 fn convert_gltf_material(material: gltf::Material<'_>) -> Result<Material, FormatError> {
     let material_index = material.index().unwrap_or(usize::MAX);
     let pbr = material.pbr_metallic_roughness();
-    let has_unsupported_feature = pbr.base_color_texture().is_some()
-        || pbr.metallic_roughness_texture().is_some()
-        || material.occlusion_texture().is_some()
+    let has_unsupported_feature = material.occlusion_texture().is_some()
         || material.emissive_texture().is_some()
         || material.emissive_factor() != [0.0, 0.0, 0.0]
         || material.alpha_mode() != gltf::material::AlphaMode::Opaque;
@@ -287,6 +285,14 @@ fn convert_gltf_material(material: gltf::Material<'_>) -> Result<Material, Forma
         pbr.roughness_factor(),
         material.double_sided(),
     )?;
+    if let Some(texture) = pbr.base_color_texture() {
+        converted =
+            converted.with_base_color_texture(gltf_resources::convert_material_texture(texture));
+    }
+    if let Some(texture) = pbr.metallic_roughness_texture() {
+        converted = converted
+            .with_metallic_roughness_texture(gltf_resources::convert_material_texture(texture));
+    }
     if let Some(normal_texture) = material.normal_texture() {
         converted =
             converted.with_normal_texture(gltf_resources::convert_normal_texture(normal_texture)?);

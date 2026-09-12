@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "catalogId": "khronos.avocado-glb",
+  "assetTooling": {
+    "revision": "315ee92e23837e6ed36df68592c49e40a920855d",
+    "storagePath": "assets/canonical/khronos.avocado-glb/Avocado.glb",
+    "consumption": "asset-tooling/catalog/storage"
+  },
+  "source": {
+    "provider": "khronos-gltf-sample-assets",
+    "revision": "90d7ede14c7e280af263824604b427a1ca02cb66",
+    "path": "Models/Avocado/glTF-Binary/Avocado.glb",
+    "gitBlobSha": "dd79cb8043a835f8589bf9f8e55c9a2c672360b5",
+    "sha256": "ccc9c3ce56423720b09399c2351537207cd5a65f859f9e6e2f30922762f3abd4",
+    "byteLength": 8110040
+  },
+  "license": {
+    "spdx": "CC0-1.0",
+    "evidenceUrl": "https://github.com/KhronosGroup/glTF-Sample-Assets/blob/90d7ede14c7e280af263824604b427a1ca02cb66/Models/Avocado/LICENSE.md"
+  },
+  "consumption": {
+    "mode": "verified-external-canonical-storage",
+    "policy": "Hydrate and verify the exact asset-tooling Git LFS payload in CI; do not vendor a duplicate into 3d-lab"
+  }
+}

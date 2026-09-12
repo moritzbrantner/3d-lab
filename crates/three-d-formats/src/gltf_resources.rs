@@ -1,7 +1,7 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use three_d_assets::{
-    EncodedImage, MagnificationFilter, MinificationFilter, NormalTextureBinding, Texture,
-    TextureSampler, TextureWrap,
+    EncodedImage, MagnificationFilter, MaterialTextureBinding, MinificationFilter,
+    NormalTextureBinding, Texture, TextureSampler, TextureWrap,
 };
 
 use crate::FormatError;
@@ -21,6 +21,10 @@ pub(crate) fn load_samplers(gltf: &gltf::Gltf) -> Vec<TextureSampler> {
 
 pub(crate) fn load_textures(gltf: &gltf::Gltf) -> Vec<Texture> {
     gltf.textures().map(convert_texture).collect()
+}
+
+pub(crate) fn convert_material_texture(texture: gltf::texture::Info<'_>) -> MaterialTextureBinding {
+    MaterialTextureBinding::new(texture.texture().index(), texture.tex_coord())
 }
 
 pub(crate) fn convert_normal_texture(
