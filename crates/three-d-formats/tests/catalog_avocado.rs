@@ -17,29 +17,39 @@ fn canonical_asset_tooling_avocado_decodes() {
     );
 
     let asset = load_gltf(&bytes).expect("canonical asset-tooling Avocado GLB loads");
-    assert!(
-        !asset.meshes().is_empty(),
-        "canonical Avocado should contain at least one mesh"
-    );
+    assert_eq!(asset.meshes().len(), 1);
+    assert_eq!(asset.meshes()[0].primitives().len(), 1);
+    let mesh = asset.meshes()[0].primitives()[0].mesh();
+    assert_eq!(mesh.vertices().len(), 406);
+    assert_eq!(mesh.indices().len(), 2046);
+    assert!(mesh.attributes().normals.is_some());
+    assert!(mesh.attributes().tangents.is_some());
+    assert!(mesh.attributes().uvs.is_some());
 
-    let primitive_count: usize = asset
-        .meshes()
-        .iter()
-        .map(|mesh| mesh.primitives().len())
-        .sum();
-    assert!(
-        primitive_count > 0,
-        "canonical Avocado should contain at least one mesh primitive"
+    assert_eq!(asset.images().len(), 3);
+    assert_eq!(asset.textures().len(), 3);
+    assert_eq!(asset.materials().len(), 1);
+    let material = &asset.materials()[0];
+    assert_eq!(material.name(), Some("2256_Avocado_d"));
+    assert_eq!(
+        material
+            .base_color_texture()
+            .expect("base-color texture is preserved")
+            .texture(),
+        0
     );
-
-    let vertex_count: usize = asset
-        .meshes()
-        .iter()
-        .flat_map(|mesh| mesh.primitives())
-        .map(|primitive| primitive.mesh().vertices().len())
-        .sum();
-    assert!(
-        vertex_count > 0,
-        "canonical Avocado should decode non-empty geometry"
+    assert_eq!(
+        material
+            .metallic_roughness_texture()
+            .expect("metallic-roughness texture is preserved")
+            .texture(),
+        1
+    );
+    assert_eq!(
+        material
+            .normal_texture()
+            .expect("normal texture is preserved")
+            .texture(),
+        2
     );
 }
