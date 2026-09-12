@@ -1,6 +1,7 @@
 use three_d_assets::{
     Asset, AssetError, BaseColorFactor, EncodedImage, MagnificationFilter, Material,
-    MinificationFilter, NormalTextureBinding, Texture, TextureSampler, TextureWrap,
+    MaterialTextureBinding, MinificationFilter, NormalTextureBinding, Texture, TextureSampler,
+    TextureWrap,
 };
 
 fn material() -> Material {
@@ -18,8 +19,10 @@ fn encoded_image() -> EncodedImage {
 }
 
 #[test]
-fn asset_preserves_normal_texture_resource_graph() {
-    let binding = NormalTextureBinding::new(0, 0, 0.75).expect("binding is valid");
+fn asset_preserves_pbr_texture_resource_graph() {
+    let base_color = MaterialTextureBinding::new(0, 0);
+    let metallic_roughness = MaterialTextureBinding::new(1, 0);
+    let normal = NormalTextureBinding::new(2, 0, 0.75).expect("binding is valid");
     let sampler = TextureSampler::new(
         Some("Linear repeat".into()),
         Some(MagnificationFilter::Linear),
@@ -27,22 +30,44 @@ fn asset_preserves_normal_texture_resource_graph() {
         TextureWrap::Repeat,
         TextureWrap::MirroredRepeat,
     );
-    let texture = Texture::new(Some("Normal texture".into()), 0, Some(0));
+    let material = material()
+        .with_base_color_texture(base_color)
+        .with_metallic_roughness_texture(metallic_roughness)
+        .with_normal_texture(normal);
     let asset = Asset::with_resources(
         Vec::new(),
-        vec![material().with_normal_texture(binding)],
-        vec![encoded_image()],
+        vec![material],
+        vec![encoded_image(), encoded_image(), encoded_image()],
         vec![sampler],
-        vec![texture],
+        vec![
+            Texture::new(Some("Base color".into()), 0, Some(0)),
+            Texture::new(Some("Metallic roughness".into()), 1, Some(0)),
+            Texture::new(Some("Normal texture".into()), 2, Some(0)),
+        ],
     )
     .expect("resource references are valid");
 
-    let binding = asset.materials()[0]
+    let material = &asset.materials()[0];
+    assert_eq!(
+        material
+            .base_color_texture()
+            .expect("base color texture is preserved")
+            .texture(),
+        0
+    );
+    assert_eq!(
+        material
+            .metallic_roughness_texture()
+            .expect("metallic roughness texture is preserved")
+            .texture(),
+        1
+    );
+    let normal = material
         .normal_texture()
         .expect("normal texture is preserved");
-    assert_eq!(binding.texture(), 0);
-    assert_eq!(binding.tex_coord(), 0);
-    assert_eq!(binding.scale(), 0.75);
+    assert_eq!(normal.texture(), 2);
+    assert_eq!(normal.tex_coord(), 0);
+    assert_eq!(normal.scale(), 0.75);
     assert_eq!(asset.textures()[0].image(), 0);
     assert_eq!(asset.textures()[0].sampler(), Some(0));
     assert_eq!(asset.images()[0].mime_type(), "image/png");
@@ -97,12 +122,12 @@ fn asset_rejects_missing_texture_sampler_reference() {
 
 #[test]
 fn asset_rejects_missing_material_texture_reference() {
-    let binding = NormalTextureBinding::new(1, 0, 1.0).expect("binding is valid");
+    let binding = MaterialTextureBinding::new(1, 0);
 
     assert_eq!(
         Asset::with_resources(
             Vec::new(),
-            vec![material().with_normal_texture(binding)],
+            vec![material().with_base_color_texture(binding)],
             vec![encoded_image()],
             Vec::new(),
             vec![Texture::new(None, 0, None)],
