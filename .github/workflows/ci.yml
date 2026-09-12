@@ -19,6 +19,32 @@ jobs:
       - run: cargo clippy --all-targets --all-features -- -D warnings
       - run: cargo test --all-features
 
+  catalog-avocado:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout 3d-lab
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - name: Checkout pinned asset-tooling catalog with Git LFS
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          repository: moritzbrantner/asset-tooling
+          ref: 315ee92e23837e6ed36df68592c49e40a920855d
+          path: .catalog/asset-tooling
+          lfs: true
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify hydrated canonical LFS storage
+        run: git -C .catalog/asset-tooling lfs fsck
+      - name: Materialize verified canonical Avocado
+        run: bun scripts/materialize-canonical-avocado.mjs .catalog/asset-tooling target/catalog/Avocado.glb
+      - name: Exercise canonical Avocado through three-d-formats
+        env:
+          AVOCADO_GLTF_PATH: ${{ github.workspace }}/target/catalog/Avocado.glb
+        run: cargo test -p three-d-formats --test catalog_avocado -- --ignored --exact canonical_asset_tooling_avocado_decodes
+
   web:
     runs-on: ubuntu-latest
     defaults:
