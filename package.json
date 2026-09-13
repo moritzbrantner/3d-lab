@@ -12,6 +12,9 @@
       "import": "./packages/renderer/index.js"
     }
   },
+  "scripts": {
+    "test": "bun test packages/renderer"
+  },
   "dependencies": {
     "three": "0.185.1"
   }
