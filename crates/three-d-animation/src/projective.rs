@@ -1,5 +1,7 @@
 use super::Mat4;
 
+const INVERSE_RELATIVE_EPSILON: f64 = f32::EPSILON as f64 * 8.0;
+
 impl Mat4 {
     /// Transforms one homogeneous four-component vector without performing a
     /// perspective divide. This is the primitive camera consumers need for
@@ -17,9 +19,10 @@ impl Mat4 {
     /// Returns the inverse of a finite, nonsingular matrix.
     ///
     /// Elimination is evaluated in `f64` even though the durable renderer-facing
-    /// matrix contract is `f32`. This keeps pivot selection stable for ordinary
-    /// camera matrices and fails closed if the inverse cannot be represented as
-    /// finite `f32` values.
+    /// matrix contract is `f32`. Scaled partial pivoting rejects matrices whose
+    /// remaining rank is below useful `f32` precision instead of accepting tiny
+    /// roundoff pivots from singular inputs. The conversion then fails closed if
+    /// the inverse cannot be represented as finite `f32` values.
     #[allow(clippy::needless_range_loop)]
     pub fn inverse(self) -> Option<Self> {
         if self.elements.iter().any(|value| !value.is_finite()) {
@@ -27,31 +30,41 @@ impl Mat4 {
         }
 
         let mut augmented = [[0.0_f64; 8]; 4];
+        let mut row_scales = [0.0_f64; 4];
         for row in 0..4 {
             for column in 0..4 {
-                augmented[row][column] = f64::from(self.elements[column * 4 + row]);
+                let value = f64::from(self.elements[column * 4 + row]);
+                augmented[row][column] = value;
+                row_scales[row] = row_scales[row].max(value.abs());
+            }
+            if row_scales[row] == 0.0 {
+                return None;
             }
             augmented[row][4 + row] = 1.0;
         }
 
         for column in 0..4 {
             let mut pivot_row = column;
-            let mut pivot_magnitude = augmented[column][column].abs();
+            let mut pivot_ratio = augmented[column][column].abs() / row_scales[column];
             for row in column + 1..4 {
-                let magnitude = augmented[row][column].abs();
-                if magnitude > pivot_magnitude {
+                let ratio = augmented[row][column].abs() / row_scales[row];
+                if ratio > pivot_ratio {
                     pivot_row = row;
-                    pivot_magnitude = magnitude;
+                    pivot_ratio = ratio;
                 }
             }
-            if !pivot_magnitude.is_finite() || pivot_magnitude == 0.0 {
+            if !pivot_ratio.is_finite() || pivot_ratio <= INVERSE_RELATIVE_EPSILON {
                 return None;
             }
             if pivot_row != column {
                 augmented.swap(column, pivot_row);
+                row_scales.swap(column, pivot_row);
             }
 
             let pivot = augmented[column][column];
+            if pivot.abs() <= row_scales[column] * INVERSE_RELATIVE_EPSILON {
+                return None;
+            }
             for entry in &mut augmented[column] {
                 *entry /= pivot;
             }
@@ -120,6 +133,16 @@ mod tests {
     #[test]
     fn inverse_rejects_singular_and_non_finite_matrices() {
         assert!(Mat4::scale(Vec3::new(1.0, 0.0, 1.0)).inverse().is_none());
+        let duplicate_rows = Mat4 {
+            elements: [
+                1.0, -2.0, -1.0, 1.0, // column 0
+                -1.0, -2.0, 2.0, -1.0, // column 1
+                -1.0, 0.0, -2.0, -1.0, // column 2
+                0.0, -2.0, 0.0, 0.0, // column 3
+            ],
+        };
+        assert!(duplicate_rows.inverse().is_none());
+
         let mut invalid = Mat4::IDENTITY;
         invalid.elements[0] = f32::NAN;
         assert!(invalid.inverse().is_none());
