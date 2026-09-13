@@ -1,6 +1,7 @@
 import {describe, expect, test} from "bun:test"
 import {
   ThreeRendererContractError,
+  projectWorldPoint,
   validateRenderFrame,
   type RendererFrame,
 } from "@moritzbrantner/three-d-renderer"
@@ -50,6 +51,17 @@ describe("reusable Three renderer contract", () => {
     ]
 
     expect(validateRenderFrame(value)).toBe(value)
+  })
+
+  test("projects world points for downstream DOM interaction overlays", () => {
+    const projected = projectWorldPoint(frame().camera, [0, 0, 0], {
+      x: 10,
+      y: 20,
+      width: 200,
+      height: 100,
+    })
+
+    expect(projected).toEqual({x: 110, y: 70, depth: 0, visible: true})
   })
 
   test("rejects duplicate stable node ids", () => {
