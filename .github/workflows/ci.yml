@@ -58,6 +58,9 @@ jobs:
       - name: Install reusable renderer dependencies
         working-directory: .
         run: bun install
+      - name: Test reusable renderer contract
+        working-directory: .
+        run: bun run test
       - run: bun install
       - run: bun run typecheck
       - run: bun test
