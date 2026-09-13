@@ -28,15 +28,31 @@ export type CylinderGeometry = {
 
 export type RendererGeometry = BoxGeometry | SphereGeometry | CylinderGeometry
 
-export type RendererSceneNode = {
+export type RendererTransform = {
+  translation: [number, number, number]
+  scale?: [number, number, number]
+  rotationQuaternion?: [number, number, number, number]
+}
+
+type RendererNodeBase = {
   id: string
-  modelMatrix: Matrix4Values
   geometry: RendererGeometry
   color: number | `#${string}`
   opacity?: number
   wireframe?: boolean
   visible?: boolean
 }
+
+export type RendererSceneNode = RendererNodeBase & (
+  | {
+      modelMatrix: Matrix4Values
+      transform?: never
+    }
+  | {
+      modelMatrix?: never
+      transform: RendererTransform
+    }
+)
 
 export type RendererFrame = {
   camera: RendererCamera
