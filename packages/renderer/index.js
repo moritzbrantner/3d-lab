@@ -2,6 +2,8 @@ import * as THREE from "three"
 
 const DEFAULT_BACKGROUND = 0x0c111a
 const DEFAULT_PIXEL_RATIO_LIMIT = 2
+const IDENTITY_QUATERNION = [0, 0, 0, 1]
+const UNIT_SCALE = [1, 1, 1]
 
 export class ThreeRendererContractError extends Error {
   constructor(message) {
@@ -16,9 +18,9 @@ function requireFiniteMatrix(name, value) {
   }
 }
 
-function requireFiniteTriple(name, value, {positive = false} = {}) {
-  if (!Array.isArray(value) || value.length !== 3 || value.some((entry) => !Number.isFinite(entry))) {
-    throw new ThreeRendererContractError(`${name} must contain exactly three finite numbers`)
+function requireFiniteTuple(name, value, length, {positive = false} = {}) {
+  if (!Array.isArray(value) || value.length !== length || value.some((entry) => !Number.isFinite(entry))) {
+    throw new ThreeRendererContractError(`${name} must contain exactly ${length} finite numbers`)
   }
   if (positive && value.some((entry) => entry <= 0)) {
     throw new ThreeRendererContractError(`${name} values must be positive`)
@@ -39,7 +41,7 @@ function validateGeometry(geometry) {
   }
   switch (geometry.kind) {
     case "box":
-      requireFiniteTriple("box size", geometry.size, {positive: true})
+      requireFiniteTuple("box size", geometry.size, 3, {positive: true})
       return
     case "sphere":
       if (!Number.isFinite(geometry.radius) || geometry.radius <= 0) {
@@ -58,6 +60,35 @@ function validateGeometry(geometry) {
       return
     default:
       throw new ThreeRendererContractError(`unsupported geometry kind: ${String(geometry.kind)}`)
+  }
+}
+
+function validateTransform(node) {
+  const hasMatrix = node.modelMatrix !== undefined
+  const hasTransform = node.transform !== undefined
+  if (hasMatrix === hasTransform) {
+    throw new ThreeRendererContractError(
+      `scene node ${node.id} must provide exactly one of modelMatrix or transform`,
+    )
+  }
+  if (hasMatrix) {
+    requireFiniteMatrix(`model matrix for ${node.id}`, node.modelMatrix)
+    return
+  }
+
+  if (!node.transform || typeof node.transform !== "object") {
+    throw new ThreeRendererContractError(`transform for ${node.id} must be an object`)
+  }
+  requireFiniteTuple(`translation for ${node.id}`, node.transform.translation, 3)
+  if (node.transform.scale !== undefined) {
+    requireFiniteTuple(`scale for ${node.id}`, node.transform.scale, 3, {positive: true})
+  }
+  if (node.transform.rotationQuaternion !== undefined) {
+    requireFiniteTuple(`rotation quaternion for ${node.id}`, node.transform.rotationQuaternion, 4)
+    const lengthSquared = node.transform.rotationQuaternion.reduce((sum, entry) => sum + entry * entry, 0)
+    if (!Number.isFinite(lengthSquared) || lengthSquared <= Number.EPSILON) {
+      throw new ThreeRendererContractError(`rotation quaternion for ${node.id} must be non-zero`)
+    }
   }
 }
 
@@ -86,7 +117,7 @@ export function validateRenderFrame(frame) {
       throw new ThreeRendererContractError(`duplicate scene node id: ${node.id}`)
     }
     ids.add(node.id)
-    requireFiniteMatrix(`model matrix for ${node.id}`, node.modelMatrix)
+    validateTransform(node)
     validateGeometry(node.geometry)
     requireColor(node.color)
     if (node.opacity !== undefined && (!Number.isFinite(node.opacity) || node.opacity < 0 || node.opacity > 1)) {
@@ -137,6 +168,23 @@ function createMaterial(node) {
     roughness: 0.86,
     metalness: 0.02,
   })
+}
+
+function applyNodeTransform(mesh, node) {
+  if (node.modelMatrix !== undefined) {
+    mesh.matrix.fromArray(node.modelMatrix)
+    return
+  }
+
+  const translation = node.transform.translation
+  const scale = node.transform.scale ?? UNIT_SCALE
+  const rotation = node.transform.rotationQuaternion ?? IDENTITY_QUATERNION
+  const quaternion = new THREE.Quaternion(...rotation).normalize()
+  mesh.matrix.compose(
+    new THREE.Vector3(...translation),
+    quaternion,
+    new THREE.Vector3(...scale),
+  )
 }
 
 export function createThreeSceneRenderer(canvas, options = {}) {
@@ -227,7 +275,7 @@ export function createThreeSceneRenderer(canvas, options = {}) {
           mesh.geometry = nextGeometry
           mesh.material = nextMaterial
         }
-        mesh.matrix.fromArray(node.modelMatrix)
+        applyNodeTransform(mesh, node)
         mesh.matrixWorldNeedsUpdate = true
         mesh.visible = node.visible !== false
       }
