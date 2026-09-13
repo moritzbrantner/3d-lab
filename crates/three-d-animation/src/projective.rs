@@ -1,6 +1,6 @@
 use super::Mat4;
 
-const INVERSE_RELATIVE_EPSILON: f64 = f32::EPSILON as f64 * 8.0;
+const INVERSE_RESIDUAL_EPSILON: f64 = 1.0e-6;
 
 impl Mat4 {
     /// Transforms one homogeneous four-component vector without performing a
@@ -19,52 +19,44 @@ impl Mat4 {
     /// Returns the inverse of a finite, nonsingular matrix.
     ///
     /// Elimination is evaluated in `f64` even though the durable renderer-facing
-    /// matrix contract is `f32`. Scaled partial pivoting rejects matrices whose
-    /// remaining rank is below useful `f32` precision instead of accepting tiny
-    /// roundoff pivots from singular inputs. The conversion then fails closed if
-    /// the inverse cannot be represented as finite `f32` values.
+    /// matrix contract is `f32`. Partial pivoting finds a candidate inverse and
+    /// the original matrix then verifies that candidate in both multiplication
+    /// orders. The verification rejects tiny roundoff pivots from singular
+    /// inputs without treating large but unrelated translation terms as evidence
+    /// of singularity.
     #[allow(clippy::needless_range_loop)]
     pub fn inverse(self) -> Option<Self> {
         if self.elements.iter().any(|value| !value.is_finite()) {
             return None;
         }
 
+        let original = matrix_rows_f64(self);
         let mut augmented = [[0.0_f64; 8]; 4];
-        let mut row_scales = [0.0_f64; 4];
         for row in 0..4 {
             for column in 0..4 {
-                let value = f64::from(self.elements[column * 4 + row]);
-                augmented[row][column] = value;
-                row_scales[row] = row_scales[row].max(value.abs());
-            }
-            if row_scales[row] == 0.0 {
-                return None;
+                augmented[row][column] = original[row][column];
             }
             augmented[row][4 + row] = 1.0;
         }
 
         for column in 0..4 {
             let mut pivot_row = column;
-            let mut pivot_ratio = augmented[column][column].abs() / row_scales[column];
+            let mut pivot_magnitude = augmented[column][column].abs();
             for row in column + 1..4 {
-                let ratio = augmented[row][column].abs() / row_scales[row];
-                if ratio > pivot_ratio {
+                let magnitude = augmented[row][column].abs();
+                if magnitude > pivot_magnitude {
                     pivot_row = row;
-                    pivot_ratio = ratio;
+                    pivot_magnitude = magnitude;
                 }
             }
-            if !pivot_ratio.is_finite() || pivot_ratio <= INVERSE_RELATIVE_EPSILON {
+            if !pivot_magnitude.is_finite() || pivot_magnitude == 0.0 {
                 return None;
             }
             if pivot_row != column {
                 augmented.swap(column, pivot_row);
-                row_scales.swap(column, pivot_row);
             }
 
             let pivot = augmented[column][column];
-            if pivot.abs() <= row_scales[column] * INVERSE_RELATIVE_EPSILON {
-                return None;
-            }
             for entry in &mut augmented[column] {
                 *entry /= pivot;
             }
@@ -83,18 +75,58 @@ impl Mat4 {
             }
         }
 
+        let mut candidate_rows = [[0.0_f64; 4]; 4];
+        for row in 0..4 {
+            for column in 0..4 {
+                candidate_rows[row][column] = augmented[row][4 + column];
+            }
+        }
+        if !is_inverse_pair(original, candidate_rows) {
+            return None;
+        }
+
         let mut elements = [0.0_f32; 16];
         for row in 0..4 {
             for column in 0..4 {
-                let value = augmented[row][4 + column];
+                let value = candidate_rows[row][column];
                 if !value.is_finite() || value.abs() > f64::from(f32::MAX) {
                     return None;
                 }
                 elements[column * 4 + row] = value as f32;
             }
         }
-        Some(Self { elements })
+        let candidate = Self { elements };
+        is_inverse_pair(original, matrix_rows_f64(candidate)).then_some(candidate)
     }
+}
+
+fn matrix_rows_f64(matrix: Mat4) -> [[f64; 4]; 4] {
+    let mut rows = [[0.0; 4]; 4];
+    for row in 0..4 {
+        for column in 0..4 {
+            rows[row][column] = f64::from(matrix.elements[column * 4 + row]);
+        }
+    }
+    rows
+}
+
+fn is_inverse_pair(left: [[f64; 4]; 4], right: [[f64; 4]; 4]) -> bool {
+    matrix_product_is_identity(left, right) && matrix_product_is_identity(right, left)
+}
+
+fn matrix_product_is_identity(left: [[f64; 4]; 4], right: [[f64; 4]; 4]) -> bool {
+    for row in 0..4 {
+        for column in 0..4 {
+            let actual = (0..4)
+                .map(|index| left[row][index] * right[index][column])
+                .sum::<f64>();
+            let expected = if row == column { 1.0 } else { 0.0 };
+            if !actual.is_finite() || (actual - expected).abs() > INVERSE_RESIDUAL_EPSILON {
+                return false;
+            }
+        }
+    }
+    true
 }
 
 #[cfg(test)]
@@ -128,6 +160,16 @@ mod tests {
 
         assert_matrix_close(matrix * inverse, Mat4::IDENTITY);
         assert_matrix_close(inverse * matrix, Mat4::IDENTITY);
+    }
+
+    #[test]
+    fn inverse_preserves_large_representable_translation() {
+        let matrix = Mat4::translation(Vec3::new(2_000_000.0, 0.0, 0.0));
+        let inverse = matrix.inverse().expect("large translation is invertible");
+        assert_eq!(
+            inverse,
+            Mat4::translation(Vec3::new(-2_000_000.0, 0.0, 0.0))
+        );
     }
 
     #[test]
