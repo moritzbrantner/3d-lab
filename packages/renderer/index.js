@@ -1,4 +1,6 @@
 import * as THREE from "three"
+import {webGpuProjectionToWebGl} from "./depth.js"
+import {evictUnusedResources} from "./resources.js"
 
 const DEFAULT_BACKGROUND = 0x0c111a
 const DEFAULT_PIXEL_RATIO_LIMIT = 2
@@ -222,7 +224,7 @@ export function createThreeSceneRenderer(canvas, options = {}) {
       geometry = createGeometry(descriptor)
       geometries.set(key, geometry)
     }
-    return geometry
+    return {key, geometry}
   }
 
   function acquireMaterial(node) {
@@ -232,13 +234,13 @@ export function createThreeSceneRenderer(canvas, options = {}) {
       material = createMaterial(node)
       materials.set(key, material)
     }
-    return material
+    return {key, material}
   }
 
   function applyCamera(frameCamera) {
     camera.matrixWorldInverse.fromArray(frameCamera.viewMatrix)
     camera.matrixWorld.copy(camera.matrixWorldInverse).invert()
-    camera.projectionMatrix.fromArray(frameCamera.projectionMatrix)
+    camera.projectionMatrix.fromArray(webGpuProjectionToWebGl(frameCamera.projectionMatrix))
     camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert()
   }
 
@@ -258,11 +260,16 @@ export function createThreeSceneRenderer(canvas, options = {}) {
       validateRenderFrame(frame)
       applyCamera(frame.camera)
 
-      const live = new Set()
+      const liveObjectIds = new Set()
+      const liveGeometryKeys = new Set()
+      const liveMaterialKeys = new Set()
       for (const node of frame.nodes) {
-        live.add(node.id)
-        const nextGeometry = acquireGeometry(node.geometry)
-        const nextMaterial = acquireMaterial(node)
+        liveObjectIds.add(node.id)
+        const {key: nextGeometryKey, geometry: nextGeometry} = acquireGeometry(node.geometry)
+        const {key: nextMaterialKey, material: nextMaterial} = acquireMaterial(node)
+        liveGeometryKeys.add(nextGeometryKey)
+        liveMaterialKeys.add(nextMaterialKey)
+
         let mesh = objects.get(node.id)
         if (!mesh) {
           mesh = new THREE.Mesh(nextGeometry, nextMaterial)
@@ -281,10 +288,12 @@ export function createThreeSceneRenderer(canvas, options = {}) {
       }
 
       for (const [id, mesh] of objects) {
-        if (live.has(id)) continue
+        if (liveObjectIds.has(id)) continue
         scene.remove(mesh)
         objects.delete(id)
       }
+      evictUnusedResources(geometries, liveGeometryKeys)
+      evictUnusedResources(materials, liveMaterialKeys)
 
       renderer.render(scene, camera)
     },
