@@ -1,5 +1,6 @@
 import * as THREE from "three"
 import {webGpuProjectionToWebGl} from "./depth.js"
+import {projectWorldPointUnchecked} from "./projection.js"
 import {evictUnusedResources} from "./resources.js"
 
 const DEFAULT_BACKGROUND = 0x0c111a
@@ -128,6 +129,40 @@ export function validateRenderFrame(frame) {
   }
 
   return frame
+}
+
+export function projectWorldPoint(camera, point, viewport) {
+  if (!camera || typeof camera !== "object") {
+    throw new ThreeRendererContractError("projection camera is required")
+  }
+  requireFiniteMatrix("camera view matrix", camera.viewMatrix)
+  requireFiniteMatrix("camera projection matrix", camera.projectionMatrix)
+  requireFiniteTuple("world point", point, 3)
+  if (!viewport || typeof viewport !== "object") {
+    throw new ThreeRendererContractError("projection viewport is required")
+  }
+  const normalizedViewport = {
+    x: viewport.x ?? 0,
+    y: viewport.y ?? 0,
+    width: viewport.width,
+    height: viewport.height,
+  }
+  if (
+    !Number.isFinite(normalizedViewport.x) ||
+    !Number.isFinite(normalizedViewport.y) ||
+    !Number.isFinite(normalizedViewport.width) ||
+    !Number.isFinite(normalizedViewport.height) ||
+    normalizedViewport.width <= 0 ||
+    normalizedViewport.height <= 0
+  ) {
+    throw new ThreeRendererContractError("projection viewport must have finite positive width/height")
+  }
+
+  const projected = projectWorldPointUnchecked(camera, point, normalizedViewport)
+  if (![projected.x, projected.y, projected.depth].every(Number.isFinite)) {
+    throw new ThreeRendererContractError("world point projection must remain finite")
+  }
+  return projected
 }
 
 function geometryKey(geometry) {
