@@ -7,7 +7,7 @@ use core::fmt;
 use three_d_animation::Mat4;
 use three_d_core::Vec3;
 
-const DIRECTION_EPSILON: f32 = 1.0e-6;
+const DIRECTION_EPSILON: f64 = 1.0e-6;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CameraError {
@@ -29,11 +29,12 @@ impl fmt::Display for CameraError {
             Self::InvalidDepthRange => {
                 formatter.write_str("near/far planes must be finite with 0 < near < far")
             }
-            Self::InvalidOrthographicBounds => formatter
-                .write_str("orthographic bounds must be finite with left < right and bottom < top"),
-            Self::InvalidViewDirection => {
-                formatter.write_str("camera eye and target must define a finite direction")
-            }
+            Self::InvalidOrthographicBounds => formatter.write_str(
+                "orthographic bounds must be finite, representable, and satisfy left < right and bottom < top",
+            ),
+            Self::InvalidViewDirection => formatter.write_str(
+                "camera eye and target must define a finite, representable view transform",
+            ),
             Self::InvalidUpVector => formatter.write_str(
                 "camera up vector must be finite and not parallel to the view direction",
             ),
@@ -74,7 +75,7 @@ impl PerspectiveCamera {
             return Err(CameraError::InvalidAspect);
         }
         validate_depth_range(near, far)?;
-        validate_view(eye, target, up)?;
+        checked_camera_view_matrix(eye, target, up)?;
 
         Ok(Self {
             eye,
@@ -88,7 +89,8 @@ impl PerspectiveCamera {
     }
 
     pub fn view_matrix(self) -> Mat4 {
-        camera_view_matrix(self.eye, self.target, self.up)
+        checked_camera_view_matrix(self.eye, self.target, self.up)
+            .expect("validated perspective camera view remains representable")
     }
 
     pub fn projection_matrix(self) -> Mat4 {
@@ -149,17 +151,9 @@ impl OrthographicCamera {
         near: f32,
         far: f32,
     ) -> Result<Self, CameraError> {
-        if !left.is_finite()
-            || !right.is_finite()
-            || !bottom.is_finite()
-            || !top.is_finite()
-            || left >= right
-            || bottom >= top
-        {
-            return Err(CameraError::InvalidOrthographicBounds);
-        }
         validate_depth_range(near, far)?;
-        validate_view(eye, target, up)?;
+        checked_camera_view_matrix(eye, target, up)?;
+        checked_orthographic_projection_matrix(left, right, bottom, top, near, far)?;
 
         Ok(Self {
             eye,
@@ -175,34 +169,20 @@ impl OrthographicCamera {
     }
 
     pub fn view_matrix(self) -> Mat4 {
-        camera_view_matrix(self.eye, self.target, self.up)
+        checked_camera_view_matrix(self.eye, self.target, self.up)
+            .expect("validated orthographic camera view remains representable")
     }
 
     pub fn projection_matrix(self) -> Mat4 {
-        let width = self.right - self.left;
-        let height = self.top - self.bottom;
-        let depth = self.near - self.far;
-
-        Mat4 {
-            elements: [
-                2.0 / width,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                2.0 / height,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                1.0 / depth,
-                0.0,
-                -(self.right + self.left) / width,
-                -(self.top + self.bottom) / height,
-                self.near / depth,
-                1.0,
-            ],
-        }
+        checked_orthographic_projection_matrix(
+            self.left,
+            self.right,
+            self.bottom,
+            self.top,
+            self.near,
+            self.far,
+        )
+        .expect("validated orthographic projection remains representable")
     }
 
     pub fn view_projection_matrix(self) -> Mat4 {
@@ -217,7 +197,111 @@ fn validate_depth_range(near: f32, far: f32) -> Result<(), CameraError> {
     Ok(())
 }
 
-fn validate_view(eye: Vec3, target: Vec3, up: Vec3) -> Result<(), CameraError> {
+fn checked_orthographic_projection_matrix(
+    left: f32,
+    right: f32,
+    bottom: f32,
+    top: f32,
+    near: f32,
+    far: f32,
+) -> Result<Mat4, CameraError> {
+    if !left.is_finite()
+        || !right.is_finite()
+        || !bottom.is_finite()
+        || !top.is_finite()
+        || left >= right
+        || bottom >= top
+    {
+        return Err(CameraError::InvalidOrthographicBounds);
+    }
+
+    let left = f64::from(left);
+    let right = f64::from(right);
+    let bottom = f64::from(bottom);
+    let top = f64::from(top);
+    let near = f64::from(near);
+    let far = f64::from(far);
+    let width = right - left;
+    let height = top - bottom;
+    let depth = near - far;
+    let error = CameraError::InvalidOrthographicBounds;
+
+    Ok(Mat4 {
+        elements: [
+            checked_f32(2.0 / width, error)?,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            checked_f32(2.0 / height, error)?,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            checked_f32(1.0 / depth, error)?,
+            0.0,
+            checked_f32(-(right + left) / width, error)?,
+            checked_f32(-(top + bottom) / height, error)?,
+            checked_f32(near / depth, error)?,
+            1.0,
+        ],
+    })
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Vec3d {
+    x: f64,
+    y: f64,
+    z: f64,
+}
+
+impl Vec3d {
+    fn from_f32(value: Vec3) -> Self {
+        Self {
+            x: f64::from(value.x),
+            y: f64::from(value.y),
+            z: f64::from(value.z),
+        }
+    }
+
+    fn subtract(self, rhs: Self) -> Self {
+        Self {
+            x: self.x - rhs.x,
+            y: self.y - rhs.y,
+            z: self.z - rhs.z,
+        }
+    }
+
+    fn dot(self, rhs: Self) -> f64 {
+        self.x * rhs.x + self.y * rhs.y + self.z * rhs.z
+    }
+
+    fn cross(self, rhs: Self) -> Self {
+        Self {
+            x: self.y * rhs.z - self.z * rhs.y,
+            y: self.z * rhs.x - self.x * rhs.z,
+            z: self.x * rhs.y - self.y * rhs.x,
+        }
+    }
+
+    fn length(self) -> f64 {
+        self.dot(self).sqrt()
+    }
+
+    fn normalized(self, error: CameraError) -> Result<Self, CameraError> {
+        let length = self.length();
+        if !length.is_finite() || length <= f64::EPSILON {
+            return Err(error);
+        }
+        Ok(Self {
+            x: self.x / length,
+            y: self.y / length,
+            z: self.z / length,
+        })
+    }
+}
+
+fn checked_camera_view_matrix(eye: Vec3, target: Vec3, up: Vec3) -> Result<Mat4, CameraError> {
     if !finite_vec3(eye) || !finite_vec3(target) {
         return Err(CameraError::InvalidViewDirection);
     }
@@ -225,47 +309,47 @@ fn validate_view(eye: Vec3, target: Vec3, up: Vec3) -> Result<(), CameraError> {
         return Err(CameraError::InvalidUpVector);
     }
 
-    let forward = (target - eye)
-        .normalized()
-        .ok_or(CameraError::InvalidViewDirection)?;
-    let up = up.normalized().ok_or(CameraError::InvalidUpVector)?;
-    if forward.cross(up).length() <= DIRECTION_EPSILON {
+    let eye = Vec3d::from_f32(eye);
+    let target = Vec3d::from_f32(target);
+    let up_input = Vec3d::from_f32(up).normalized(CameraError::InvalidUpVector)?;
+    let forward = target
+        .subtract(eye)
+        .normalized(CameraError::InvalidViewDirection)?;
+    let right_unnormalized = forward.cross(up_input);
+    if right_unnormalized.length() <= DIRECTION_EPSILON {
         return Err(CameraError::InvalidUpVector);
     }
-
-    Ok(())
-}
-
-fn camera_view_matrix(eye: Vec3, target: Vec3, up: Vec3) -> Mat4 {
-    let forward = (target - eye)
-        .normalized()
-        .expect("validated camera view direction remains non-zero");
-    let right = forward
-        .cross(up)
-        .normalized()
-        .expect("validated camera up remains independent from view direction");
+    let right = right_unnormalized.normalized(CameraError::InvalidUpVector)?;
     let up = right.cross(forward);
+    let error = CameraError::InvalidViewDirection;
 
-    Mat4 {
+    Ok(Mat4 {
         elements: [
-            right.x,
-            up.x,
-            -forward.x,
+            checked_f32(right.x, error)?,
+            checked_f32(up.x, error)?,
+            checked_f32(-forward.x, error)?,
             0.0,
-            right.y,
-            up.y,
-            -forward.y,
+            checked_f32(right.y, error)?,
+            checked_f32(up.y, error)?,
+            checked_f32(-forward.y, error)?,
             0.0,
-            right.z,
-            up.z,
-            -forward.z,
+            checked_f32(right.z, error)?,
+            checked_f32(up.z, error)?,
+            checked_f32(-forward.z, error)?,
             0.0,
-            -right.dot(eye),
-            -up.dot(eye),
-            forward.dot(eye),
+            checked_f32(-right.dot(eye), error)?,
+            checked_f32(-up.dot(eye), error)?,
+            checked_f32(forward.dot(eye), error)?,
             1.0,
         ],
+    })
+}
+
+fn checked_f32(value: f64, error: CameraError) -> Result<f32, CameraError> {
+    if !value.is_finite() || value.abs() > f64::from(f32::MAX) {
+        return Err(error);
     }
+    Ok(value as f32)
 }
 
 fn finite_vec3(value: Vec3) -> bool {
@@ -356,6 +440,46 @@ mod tests {
         assert!((project_y(camera.top) - 1.0).abs() <= EPSILON);
         assert!(project_z(-camera.near).abs() <= EPSILON);
         assert!((project_z(-camera.far) - 1.0).abs() <= EPSILON);
+    }
+
+    #[test]
+    fn finite_extreme_orthographic_bounds_produce_finite_projection() {
+        let camera = OrthographicCamera::new(
+            Vec3::new(4.0, 5.0, 4.0),
+            Vec3::ZERO,
+            Vec3::new(0.0, 1.0, 0.0),
+            2.0e38,
+            3.0e38,
+            -3.0,
+            3.0,
+            0.1,
+            100.0,
+        )
+        .expect("finite representable bounds remain valid");
+
+        assert!(
+            camera
+                .projection_matrix()
+                .elements
+                .into_iter()
+                .all(f32::is_finite)
+        );
+    }
+
+    #[test]
+    fn extreme_opposite_view_coordinates_remain_finite() {
+        let camera = PerspectiveCamera::new(
+            Vec3::new(-f32::MAX, 0.0, 0.0),
+            Vec3::new(f32::MAX, 0.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            core::f32::consts::FRAC_PI_3,
+            1.0,
+            0.1,
+            100.0,
+        )
+        .expect("wide finite view direction remains representable");
+
+        assert!(camera.view_matrix().elements.into_iter().all(f32::is_finite));
     }
 
     #[test]
