@@ -4,10 +4,14 @@ on:
   push:
     branches: [main]
     paths:
+      - "package.json"
+      - "packages/renderer/**"
       - "web/**"
       - ".github/workflows/pages.yml"
   pull_request:
     paths:
+      - "package.json"
+      - "packages/renderer/**"
       - "web/**"
       - ".github/workflows/pages.yml"
 
@@ -31,6 +35,12 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0
+      - name: Install reusable renderer dependencies
+        working-directory: .
+        run: bun install
+      - name: Test reusable renderer contract
+        working-directory: .
+        run: bun run test
       - run: bun install
       - run: bun run typecheck
       - run: bun test

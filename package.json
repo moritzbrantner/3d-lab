@@ -1,0 +1,21 @@
+{
+  "name": "@moritzbrantner/three-d-renderer",
+  "version": "0.1.0",
+  "type": "module",
+  "private": false,
+  "files": [
+    "packages/renderer"
+  ],
+  "exports": {
+    ".": {
+      "types": "./packages/renderer/index.d.ts",
+      "import": "./packages/renderer/index.js"
+    }
+  },
+  "scripts": {
+    "test": "bun test packages/renderer"
+  },
+  "dependencies": {
+    "three": "0.185.1"
+  }
+}
