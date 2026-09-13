@@ -59,6 +59,20 @@ export type RendererFrame = {
   nodes: RendererSceneNode[]
 }
 
+export type ProjectionViewport = {
+  x?: number
+  y?: number
+  width: number
+  height: number
+}
+
+export type ProjectedPoint = {
+  x: number
+  y: number
+  depth: number
+  visible: boolean
+}
+
 export type ThreeSceneRendererOptions = {
   antialias?: boolean
   alpha?: boolean
@@ -76,6 +90,12 @@ export type ThreeSceneRenderer = {
 export class ThreeRendererContractError extends Error {}
 
 export function validateRenderFrame(frame: RendererFrame): RendererFrame
+
+export function projectWorldPoint(
+  camera: RendererCamera,
+  point: [number, number, number],
+  viewport: ProjectionViewport,
+): ProjectedPoint
 
 export function createThreeSceneRenderer(
   canvas: HTMLCanvasElement,
