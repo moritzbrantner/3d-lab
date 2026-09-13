@@ -479,7 +479,13 @@ mod tests {
         )
         .expect("wide finite view direction remains representable");
 
-        assert!(camera.view_matrix().elements.into_iter().all(f32::is_finite));
+        assert!(
+            camera
+                .view_matrix()
+                .elements
+                .into_iter()
+                .all(f32::is_finite)
+        );
     }
 
     #[test]
