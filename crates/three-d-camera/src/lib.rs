@@ -29,9 +29,8 @@ impl fmt::Display for CameraError {
             Self::InvalidDepthRange => {
                 formatter.write_str("near/far planes must be finite with 0 < near < far")
             }
-            Self::InvalidOrthographicBounds => formatter.write_str(
-                "orthographic bounds must be finite with left < right and bottom < top",
-            ),
+            Self::InvalidOrthographicBounds => formatter
+                .write_str("orthographic bounds must be finite with left < right and bottom < top"),
             Self::InvalidViewDirection => {
                 formatter.write_str("camera eye and target must define a finite direction")
             }
