@@ -35,6 +35,23 @@ describe("reusable Three renderer contract", () => {
     expect(validateRenderFrame(value)).toBe(value)
   })
 
+  test("accepts renderer-owned transform adaptation", () => {
+    const value = frame()
+    value.nodes = [
+      {
+        id: "guest:7",
+        transform: {
+          translation: [2.5, 0.45, 8.5],
+          scale: [0.35, 0.9, 0.35],
+        },
+        geometry: {kind: "cylinder", radius: 0.5, height: 1},
+        color: "#d2b48c",
+      },
+    ]
+
+    expect(validateRenderFrame(value)).toBe(value)
+  })
+
   test("rejects duplicate stable node ids", () => {
     const value = frame()
     value.nodes.push({...value.nodes[0]})
@@ -44,8 +61,22 @@ describe("reusable Three renderer contract", () => {
 
   test("rejects non-finite matrices before renderer submission", () => {
     const value = frame()
-    value.nodes[0].modelMatrix[12] = Number.NaN
+    const node = value.nodes[0]
+    if (node.modelMatrix === undefined) throw new Error("fixture must use a model matrix")
+    node.modelMatrix[12] = Number.NaN
 
     expect(() => validateRenderFrame(value)).toThrow("must contain exactly 16 finite numbers")
+  })
+
+  test("rejects ambiguous matrix and transform ownership", () => {
+    const value = frame() as unknown as {
+      camera: RendererFrame["camera"]
+      nodes: Array<Record<string, unknown>>
+    }
+    value.nodes[0].transform = {translation: [0, 0, 0]}
+
+    expect(() => validateRenderFrame(value as unknown as RendererFrame)).toThrow(
+      "must provide exactly one of modelMatrix or transform",
+    )
   })
 })
