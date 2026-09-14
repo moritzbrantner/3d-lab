@@ -75,11 +75,11 @@ pub fn inverse(matrix: Mat4) -> Result<Mat4, ProjectiveError> {
     ensure_finite_matrix(matrix)?;
 
     let mut augmented = [[0.0_f64; 8]; 4];
-    for row in 0..4 {
-        for column in 0..4 {
-            augmented[row][column] = f64::from(matrix.elements[column * 4 + row]);
+    for (row, values) in augmented.iter_mut().enumerate() {
+        for (column, value) in values.iter_mut().take(4).enumerate() {
+            *value = f64::from(matrix.elements[column * 4 + row]);
         }
-        augmented[row][4 + row] = 1.0;
+        values[4 + row] = 1.0;
     }
 
     for column in 0..4 {
@@ -106,24 +106,25 @@ pub fn inverse(matrix: Mat4) -> Result<Mat4, ProjectiveError> {
             *value /= pivot;
         }
 
-        for row in 0..4 {
+        let pivot_values = augmented[column];
+        for (row, values) in augmented.iter_mut().enumerate() {
             if row == column {
                 continue;
             }
-            let factor = augmented[row][column];
+            let factor = values[column];
             if factor == 0.0 {
                 continue;
             }
-            for index in 0..8 {
-                augmented[row][index] -= factor * augmented[column][index];
+            for (value, pivot_value) in values.iter_mut().zip(pivot_values) {
+                *value -= factor * pivot_value;
             }
         }
     }
 
     let mut elements = [0.0_f32; 16];
-    for row in 0..4 {
-        for column in 0..4 {
-            elements[column * 4 + row] = checked_f32(augmented[row][4 + column])?;
+    for (row, values) in augmented.iter().enumerate() {
+        for (column, value) in values[4..].iter().enumerate() {
+            elements[column * 4 + row] = checked_f32(*value)?;
         }
     }
 
