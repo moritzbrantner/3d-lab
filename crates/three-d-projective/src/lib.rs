@@ -40,46 +40,85 @@ impl std::error::Error for ProjectiveError {}
 
 /// Transforms a 3D point as `(x, y, z, 1)` and performs the homogeneous divide.
 pub fn transform_point_projective(matrix: Mat4, point: Vec3) -> Result<Vec3, ProjectiveError> {
-    ensure_finite_matrix(matrix)?;
-    if !finite_vec3(point) {
-        return Err(ProjectiveError::NonFinitePoint);
-    }
-
-    let m = matrix.elements;
-    let x = f64::from(point.x);
-    let y = f64::from(point.y);
-    let z = f64::from(point.z);
-
-    let transformed_x =
-        f64::from(m[0]) * x + f64::from(m[4]) * y + f64::from(m[8]) * z + f64::from(m[12]);
-    let transformed_y =
-        f64::from(m[1]) * x + f64::from(m[5]) * y + f64::from(m[9]) * z + f64::from(m[13]);
-    let transformed_z =
-        f64::from(m[2]) * x + f64::from(m[6]) * y + f64::from(m[10]) * z + f64::from(m[14]);
-    let transformed_w =
-        f64::from(m[3]) * x + f64::from(m[7]) * y + f64::from(m[11]) * z + f64::from(m[15]);
-
-    if !transformed_w.is_finite() || transformed_w.abs() <= HOMOGENEOUS_EPSILON {
-        return Err(ProjectiveError::InvalidHomogeneousCoordinate);
-    }
+    let transformed = transform_point_projective_f64(
+        matrix,
+        [
+            f64::from(point.x),
+            f64::from(point.y),
+            f64::from(point.z),
+        ],
+    )?;
 
     Ok(Vec3::new(
-        checked_f32(transformed_x / transformed_w)?,
-        checked_f32(transformed_y / transformed_w)?,
-        checked_f32(transformed_z / transformed_w)?,
+        checked_f32(transformed[0])?,
+        checked_f32(transformed[1])?,
+        checked_f32(transformed[2])?,
     ))
+}
+
+/// Transforms a finite f64 point through an f32 `Mat4` without truncating the result back to f32.
+///
+/// This is intended for precision-sensitive adapters that deliberately rebase their domain into
+/// a numerically safe local frame before consuming shared renderer-independent matrix math.
+pub fn transform_point_projective_f64(
+    matrix: Mat4,
+    point: [f64; 3],
+) -> Result<[f64; 3], ProjectiveError> {
+    ensure_finite_matrix(matrix)?;
+    ensure_finite_point(point)?;
+    transform_rows_projective(matrix_rows_f64(matrix), point)
 }
 
 /// Returns the inverse of a finite 4x4 matrix using deterministic Gauss-Jordan elimination.
 pub fn inverse(matrix: Mat4) -> Result<Mat4, ProjectiveError> {
+    let inverse = inverse_rows_f64(matrix)?;
+    let mut elements = [0.0_f32; 16];
+    for (row, values) in inverse.iter().enumerate() {
+        for (column, value) in values.iter().enumerate() {
+            elements[column * 4 + row] = checked_f32(*value)?;
+        }
+    }
+    Ok(Mat4 { elements })
+}
+
+/// Applies the inverse of `matrix` to a projective point.
+pub fn untransform_point_projective(matrix: Mat4, point: Vec3) -> Result<Vec3, ProjectiveError> {
+    let transformed = untransform_point_projective_f64(
+        matrix,
+        [
+            f64::from(point.x),
+            f64::from(point.y),
+            f64::from(point.z),
+        ],
+    )?;
+
+    Ok(Vec3::new(
+        checked_f32(transformed[0])?,
+        checked_f32(transformed[1])?,
+        checked_f32(transformed[2])?,
+    ))
+}
+
+/// Applies the inverse of an f32 `Mat4` while retaining f64 inverse/intersection precision.
+///
+/// Returning f64 values avoids quantizing inverse-matrix results before a consumer performs a
+/// long ray extension or another precision-sensitive local-frame calculation.
+pub fn untransform_point_projective_f64(
+    matrix: Mat4,
+    point: [f64; 3],
+) -> Result<[f64; 3], ProjectiveError> {
+    ensure_finite_point(point)?;
+    transform_rows_projective(inverse_rows_f64(matrix)?, point)
+}
+
+fn inverse_rows_f64(matrix: Mat4) -> Result<[[f64; 4]; 4], ProjectiveError> {
     ensure_finite_matrix(matrix)?;
 
+    let rows = matrix_rows_f64(matrix);
     let mut augmented = [[0.0_f64; 8]; 4];
-    for (row, values) in augmented.iter_mut().enumerate() {
-        for (column, value) in values.iter_mut().take(4).enumerate() {
-            *value = f64::from(matrix.elements[column * 4 + row]);
-        }
-        values[4 + row] = 1.0;
+    for (row_index, values) in augmented.iter_mut().enumerate() {
+        values[..4].copy_from_slice(&rows[row_index]);
+        values[4 + row_index] = 1.0;
     }
 
     for column in 0..4 {
@@ -121,19 +160,48 @@ pub fn inverse(matrix: Mat4) -> Result<Mat4, ProjectiveError> {
         }
     }
 
-    let mut elements = [0.0_f32; 16];
+    let mut inverse = [[0.0_f64; 4]; 4];
     for (row, values) in augmented.iter().enumerate() {
-        for (column, value) in values[4..].iter().enumerate() {
-            elements[column * 4 + row] = checked_f32(*value)?;
-        }
+        inverse[row].copy_from_slice(&values[4..]);
     }
-
-    Ok(Mat4 { elements })
+    Ok(inverse)
 }
 
-/// Applies the inverse of `matrix` to a projective point.
-pub fn untransform_point_projective(matrix: Mat4, point: Vec3) -> Result<Vec3, ProjectiveError> {
-    transform_point_projective(inverse(matrix)?, point)
+fn matrix_rows_f64(matrix: Mat4) -> [[f64; 4]; 4] {
+    let mut rows = [[0.0_f64; 4]; 4];
+    for (row, values) in rows.iter_mut().enumerate() {
+        for (column, value) in values.iter_mut().enumerate() {
+            *value = f64::from(matrix.elements[column * 4 + row]);
+        }
+    }
+    rows
+}
+
+fn transform_rows_projective(
+    rows: [[f64; 4]; 4],
+    point: [f64; 3],
+) -> Result<[f64; 3], ProjectiveError> {
+    let homogeneous = [point[0], point[1], point[2], 1.0];
+    let mut transformed = [0.0_f64; 4];
+    for (output, row) in transformed.iter_mut().zip(rows) {
+        *output = row
+            .into_iter()
+            .zip(homogeneous)
+            .map(|(left, right)| left * right)
+            .sum();
+    }
+
+    let w = transformed[3];
+    if !w.is_finite() || w.abs() <= HOMOGENEOUS_EPSILON {
+        return Err(ProjectiveError::InvalidHomogeneousCoordinate);
+    }
+
+    let result = [transformed[0] / w, transformed[1] / w, transformed[2] / w];
+    if result.into_iter().all(f64::is_finite) {
+        Ok(result)
+    } else {
+        Err(ProjectiveError::UnrepresentableResult)
+    }
 }
 
 fn ensure_finite_matrix(matrix: Mat4) -> Result<(), ProjectiveError> {
@@ -144,8 +212,12 @@ fn ensure_finite_matrix(matrix: Mat4) -> Result<(), ProjectiveError> {
     }
 }
 
-fn finite_vec3(value: Vec3) -> bool {
-    value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
+fn ensure_finite_point(point: [f64; 3]) -> Result<(), ProjectiveError> {
+    if point.into_iter().all(f64::is_finite) {
+        Ok(())
+    } else {
+        Err(ProjectiveError::NonFinitePoint)
+    }
 }
 
 fn checked_f32(value: f64) -> Result<f32, ProjectiveError> {
@@ -162,6 +234,7 @@ mod tests {
     use three_d_camera::PerspectiveCamera;
 
     const EPSILON: f32 = 1.0e-4;
+    const PRECISE_EPSILON: f64 = 1.0e-4;
 
     fn assert_vec3_close(left: Vec3, right: Vec3) {
         assert!(
@@ -233,6 +306,43 @@ mod tests {
     }
 
     #[test]
+    fn f64_inverse_bridge_preserves_long_ray_precision() {
+        let camera = PerspectiveCamera::new(
+            Vec3::new(0.0, 0.0, 869.116_94),
+            Vec3::ZERO,
+            Vec3::new(0.0, 1.0, 0.0),
+            core::f32::consts::FRAC_PI_4,
+            16.0 / 9.0,
+            0.086_911_69,
+            8_802_783.0,
+        )
+        .expect("large depth ratio remains a valid camera");
+        let matrix = camera.view_projection_matrix();
+        let world = [78.279_11, 53.907_085, 0.0];
+        let ndc = transform_point_projective_f64(matrix, world).expect("point projects");
+        let ray_start = untransform_point_projective_f64(matrix, [ndc[0], ndc[1], 0.0])
+            .expect("near-depth sample is finite");
+        let ray_sample = untransform_point_projective_f64(matrix, [ndc[0], ndc[1], 0.5])
+            .expect("mid-depth sample is finite");
+        let ray_delta = [
+            ray_sample[0] - ray_start[0],
+            ray_sample[1] - ray_start[1],
+            ray_sample[2] - ray_start[2],
+        ];
+        let factor = -ray_start[2] / ray_delta[2];
+        assert!(factor.is_finite() && factor >= 0.0);
+
+        let restored = [
+            ray_start[0] + ray_delta[0] * factor,
+            ray_start[1] + ray_delta[1] * factor,
+            ray_start[2] + ray_delta[2] * factor,
+        ];
+        assert!((restored[0] - world[0]).abs() <= PRECISE_EPSILON);
+        assert!((restored[1] - world[1]).abs() <= PRECISE_EPSILON);
+        assert!(restored[2].abs() <= PRECISE_EPSILON);
+    }
+
+    #[test]
     fn singular_matrix_fails_closed() {
         let singular = Mat4 {
             elements: [0.0; 16],
@@ -245,7 +355,7 @@ mod tests {
     fn zero_homogeneous_coordinate_fails_closed() {
         let matrix = Mat4 {
             elements: [
-                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
             ],
         };
 
