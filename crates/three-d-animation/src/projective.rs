@@ -1,6 +1,7 @@
 use super::Mat4;
 
 const INVERSE_RESIDUAL_EPSILON: f64 = 1.0e-6;
+const F32_INVERSE_RESIDUAL_ULPS: f64 = 8.0;
 
 impl Mat4 {
     /// Transforms one homogeneous four-component vector without performing a
@@ -96,7 +97,7 @@ impl Mat4 {
             }
         }
         let candidate = Self { elements };
-        is_inverse_pair(original, matrix_rows_f64(candidate)).then_some(candidate)
+        is_f32_inverse_pair(original, matrix_rows_f64(candidate)).then_some(candidate)
     }
 }
 
@@ -111,10 +112,31 @@ fn matrix_rows_f64(matrix: Mat4) -> [[f64; 4]; 4] {
 }
 
 fn is_inverse_pair(left: [[f64; 4]; 4], right: [[f64; 4]; 4]) -> bool {
-    matrix_product_is_identity(left, right) && matrix_product_is_identity(right, left)
+    is_inverse_pair_with_tolerance(left, right, |_| INVERSE_RESIDUAL_EPSILON)
 }
 
-fn matrix_product_is_identity(left: [[f64; 4]; 4], right: [[f64; 4]; 4]) -> bool {
+fn is_f32_inverse_pair(left: [[f64; 4]; 4], right: [[f64; 4]; 4]) -> bool {
+    is_inverse_pair_with_tolerance(left, right, |term_scale| {
+        INVERSE_RESIDUAL_EPSILON.max(
+            F32_INVERSE_RESIDUAL_ULPS * f64::from(f32::EPSILON) * term_scale.max(1.0),
+        )
+    })
+}
+
+fn is_inverse_pair_with_tolerance(
+    left: [[f64; 4]; 4],
+    right: [[f64; 4]; 4],
+    tolerance: impl Fn(f64) -> f64 + Copy,
+) -> bool {
+    matrix_product_is_identity(left, right, tolerance)
+        && matrix_product_is_identity(right, left, tolerance)
+}
+
+fn matrix_product_is_identity(
+    left: [[f64; 4]; 4],
+    right: [[f64; 4]; 4],
+    tolerance: impl Fn(f64) -> f64,
+) -> bool {
     let right_columns = [
         [right[0][0], right[1][0], right[2][0], right[3][0]],
         [right[0][1], right[1][1], right[2][1], right[3][1]],
@@ -124,13 +146,15 @@ fn matrix_product_is_identity(left: [[f64; 4]; 4], right: [[f64; 4]; 4]) -> bool
 
     for (row_index, left_row) in left.iter().enumerate() {
         for (column_index, right_column) in right_columns.iter().enumerate() {
-            let actual = left_row
-                .iter()
-                .zip(right_column)
-                .map(|(left_value, right_value)| left_value * right_value)
-                .sum::<f64>();
+            let mut actual = 0.0;
+            let mut term_scale = 0.0;
+            for (left_value, right_value) in left_row.iter().zip(right_column) {
+                let term = left_value * right_value;
+                actual += term;
+                term_scale += term.abs();
+            }
             let expected = if row_index == column_index { 1.0 } else { 0.0 };
-            if !actual.is_finite() || (actual - expected).abs() > INVERSE_RESIDUAL_EPSILON {
+            if !actual.is_finite() || (actual - expected).abs() > tolerance(term_scale) {
                 return false;
             }
         }
@@ -166,6 +190,22 @@ mod tests {
         }
         .matrix();
         let inverse = matrix.inverse().expect("TRS matrix is invertible");
+
+        assert_matrix_close(matrix * inverse, Mat4::IDENTITY);
+        assert_matrix_close(inverse * matrix, Mat4::IDENTITY);
+    }
+
+    #[test]
+    fn inverse_preserves_rotated_translated_transform_after_f32_conversion() {
+        let matrix = Transform {
+            translation: Vec3::new(1_000.0, 0.0, 333.333_34),
+            rotation: Quat::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), FRAC_PI_4).unwrap(),
+            scale: Vec3::new(1.0, 1.0, 1.0),
+        }
+        .matrix();
+        let inverse = matrix
+            .inverse()
+            .expect("rotated translated matrix remains invertible after f32 conversion");
 
         assert_matrix_close(matrix * inverse, Mat4::IDENTITY);
         assert_matrix_close(inverse * matrix, Mat4::IDENTITY);
