@@ -108,7 +108,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_non_obj_input() {
-        assert!(obj_summary(b"not an obj").is_err());
+    fn rejects_malformed_obj_face_data() {
+        assert!(obj_summary(b"v 0 0 0\nf 1 2 nope\n").is_err());
     }
 }
