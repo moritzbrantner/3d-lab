@@ -381,8 +381,8 @@ mod tests {
         let scale = 1.0e-13_f32;
         let scaled_identity = Mat4 {
             elements: [
-                scale, 0.0, 0.0, 0.0, 0.0, scale, 0.0, 0.0, 0.0, 0.0, scale, 0.0, 0.0, 0.0,
-                0.0, scale,
+                scale, 0.0, 0.0, 0.0, 0.0, scale, 0.0, 0.0, 0.0, 0.0, scale, 0.0, 0.0, 0.0, 0.0,
+                scale,
             ],
         };
         let point = Vec3::new(1.25, -2.5, 3.75);
