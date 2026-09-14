@@ -8,7 +8,7 @@ use core::fmt;
 use three_d_animation::Mat4;
 use three_d_core::Vec3;
 
-const HOMOGENEOUS_EPSILON: f64 = 1.0e-12;
+const SINGULAR_PIVOT_SCALE_FACTOR: f64 = 64.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProjectiveError {
@@ -107,6 +107,17 @@ fn inverse_rows_f64(matrix: Mat4) -> Result<[[f64; 4]; 4], ProjectiveError> {
     ensure_finite_matrix(matrix)?;
 
     let rows = matrix_rows_f64(matrix);
+    let mut matrix_scale = 0.0_f64;
+    for row in rows {
+        for value in row {
+            matrix_scale = matrix_scale.max(value.abs());
+        }
+    }
+    if matrix_scale == 0.0 {
+        return Err(ProjectiveError::SingularMatrix);
+    }
+    let pivot_tolerance = matrix_scale * f64::EPSILON * SINGULAR_PIVOT_SCALE_FACTOR;
+
     let mut augmented = [[0.0_f64; 8]; 4];
     for (row_index, values) in augmented.iter_mut().enumerate() {
         values[..4].copy_from_slice(&rows[row_index]);
@@ -124,7 +135,7 @@ fn inverse_rows_f64(matrix: Mat4) -> Result<[[f64; 4]; 4], ProjectiveError> {
             }
         }
 
-        if !pivot_abs.is_finite() || pivot_abs == 0.0 {
+        if !pivot_abs.is_finite() || pivot_abs <= pivot_tolerance {
             return Err(ProjectiveError::SingularMatrix);
         }
 
@@ -184,7 +195,7 @@ fn transform_rows_projective(
     }
 
     let w = transformed[3];
-    if !w.is_finite() || w.abs() <= HOMOGENEOUS_EPSILON {
+    if !w.is_finite() || w == 0.0 {
         return Err(ProjectiveError::InvalidHomogeneousCoordinate);
     }
 
@@ -241,6 +252,16 @@ mod tests {
             (left.z - right.z).abs() <= EPSILON,
             "z: {left:?} != {right:?}"
         );
+    }
+
+    fn mat4_from_rows(rows: [[f32; 4]; 4]) -> Mat4 {
+        let mut elements = [0.0_f32; 16];
+        for (row, values) in rows.iter().enumerate() {
+            for (column, value) in values.iter().enumerate() {
+                elements[column * 4 + row] = *value;
+            }
+        }
+        Mat4 { elements }
     }
 
     #[test]
@@ -341,6 +362,36 @@ mod tests {
         };
 
         assert_eq!(inverse(singular), Err(ProjectiveError::SingularMatrix));
+    }
+
+    #[test]
+    fn dependent_rows_with_rounding_residual_fail_closed() {
+        let singular = mat4_from_rows([
+            [-9.0, -1.0, 18.0, -3.0],
+            [-18.0, 12.0, 0.0, 14.0],
+            [2.0, 6.0, -4.0, 1.0],
+            [8.0, -70.0, 92.0, -59.0],
+        ]);
+
+        assert_eq!(inverse(singular), Err(ProjectiveError::SingularMatrix));
+    }
+
+    #[test]
+    fn homogeneous_transform_preserves_uniform_scale_invariance() {
+        let scale = 1.0e-13_f32;
+        let scaled_identity = Mat4 {
+            elements: [
+                scale, 0.0, 0.0, 0.0, 0.0, scale, 0.0, 0.0, 0.0, 0.0, scale, 0.0, 0.0, 0.0,
+                0.0, scale,
+            ],
+        };
+        let point = Vec3::new(1.25, -2.5, 3.75);
+
+        assert_vec3_close(
+            transform_point_projective(scaled_identity, point)
+                .expect("uniform homogeneous scale remains valid"),
+            point,
+        );
     }
 
     #[test]
