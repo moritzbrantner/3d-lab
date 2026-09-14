@@ -1,4 +1,7 @@
-use std::{env, fs, path::Path};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+};
 
 use three_d_formats::load_obj;
 
@@ -57,8 +60,8 @@ fn obj_summary(bytes: &[u8]) -> Result<String, String> {
 }
 
 fn inspect_obj(path: &Path) -> Result<(), String> {
-    let bytes = fs::read(path)
-        .map_err(|error| format!("failed to read '{}': {error}", path.display()))?;
+    let bytes =
+        fs::read(path).map_err(|error| format!("failed to read '{}': {error}", path.display()))?;
     println!("{}", obj_summary(&bytes)?);
     Ok(())
 }
@@ -66,7 +69,7 @@ fn inspect_obj(path: &Path) -> Result<(), String> {
 fn run() -> Result<(), String> {
     let mut arguments = env::args_os().skip(1);
     let format = arguments.next().and_then(|value| value.into_string().ok());
-    let path = arguments.next().map(Into::into);
+    let path = arguments.next().map(PathBuf::from);
     if arguments.next().is_some() {
         return Err("usage: three-d-formats-inspect obj PATH".into());
     }
@@ -89,10 +92,8 @@ mod tests {
 
     #[test]
     fn reports_stable_obj_geometry_evidence() {
-        let summary = obj_summary(
-            b"o fixture\nv 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n",
-        )
-        .expect("fixture OBJ should decode");
+        let summary = obj_summary(b"o fixture\nv 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n")
+            .expect("fixture OBJ should decode");
 
         assert!(summary.starts_with("{\"schemaVersion\":1,\"format\":\"obj\""));
         assert!(summary.contains("\"meshCount\":1"));
