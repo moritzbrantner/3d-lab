@@ -24,10 +24,11 @@ impl fmt::Display for ProjectiveError {
         match self {
             Self::NonFiniteMatrix => formatter.write_str("matrix elements must be finite"),
             Self::NonFinitePoint => formatter.write_str("point coordinates must be finite"),
-            Self::SingularMatrix => formatter.write_str("matrix is singular and cannot be inverted"),
-            Self::InvalidHomogeneousCoordinate => formatter.write_str(
-                "projective transform produced an invalid homogeneous coordinate",
-            ),
+            Self::SingularMatrix => {
+                formatter.write_str("matrix is singular and cannot be inverted")
+            }
+            Self::InvalidHomogeneousCoordinate => formatter
+                .write_str("projective transform produced an invalid homogeneous coordinate"),
             Self::UnrepresentableResult => formatter.write_str(
                 "projective transform result cannot be represented as finite f32 values",
             ),
@@ -49,22 +50,14 @@ pub fn transform_point_projective(matrix: Mat4, point: Vec3) -> Result<Vec3, Pro
     let y = f64::from(point.y);
     let z = f64::from(point.z);
 
-    let transformed_x = f64::from(m[0]) * x
-        + f64::from(m[4]) * y
-        + f64::from(m[8]) * z
-        + f64::from(m[12]);
-    let transformed_y = f64::from(m[1]) * x
-        + f64::from(m[5]) * y
-        + f64::from(m[9]) * z
-        + f64::from(m[13]);
-    let transformed_z = f64::from(m[2]) * x
-        + f64::from(m[6]) * y
-        + f64::from(m[10]) * z
-        + f64::from(m[14]);
-    let transformed_w = f64::from(m[3]) * x
-        + f64::from(m[7]) * y
-        + f64::from(m[11]) * z
-        + f64::from(m[15]);
+    let transformed_x =
+        f64::from(m[0]) * x + f64::from(m[4]) * y + f64::from(m[8]) * z + f64::from(m[12]);
+    let transformed_y =
+        f64::from(m[1]) * x + f64::from(m[5]) * y + f64::from(m[9]) * z + f64::from(m[13]);
+    let transformed_z =
+        f64::from(m[2]) * x + f64::from(m[6]) * y + f64::from(m[10]) * z + f64::from(m[14]);
+    let transformed_w =
+        f64::from(m[3]) * x + f64::from(m[7]) * y + f64::from(m[11]) * z + f64::from(m[15]);
 
     if !transformed_w.is_finite() || transformed_w.abs() <= HOMOGENEOUS_EPSILON {
         return Err(ProjectiveError::InvalidHomogeneousCoordinate);
@@ -138,10 +131,7 @@ pub fn inverse(matrix: Mat4) -> Result<Mat4, ProjectiveError> {
 }
 
 /// Applies the inverse of `matrix` to a projective point.
-pub fn untransform_point_projective(
-    matrix: Mat4,
-    point: Vec3,
-) -> Result<Vec3, ProjectiveError> {
+pub fn untransform_point_projective(matrix: Mat4, point: Vec3) -> Result<Vec3, ProjectiveError> {
     transform_point_projective(inverse(matrix)?, point)
 }
 
@@ -173,9 +163,18 @@ mod tests {
     const EPSILON: f32 = 1.0e-4;
 
     fn assert_vec3_close(left: Vec3, right: Vec3) {
-        assert!((left.x - right.x).abs() <= EPSILON, "x: {left:?} != {right:?}");
-        assert!((left.y - right.y).abs() <= EPSILON, "y: {left:?} != {right:?}");
-        assert!((left.z - right.z).abs() <= EPSILON, "z: {left:?} != {right:?}");
+        assert!(
+            (left.x - right.x).abs() <= EPSILON,
+            "x: {left:?} != {right:?}"
+        );
+        assert!(
+            (left.y - right.y).abs() <= EPSILON,
+            "y: {left:?} != {right:?}"
+        );
+        assert!(
+            (left.z - right.z).abs() <= EPSILON,
+            "z: {left:?} != {right:?}"
+        );
     }
 
     #[test]
@@ -226,7 +225,8 @@ mod tests {
         let world = Vec3::new(0.25, -0.15, 0.5);
         let view_projection = camera.view_projection_matrix();
         let ndc = transform_point_projective(view_projection, world).expect("projection succeeds");
-        let restored = untransform_point_projective(view_projection, ndc).expect("unprojection succeeds");
+        let restored =
+            untransform_point_projective(view_projection, ndc).expect("unprojection succeeds");
 
         assert_vec3_close(restored, world);
     }
@@ -244,10 +244,7 @@ mod tests {
     fn zero_homogeneous_coordinate_fails_closed() {
         let matrix = Mat4 {
             elements: [
-                1.0, 0.0, 0.0, 0.0,
-                0.0, 1.0, 0.0, 0.0,
-                0.0, 0.0, 1.0, 0.0,
-                0.0, 0.0, 0.0, 0.0,
+                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0,
             ],
         };
 
