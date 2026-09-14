@@ -102,9 +102,9 @@ impl Mat4 {
 
 fn matrix_rows_f64(matrix: Mat4) -> [[f64; 4]; 4] {
     let mut rows = [[0.0; 4]; 4];
-    for row in 0..4 {
-        for column in 0..4 {
-            rows[row][column] = f64::from(matrix.elements[column * 4 + row]);
+    for (row_index, row) in rows.iter_mut().enumerate() {
+        for (column_index, entry) in row.iter_mut().enumerate() {
+            *entry = f64::from(matrix.elements[column_index * 4 + row_index]);
         }
     }
     rows
@@ -115,12 +115,21 @@ fn is_inverse_pair(left: [[f64; 4]; 4], right: [[f64; 4]; 4]) -> bool {
 }
 
 fn matrix_product_is_identity(left: [[f64; 4]; 4], right: [[f64; 4]; 4]) -> bool {
-    for row in 0..4 {
-        for column in 0..4 {
-            let actual = (0..4)
-                .map(|index| left[row][index] * right[index][column])
+    let right_columns = [
+        [right[0][0], right[1][0], right[2][0], right[3][0]],
+        [right[0][1], right[1][1], right[2][1], right[3][1]],
+        [right[0][2], right[1][2], right[2][2], right[3][2]],
+        [right[0][3], right[1][3], right[2][3], right[3][3]],
+    ];
+
+    for (row_index, left_row) in left.iter().enumerate() {
+        for (column_index, right_column) in right_columns.iter().enumerate() {
+            let actual = left_row
+                .iter()
+                .zip(right_column)
+                .map(|(left_value, right_value)| left_value * right_value)
                 .sum::<f64>();
-            let expected = if row == column { 1.0 } else { 0.0 };
+            let expected = if row_index == column_index { 1.0 } else { 0.0 };
             if !actual.is_finite() || (actual - expected).abs() > INVERSE_RESIDUAL_EPSILON {
                 return false;
             }
