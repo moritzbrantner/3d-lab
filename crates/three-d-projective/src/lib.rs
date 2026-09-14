@@ -42,11 +42,7 @@ impl std::error::Error for ProjectiveError {}
 pub fn transform_point_projective(matrix: Mat4, point: Vec3) -> Result<Vec3, ProjectiveError> {
     let transformed = transform_point_projective_f64(
         matrix,
-        [
-            f64::from(point.x),
-            f64::from(point.y),
-            f64::from(point.z),
-        ],
+        [f64::from(point.x), f64::from(point.y), f64::from(point.z)],
     )?;
 
     Ok(Vec3::new(
@@ -85,11 +81,7 @@ pub fn inverse(matrix: Mat4) -> Result<Mat4, ProjectiveError> {
 pub fn untransform_point_projective(matrix: Mat4, point: Vec3) -> Result<Vec3, ProjectiveError> {
     let transformed = untransform_point_projective_f64(
         matrix,
-        [
-            f64::from(point.x),
-            f64::from(point.y),
-            f64::from(point.z),
-        ],
+        [f64::from(point.x), f64::from(point.y), f64::from(point.z)],
     )?;
 
     Ok(Vec3::new(
