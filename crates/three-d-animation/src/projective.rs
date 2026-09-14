@@ -117,9 +117,8 @@ fn is_inverse_pair(left: [[f64; 4]; 4], right: [[f64; 4]; 4]) -> bool {
 
 fn is_f32_inverse_pair(left: [[f64; 4]; 4], right: [[f64; 4]; 4]) -> bool {
     is_inverse_pair_with_tolerance(left, right, |term_scale| {
-        INVERSE_RESIDUAL_EPSILON.max(
-            F32_INVERSE_RESIDUAL_ULPS * f64::from(f32::EPSILON) * term_scale.max(1.0),
-        )
+        INVERSE_RESIDUAL_EPSILON
+            .max(F32_INVERSE_RESIDUAL_ULPS * f64::from(f32::EPSILON) * term_scale.max(1.0))
     })
 }
 
