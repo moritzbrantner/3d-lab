@@ -660,11 +660,7 @@ mod tests {
                 },
                 MeshDocument {
                     id: "a-mesh".into(),
-                    vertices: vec![
-                        [0.0, 0.0, 0.0],
-                        [50.0, 0.0, 0.0],
-                        [0.0, 50.0, 0.0],
-                    ],
+                    vertices: vec![[0.0, 0.0, 0.0], [50.0, 0.0, 0.0], [0.0, 50.0, 0.0]],
                     indices: vec![0, 1, 2],
                     normals: None,
                     tangents: None,
