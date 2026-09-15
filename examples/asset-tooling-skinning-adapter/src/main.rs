@@ -469,8 +469,22 @@ mod tests {
     fn rejects_non_finite_skin_matrix_result_from_finite_inputs() {
         let mut document = valid_document();
         let huge = [
-            f32::MAX, f32::MAX, 0.0, 0.0, f32::MAX, -f32::MAX, 0.0, 0.0, 0.0, 0.0, 1.0,
-            0.0, 0.0, 0.0, 0.0, 1.0,
+            f32::MAX,
+            f32::MAX,
+            0.0,
+            0.0,
+            f32::MAX,
+            -f32::MAX,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
         ];
         document.joints[0].inverse_bind = huge;
         document.joints[0].bind_world = huge;
