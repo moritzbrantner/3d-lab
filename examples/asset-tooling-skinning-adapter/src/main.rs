@@ -135,7 +135,9 @@ fn identity_error(matrix: Mat4) -> f32 {
 fn validate_parameters(parameters: Parameters) -> Result<Parameters, String> {
     let tolerance = parameters.bind_pose_identity_tolerance;
     if !tolerance.is_finite() || tolerance < 0.0 {
-        return Err("parameters.bindPoseIdentityTolerance must be a finite non-negative f32".into());
+        return Err(
+            "parameters.bindPoseIdentityTolerance must be a finite non-negative f32".into(),
+        );
     }
     Ok(parameters)
 }
@@ -242,10 +244,9 @@ fn validate_and_normalize(
 
 fn read_document(input_path: &str) -> Result<SkinningDocument, String> {
     let path = resolve_input_path(input_path)?;
-    serde_json::from_slice(
-        &fs::read(&path)
-            .map_err(|error| format!("failed to read input skinning document '{input_path}': {error}"))?,
-    )
+    serde_json::from_slice(&fs::read(&path).map_err(|error| {
+        format!("failed to read input skinning document '{input_path}': {error}")
+    })?)
     .map_err(|error| format!("invalid input skinning JSON: {error}"))
 }
 
@@ -277,7 +278,11 @@ fn probe() -> Result<(), String> {
     Ok(())
 }
 
-fn generate(request_path: &Path, output_path: &Path, observations_path: &Path) -> Result<(), String> {
+fn generate(
+    request_path: &Path,
+    output_path: &Path,
+    observations_path: &Path,
+) -> Result<(), String> {
     let request: Request = serde_json::from_slice(
         &fs::read(request_path).map_err(|error| format!("failed to read request: {error}"))?,
     )
@@ -334,10 +339,7 @@ mod tests {
     use super::*;
 
     const IDENTITY: [f32; 16] = [
-        1.0, 0.0, 0.0, 0.0,
-        0.0, 1.0, 0.0, 0.0,
-        0.0, 0.0, 1.0, 0.0,
-        0.0, 0.0, 0.0, 1.0,
+        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
     ];
 
     fn translated_y(value: f32) -> [f32; 16] {
