@@ -33,8 +33,13 @@ impl fmt::Display for SceneExportError {
                 formatter,
                 "scene mesh {mesh} must contain indexed triangle geometry before GLB export"
             ),
-            Self::Json(error) => write!(formatter, "failed to serialize canonical glTF JSON: {error}"),
-            Self::OutputTooLarge => formatter.write_str("canonical GLB exceeds the 32-bit GLB size domain"),
+            Self::Json(error) => write!(
+                formatter,
+                "failed to serialize canonical glTF JSON: {error}"
+            ),
+            Self::OutputTooLarge => {
+                formatter.write_str("canonical GLB exceeds the 32-bit GLB size domain")
+            }
         }
     }
 }
@@ -164,7 +169,9 @@ pub fn export_scene_glb(scene: &SceneSnapshot) -> Result<Vec<u8>, SceneExportErr
             &mut buffer_views,
             &mut accessors,
             3,
-            mesh.vertices().iter().map(|value| vec![value.x, value.y, value.z]),
+            mesh.vertices()
+                .iter()
+                .map(|value| vec![value.x, value.y, value.z]),
             mesh.vertices().len(),
             Some((minimum, maximum)),
         )?;
@@ -270,7 +277,11 @@ pub fn export_scene_glb(scene: &SceneSnapshot) -> Result<Vec<u8>, SceneExportErr
             value.insert("name".into(), json!(node.id()));
             value.insert(
                 "translation".into(),
-                json!([local.translation.x, local.translation.y, local.translation.z]),
+                json!([
+                    local.translation.x,
+                    local.translation.y,
+                    local.translation.z
+                ]),
             );
             value.insert(
                 "rotation".into(),
@@ -281,7 +292,10 @@ pub fn export_scene_glb(scene: &SceneSnapshot) -> Result<Vec<u8>, SceneExportErr
                     local.rotation.w
                 ]),
             );
-            value.insert("scale".into(), json!([local.scale.x, local.scale.y, local.scale.z]));
+            value.insert(
+                "scale".into(),
+                json!([local.scale.x, local.scale.y, local.scale.z]),
+            );
             if let Some(mesh) = node.mesh() {
                 value.insert("mesh".into(), json!(mesh));
             }
@@ -398,7 +412,12 @@ mod tests {
     fn export_rejects_an_empty_geometry_mesh() {
         let snapshot = SceneSnapshot::new(
             vec![SceneMesh::new("empty", Mesh::new(vec![], vec![]).unwrap())],
-            vec![SceneNode::new("root", None, Some(0), Transform::IDENTITY)],
+            vec![SceneNode::new(
+                "root",
+                None,
+                Some(0),
+                Transform::IDENTITY,
+            )],
         )
         .unwrap();
         assert!(matches!(
