@@ -8,9 +8,11 @@ members = [
     "crates/three-d-assets",
     "crates/three-d-formats",
     "crates/three-d-lod",
+    "crates/three-d-scene",
     "examples/wgpu-native",
     "examples/asset-tooling-lod-adapter",
     "examples/asset-tooling-animation-adapter",
     "examples/asset-tooling-skinning-adapter",
+    "examples/asset-tooling-scene-adapter",
 ]
 resolver = "2"
