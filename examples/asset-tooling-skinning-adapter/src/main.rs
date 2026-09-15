@@ -11,6 +11,7 @@ const PROCESSOR_ID: &str = "three-d-skinning-validate";
 const OPERATION: &str = "mesh.skinning.validate";
 const ALGORITHM: &str = "three-d-animation-skinning-profile-v1";
 const DOCUMENT_SCHEMA_VERSION: u32 = 1;
+const NORMALIZED_WEIGHT_SUM_TOLERANCE: f32 = 1.0e-5;
 const CARGO_LOCK: &str = include_str!("../../../Cargo.lock");
 
 #[derive(Debug, Deserialize)]
@@ -117,19 +118,24 @@ fn validate_matrix(values: [f32; 16], location: &str) -> Result<Mat4, String> {
     Ok(Mat4 { elements: values })
 }
 
-fn identity_error(matrix: Mat4) -> f32 {
-    matrix
-        .elements
-        .iter()
-        .enumerate()
-        .fold(0.0_f32, |maximum, (index, value)| {
-            let expected = if matches!(index, 0 | 5 | 10 | 15) {
-                1.0
-            } else {
-                0.0
-            };
-            maximum.max((value - expected).abs())
-        })
+fn identity_error(matrix: Mat4) -> Result<f32, String> {
+    let mut maximum = 0.0_f32;
+    for (index, value) in matrix.elements.iter().enumerate() {
+        if !value.is_finite() {
+            return Err(format!("skin matrix element {index} must be finite"));
+        }
+        let expected = if matches!(index, 0 | 5 | 10 | 15) {
+            1.0
+        } else {
+            0.0
+        };
+        let error = (value - expected).abs();
+        if !error.is_finite() {
+            return Err(format!("skin matrix identity error {index} must be finite"));
+        }
+        maximum = maximum.max(error);
+    }
+    Ok(maximum)
 }
 
 fn validate_parameters(parameters: Parameters) -> Result<Parameters, String> {
@@ -187,11 +193,12 @@ fn validate_and_normalize(
     let skin_matrices = skeleton
         .skin_matrices(&bind_world)
         .map_err(|error| format!("invalid bind pose matrices: {error}"))?;
-    let max_bind_pose_identity_error = skin_matrices
-        .iter()
-        .copied()
-        .map(identity_error)
-        .fold(0.0_f32, f32::max);
+    let mut max_bind_pose_identity_error = 0.0_f32;
+    for (index, matrix) in skin_matrices.iter().copied().enumerate() {
+        let error = identity_error(matrix)
+            .map_err(|error| format!("invalid bind-pose skin matrix[{index}]: {error}"))?;
+        max_bind_pose_identity_error = max_bind_pose_identity_error.max(error);
+    }
     if max_bind_pose_identity_error > parameters.bind_pose_identity_tolerance {
         return Err(format!(
             "bind-pose skin matrices deviate from identity by {max_bind_pose_identity_error}, exceeding tolerance {}",
@@ -202,10 +209,26 @@ fn validate_and_normalize(
     let mut normalized_influences = Vec::with_capacity(document.influences.len());
     let mut max_active_influences = 0usize;
     for (index, influence) in document.influences.iter().enumerate() {
+        let input_weight_sum = influence.weights.iter().copied().sum::<f32>();
+        if !input_weight_sum.is_finite() || input_weight_sum <= 0.0 {
+            return Err(format!(
+                "invalid influences[{index}]: weight sum must be finite and positive"
+            ));
+        }
         let normalized = SkinInfluence::new(influence.joints, influence.weights)
             .map_err(|error| format!("invalid influences[{index}]: {error}"))?
             .validate_joints(skeleton.joints().len())
             .map_err(|error| format!("invalid influences[{index}]: {error}"))?;
+        let normalized_weight_sum = normalized.weights.iter().copied().sum::<f32>();
+        if !normalized_weight_sum.is_finite()
+            || normalized_weight_sum <= 0.0
+            || (normalized_weight_sum - 1.0).abs() > NORMALIZED_WEIGHT_SUM_TOLERANCE
+            || normalized.weights.iter().any(|weight| !weight.is_finite())
+        {
+            return Err(format!(
+                "invalid influences[{index}]: normalized weights must be finite and sum to one"
+            ));
+        }
         max_active_influences = max_active_influences.max(
             normalized
                 .weights
@@ -440,5 +463,39 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.contains("bind-pose skin matrices deviate from identity"));
+    }
+
+    #[test]
+    fn rejects_non_finite_skin_matrix_result_from_finite_inputs() {
+        let mut document = valid_document();
+        let huge = [
+            f32::MAX, f32::MAX, 0.0, 0.0, f32::MAX, -f32::MAX, 0.0, 0.0, 0.0, 0.0, 1.0,
+            0.0, 0.0, 0.0, 0.0, 1.0,
+        ];
+        document.joints[0].inverse_bind = huge;
+        document.joints[0].bind_world = huge;
+        let error = validate_and_normalize(
+            &document,
+            Parameters {
+                bind_pose_identity_tolerance: f32::MAX,
+            },
+        )
+        .unwrap_err();
+        assert!(error.contains("skin matrix"));
+        assert!(error.contains("must be finite"));
+    }
+
+    #[test]
+    fn rejects_overflowing_input_weight_sum() {
+        let mut document = valid_document();
+        document.influences[0].weights = [f32::MAX; 4];
+        let error = validate_and_normalize(
+            &document,
+            Parameters {
+                bind_pose_identity_tolerance: 0.0001,
+            },
+        )
+        .unwrap_err();
+        assert!(error.contains("weight sum must be finite and positive"));
     }
 }
