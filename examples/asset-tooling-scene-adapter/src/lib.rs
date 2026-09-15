@@ -163,6 +163,7 @@ struct ExportObservations {
     byte_length: usize,
 }
 
+#[derive(Debug)]
 struct SceneBuild {
     scene: SceneSnapshot,
     source_mesh_count: usize,
@@ -247,11 +248,7 @@ fn mesh_from_document(value: &MeshDocument, unit_scale: f32) -> Result<Mesh, Str
     .map_err(|error| format!("invalid mesh '{}': {error}", value.id))
 }
 
-fn append_node_subtree(
-    node: usize,
-    children: &[Vec<usize>],
-    order: &mut Vec<usize>,
-) {
+fn append_node_subtree(node: usize, children: &[Vec<usize>], order: &mut Vec<usize>) {
     order.push(node);
     for &child in &children[node] {
         append_node_subtree(child, children, order);
@@ -279,7 +276,10 @@ fn build_scene(document: &SceneDocument) -> Result<SceneBuild, String> {
         if mesh.id.is_empty() {
             return Err(format!("meshes[{mesh_index}].id must be non-empty"));
         }
-        if mesh_index_by_id.insert(mesh.id.as_str(), mesh_index).is_some() {
+        if mesh_index_by_id
+            .insert(mesh.id.as_str(), mesh_index)
+            .is_some()
+        {
             return Err(format!("duplicate mesh id '{}'", mesh.id));
         }
         source_vertex_count = source_vertex_count.saturating_add(mesh.vertices.len());
@@ -297,7 +297,10 @@ fn build_scene(document: &SceneDocument) -> Result<SceneBuild, String> {
         if node.id.is_empty() {
             return Err(format!("nodes[{node_index}].id must be non-empty"));
         }
-        if node_index_by_id.insert(node.id.as_str(), node_index).is_some() {
+        if node_index_by_id
+            .insert(node.id.as_str(), node_index)
+            .is_some()
+        {
             return Err(format!("duplicate node id '{}'", node.id));
         }
     }
@@ -306,9 +309,9 @@ fn build_scene(document: &SceneDocument) -> Result<SceneBuild, String> {
     let mut roots = Vec::new();
     for (node_index, node) in document.nodes.iter().enumerate() {
         if let Some(parent) = node.parent.as_deref() {
-            let parent_index = *node_index_by_id
-                .get(parent)
-                .ok_or_else(|| format!("node '{}' references unknown parent '{parent}'", node.id))?;
+            let parent_index = *node_index_by_id.get(parent).ok_or_else(|| {
+                format!("node '{}' references unknown parent '{parent}'", node.id)
+            })?;
             children[parent_index].push(node_index);
         } else {
             roots.push(node_index);
@@ -316,7 +319,10 @@ fn build_scene(document: &SceneDocument) -> Result<SceneBuild, String> {
         if let Some(mesh) = node.mesh.as_deref()
             && !mesh_index_by_id.contains_key(mesh)
         {
-            return Err(format!("node '{}' references unknown mesh '{mesh}'", node.id));
+            return Err(format!(
+                "node '{}' references unknown mesh '{mesh}'",
+                node.id
+            ));
         }
     }
     roots.sort_by(|left, right| document.nodes[*left].id.cmp(&document.nodes[*right].id));
@@ -385,7 +391,10 @@ fn mesh_to_document(mesh: &SceneMesh) -> MeshDocument {
             .collect(),
         indices: source.indices().to_vec(),
         normals: source.attributes().normals.as_ref().map(|values| {
-            values.iter().map(|value| [value.x, value.y, value.z]).collect()
+            values
+                .iter()
+                .map(|value| [value.x, value.y, value.z])
+                .collect()
         }),
         tangents: source.attributes().tangents.as_ref().map(|values| {
             values
@@ -399,7 +408,10 @@ fn mesh_to_document(mesh: &SceneMesh) -> MeshDocument {
             .as_ref()
             .map(|values| values.iter().map(|value| [value.x, value.y]).collect()),
         colors: source.attributes().colors.as_ref().map(|values| {
-            values.iter().map(|value| [value.r, value.g, value.b]).collect()
+            values
+                .iter()
+                .map(|value| [value.r, value.g, value.b])
+                .collect()
         }),
     }
 }
@@ -413,9 +425,15 @@ fn scene_to_document(scene: &SceneSnapshot) -> SceneDocument {
             let local = node.local();
             NodeDocument {
                 id: node.id().to_owned(),
-                parent: node.parent().map(|parent| scene.nodes()[parent].id().to_owned()),
+                parent: node
+                    .parent()
+                    .map(|parent| scene.nodes()[parent].id().to_owned()),
                 mesh: node.mesh().map(|mesh| scene.meshes()[mesh].id().to_owned()),
-                translation: [local.translation.x, local.translation.y, local.translation.z],
+                translation: [
+                    local.translation.x,
+                    local.translation.y,
+                    local.translation.z,
+                ],
                 rotation: [
                     local.rotation.x,
                     local.rotation.y,
@@ -436,7 +454,11 @@ fn scene_to_document(scene: &SceneSnapshot) -> SceneDocument {
 }
 
 fn scene_counts(scene: &SceneSnapshot) -> (usize, usize, usize, usize) {
-    let root_node_count = scene.nodes().iter().filter(|node| node.parent().is_none()).count();
+    let root_node_count = scene
+        .nodes()
+        .iter()
+        .filter(|node| node.parent().is_none())
+        .count();
     let vertex_count = scene
         .meshes()
         .iter()
@@ -447,10 +469,17 @@ fn scene_counts(scene: &SceneSnapshot) -> (usize, usize, usize, usize) {
         .iter()
         .map(|mesh| mesh.mesh().triangle_count())
         .sum();
-    (scene.meshes().len(), root_node_count, vertex_count, triangle_count)
+    (
+        scene.meshes().len(),
+        root_node_count,
+        vertex_count,
+        triangle_count,
+    )
 }
 
-fn normalize_document(document: &SceneDocument) -> Result<(SceneDocument, NormalizeObservations), String> {
+fn normalize_document(
+    document: &SceneDocument,
+) -> Result<(SceneDocument, NormalizeObservations), String> {
     let build = build_scene(document)?;
     let (result_mesh_count, root_node_count, result_vertex_count, triangle_count) =
         scene_counts(&build.scene);
@@ -461,7 +490,9 @@ fn normalize_document(document: &SceneDocument) -> Result<(SceneDocument, Normal
         root_node_count,
         source_vertex_count: build.source_vertex_count,
         result_vertex_count,
-        removed_unused_vertex_count: build.source_vertex_count.saturating_sub(result_vertex_count),
+        removed_unused_vertex_count: build
+            .source_vertex_count
+            .saturating_sub(result_vertex_count),
         triangle_count,
         source_unit: build.source_unit,
         output_unit: OUTPUT_UNIT,
@@ -475,7 +506,8 @@ fn normalize_document(document: &SceneDocument) -> Result<(SceneDocument, Normal
 fn export_document(document: &SceneDocument) -> Result<(Vec<u8>, ExportObservations), String> {
     let build = build_scene(document)?;
     let (mesh_count, root_node_count, vertex_count, triangle_count) = scene_counts(&build.scene);
-    let bytes = export_scene_glb(&build.scene).map_err(|error| format!("GLB export failed: {error}"))?;
+    let bytes =
+        export_scene_glb(&build.scene).map_err(|error| format!("GLB export failed: {error}"))?;
     let observations = ExportObservations {
         mesh_count,
         node_count: build.scene.nodes().len(),
@@ -554,7 +586,11 @@ fn generate(
         AdapterOperation::Normalize => {
             let (output, observations) = normalize_document(&source)?;
             write_json(output_path, &output, "normalized scene")?;
-            write_json(observations_path, &observations, "normalization observations")
+            write_json(
+                observations_path,
+                &observations,
+                "normalization observations",
+            )
         }
         AdapterOperation::ExportGlb => {
             let (bytes, observations) = export_document(&source)?;
@@ -624,7 +660,11 @@ mod tests {
                 },
                 MeshDocument {
                     id: "a-mesh".into(),
-                    vertices: vec![[0.0, 0.0, 0.0], [50.0, 0.0, 0.0], [0.0, 50.0, 0.0]],
+                    vertices: vec![
+                        [0.0, 0.0, 0.0],
+                        [50.0, 0.0, 0.0],
+                        [0.0, 50.0, 0.0],
+                    ],
                     indices: vec![0, 1, 2],
                     normals: None,
                     tangents: None,
@@ -666,11 +706,19 @@ mod tests {
         let (normalized, observations) = normalize_document(&fixture()).unwrap();
         assert_eq!(normalized.unit, "meter");
         assert_eq!(
-            normalized.meshes.iter().map(|mesh| mesh.id.as_str()).collect::<Vec<_>>(),
+            normalized
+                .meshes
+                .iter()
+                .map(|mesh| mesh.id.as_str())
+                .collect::<Vec<_>>(),
             vec!["a-mesh", "z-mesh"]
         );
         assert_eq!(
-            normalized.nodes.iter().map(|node| node.id.as_str()).collect::<Vec<_>>(),
+            normalized
+                .nodes
+                .iter()
+                .map(|node| node.id.as_str())
+                .collect::<Vec<_>>(),
             vec!["a-root", "z-root", "z-child"]
         );
         assert_eq!(normalized.nodes[1].translation, [2.0, 0.0, 0.0]);
@@ -703,7 +751,11 @@ mod tests {
     fn scene_input_fails_closed_on_coordinate_unit_hierarchy_and_references() {
         let mut document = fixture();
         document.coordinate_system = "left-handed-y-up".into();
-        assert!(build_scene(&document).unwrap_err().contains("coordinateSystem"));
+        assert!(
+            build_scene(&document)
+                .unwrap_err()
+                .contains("coordinateSystem")
+        );
 
         let mut document = fixture();
         document.unit = "inch".into();
