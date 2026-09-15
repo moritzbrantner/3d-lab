@@ -83,18 +83,33 @@ pub struct SceneSnapshot {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SceneError {
     EmptyScene,
-    EmptyMeshId { mesh: usize },
-    DuplicateMeshId { mesh: usize },
-    EmptyNodeId { node: usize },
-    DuplicateNodeId { node: usize },
-    ParentMustPrecedeChild { node: usize, parent: usize },
+    EmptyMeshId {
+        mesh: usize,
+    },
+    DuplicateMeshId {
+        mesh: usize,
+    },
+    EmptyNodeId {
+        node: usize,
+    },
+    DuplicateNodeId {
+        node: usize,
+    },
+    ParentMustPrecedeChild {
+        node: usize,
+        parent: usize,
+    },
     MeshIndexOutOfBounds {
         node: usize,
         mesh: usize,
         mesh_count: usize,
     },
-    NonFiniteTransform { node: usize },
-    NonUnitQuaternion { node: usize },
+    NonFiniteTransform {
+        node: usize,
+    },
+    NonUnitQuaternion {
+        node: usize,
+    },
 }
 
 impl fmt::Display for SceneError {
@@ -102,9 +117,13 @@ impl fmt::Display for SceneError {
         match self {
             Self::EmptyScene => formatter.write_str("scene must contain at least one node"),
             Self::EmptyMeshId { mesh } => write!(formatter, "mesh {mesh} has an empty id"),
-            Self::DuplicateMeshId { mesh } => write!(formatter, "mesh {mesh} repeats an earlier id"),
+            Self::DuplicateMeshId { mesh } => {
+                write!(formatter, "mesh {mesh} repeats an earlier id")
+            }
             Self::EmptyNodeId { node } => write!(formatter, "node {node} has an empty id"),
-            Self::DuplicateNodeId { node } => write!(formatter, "node {node} repeats an earlier id"),
+            Self::DuplicateNodeId { node } => {
+                write!(formatter, "node {node} repeats an earlier id")
+            }
             Self::ParentMustPrecedeChild { node, parent } => write!(
                 formatter,
                 "node {node} references parent {parent}; parents must appear before children"
@@ -118,7 +137,10 @@ impl fmt::Display for SceneError {
                 "node {node} references mesh {mesh}, but the scene has {mesh_count} meshes"
             ),
             Self::NonFiniteTransform { node } => {
-                write!(formatter, "node {node} contains a non-finite transform component")
+                write!(
+                    formatter,
+                    "node {node} contains a non-finite transform component"
+                )
             }
             Self::NonUnitQuaternion { node } => write!(
                 formatter,
@@ -309,8 +331,7 @@ fn canonical_quat(value: Quat) -> Quat {
         || (normalized.w == 0.0
             && (normalized.x < 0.0
                 || (normalized.x == 0.0
-                    && (normalized.y < 0.0
-                        || (normalized.y == 0.0 && normalized.z < 0.0)))));
+                    && (normalized.y < 0.0 || (normalized.y == 0.0 && normalized.z < 0.0)))));
     let factor = if flip { -1.0 } else { 1.0 };
     Quat::new(
         canonical_scalar(normalized.x * factor),
@@ -414,11 +435,19 @@ mod tests {
 
         let normalized = snapshot.normalized().unwrap();
         assert_eq!(
-            normalized.meshes().iter().map(SceneMesh::id).collect::<Vec<_>>(),
+            normalized
+                .meshes()
+                .iter()
+                .map(SceneMesh::id)
+                .collect::<Vec<_>>(),
             vec!["a-mesh", "z-mesh"]
         );
         assert_eq!(
-            normalized.nodes().iter().map(SceneNode::id).collect::<Vec<_>>(),
+            normalized
+                .nodes()
+                .iter()
+                .map(SceneNode::id)
+                .collect::<Vec<_>>(),
             vec!["a-root", "z-root", "z-child"]
         );
         assert_eq!(normalized.nodes()[0].mesh(), Some(0));
@@ -447,7 +476,10 @@ mod tests {
         )
         .unwrap();
         let normalized = snapshot.normalized().unwrap();
-        assert_eq!(normalized.nodes()[0].local().rotation, Quat::new(0.0, 1.0, 0.0, 0.0));
+        assert_eq!(
+            normalized.nodes()[0].local().rotation,
+            Quat::new(0.0, 1.0, 0.0, 0.0)
+        );
     }
 
     #[test]
