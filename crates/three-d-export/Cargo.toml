@@ -1,0 +1,16 @@
+[package]
+name = "three-d-export"
+version = "0.1.0"
+edition = "2024"
+description = "Deterministic production export adapters for normalized 3d-lab scenes"
+license = "MIT"
+
+[dependencies]
+serde_json = "=1.0.151"
+three-d-core = { path = "../three-d-core" }
+three-d-scene = { path = "../three-d-scene" }
+
+[dev-dependencies]
+gltf = { version = "1.4.1", default-features = false, features = ["names", "utils"] }
+three-d-animation = { path = "../three-d-animation" }
+three-d-formats = { path = "../three-d-formats" }
