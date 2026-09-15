@@ -412,12 +412,7 @@ mod tests {
     fn export_rejects_an_empty_geometry_mesh() {
         let snapshot = SceneSnapshot::new(
             vec![SceneMesh::new("empty", Mesh::new(vec![], vec![]).unwrap())],
-            vec![SceneNode::new(
-                "root",
-                None,
-                Some(0),
-                Transform::IDENTITY,
-            )],
+            vec![SceneNode::new("root", None, Some(0), Transform::IDENTITY)],
         )
         .unwrap();
         assert!(matches!(
