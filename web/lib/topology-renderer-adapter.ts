@@ -62,6 +62,17 @@ function writeVertexRange(
   }
 }
 
+function sharedVertexChunkPrefix(
+  left: PersistentMeshTopology,
+  right: PersistentMeshTopology,
+): boolean {
+  const sharedChunkCount = Math.min(left.vertexChunks.length, right.vertexChunks.length);
+  for (let index = 0; index < sharedChunkCount; index += 1) {
+    if (left.vertexChunks[index] !== right.vertexChunks[index]) return false;
+  }
+  return true;
+}
+
 function writeIndexSlot(array: Uint32Array, slot: number, chunk: Uint32Array): void {
   const start = slot * INDEX_VALUES_PER_SLOT;
   array.fill(0, start, start + INDEX_VALUES_PER_SLOT);
@@ -98,8 +109,8 @@ export function createTopologyGeometryAdapter(
   let indexArray = new Uint32Array(indexSlotCapacity * INDEX_VALUES_PER_SLOT);
   writeVertexRange(positionArray, initialTopology, 0, initialTopology.vertexCount);
 
-  let chunkSlots = new WeakMap<Uint32Array, number>();
-  let slotChunks: Array<Uint32Array | null> = new Array(indexSlotCapacity).fill(null);
+  const chunkSlots = new WeakMap<Uint32Array, number>();
+  const slotChunks: Array<Uint32Array | null> = new Array(indexSlotCapacity).fill(null);
   for (let slot = 0; slot < initialTopology.triangleChunks.length; slot += 1) {
     const chunk = initialTopology.triangleChunks[slot];
     chunkSlots.set(chunk, slot);
@@ -165,9 +176,7 @@ export function createTopologyGeometryAdapter(
       if (disposed) throw new Error("topology geometry adapter is disposed");
       let work = emptyWork();
 
-      const vertexPrefixStable = topology.vertexChunks.every(
-        (chunk, index) => nextTopology.vertexChunks[index] === chunk,
-      );
+      const vertexPrefixStable = sharedVertexChunkPrefix(topology, nextTopology);
       const previousVertexCount = topology.vertexCount;
       if (!vertexPrefixStable) {
         if (nextTopology.vertexCount > vertexCapacity) work = growPositionBuffer(nextTopology.vertexCount, work);
