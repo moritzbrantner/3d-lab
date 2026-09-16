@@ -1,6 +1,6 @@
 import {describe, expect, test} from "bun:test"
 import {webGpuProjectionToWebGl} from "./depth.js"
-import {evictUnusedResources} from "./resources.js"
+import {acquireResource, evictUnusedResources} from "./resources.js"
 
 describe("renderer depth adaptation", () => {
   test("remaps WebGPU zero-to-one depth into WebGL negative-one-to-one depth", () => {
@@ -41,7 +41,25 @@ describe("renderer depth adaptation", () => {
 })
 
 describe("renderer resource lifecycle", () => {
-  test("disposes and removes cache entries that no live scene node references", () => {
+  test("reports cache creation then reuse for the same resource key", () => {
+    const cache = new Map()
+    let creations = 0
+    const first = acquireResource(cache, "shared", () => {
+      creations += 1
+      return {id: creations}
+    })
+    const second = acquireResource(cache, "shared", () => {
+      creations += 1
+      return {id: creations}
+    })
+
+    expect(first.created).toBe(true)
+    expect(second.created).toBe(false)
+    expect(second.resource).toBe(first.resource)
+    expect(creations).toBe(1)
+  })
+
+  test("disposes removes and counts cache entries with no live scene references", () => {
     const disposed = []
     const cache = new Map([
       ["live", {dispose: () => disposed.push("live")}],
@@ -49,8 +67,9 @@ describe("renderer resource lifecycle", () => {
       ["stale-b", {dispose: () => disposed.push("stale-b")}],
     ])
 
-    evictUnusedResources(cache, new Set(["live"]))
+    const evictedCount = evictUnusedResources(cache, new Set(["live"]))
 
+    expect(evictedCount).toBe(2)
     expect([...cache.keys()]).toEqual(["live"])
     expect(disposed).toEqual(["stale-a", "stale-b"])
   })
