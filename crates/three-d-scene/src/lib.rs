@@ -261,10 +261,7 @@ impl SceneSnapshot {
             })
             .collect();
 
-        let materialized_vertex_count = meshes
-            .iter()
-            .map(|mesh| mesh.mesh.vertices().len())
-            .sum();
+        let materialized_vertex_count = meshes.iter().map(|mesh| mesh.mesh.vertices().len()).sum();
         let materialized_attribute_value_count = meshes
             .iter()
             .map(|mesh| {
