@@ -26,7 +26,7 @@ permissions:
 
 env:
   RUNTIME_PROFILER_REV: 9a7a451681c5598ec7aa888daf2a66cbbade3365
-  TOPOLOGY_BROWSER_CALIBRATION_RUNS: "5"
+  TOPOLOGY_BROWSER_CALIBRATION_RUNS: "6"
 
 jobs:
   topology-renderer-browser:
@@ -161,6 +161,7 @@ jobs:
             "$calibration_root/candidate" \
             "$calibration_root/comparisons" \
             "$calibration_root/server-logs"
+          printf 'run_id\tfirst\tsecond\n' > "$calibration_root/capture-order.tsv"
 
           capture_browser() {
             local side="$1"
@@ -195,8 +196,16 @@ jobs:
 
           for run_number in $(seq 1 "$TOPOLOGY_BROWSER_CALIBRATION_RUNS"); do
             run_id=$(printf 'run-%02d' "$run_number")
-            capture_browser reference "$run_id"
-            capture_browser candidate "$run_id"
+            if (( run_number % 2 == 1 )); then
+              first=reference
+              second=candidate
+            else
+              first=candidate
+              second=reference
+            fi
+            printf '%s\t%s\t%s\n' "$run_id" "$first" "$second" >> "$calibration_root/capture-order.tsv"
+            capture_browser "$first" "$run_id"
+            capture_browser "$second" "$run_id"
             runtime-profiler compare-browser \
               --reference "$calibration_root/reference/$run_id" \
               --candidate "$calibration_root/candidate/$run_id" \
@@ -217,6 +226,12 @@ jobs:
             echo '### Topology renderer Chromium calibration'
             echo
             echo '> Semantic/runtime comparability is required. Runtime is calibration-only: no runtime budget or performance gate is enabled.'
+            echo '> Capture order is counterbalanced so reference-first and candidate-first pairs are equally represented.'
+            echo
+            echo '#### Capture order'
+            echo '```text'
+            cat "$calibration_root/capture-order.tsv"
+            echo '```'
             echo
             echo '#### Reference work counters'
             jq '.work' "$RUNNER_TEMP/reference-topology-renderer-result.json"
