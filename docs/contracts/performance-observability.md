@@ -66,7 +66,7 @@ The profiles remain separate from correctness tests:
 - execution-environment fingerprint; and
 - complete browser runtime identity, including journey, adapter, normalizer, Node, Playwright, Chromium, viewport, and trace categories.
 
-Before dependencies are installed, the workflow also records a `sha256:` calibration-surface digest derived from the committed Git objects for the root package/lock, `packages/renderer`, the complete `web` tree, and the renderer-browser scenario/journey. The full Git SHA still proves same-source identity within one seven-sample run. The narrower calibration-surface digest is the future cross-run anchor: weekly artifacts may be compared for environment noise when that digest is unchanged even if unrelated repository commits changed the overall Git SHA.
+Before dependencies are installed, the workflow also records a `sha256:` calibration-surface digest derived from the committed Git objects for the root package/lock, `packages/renderer`, the benchmark route, its shared layout/CSS and build/package inputs, and the renderer-browser scenario/journey. The full Git SHA still proves same-source identity within one seven-sample run. The narrower calibration-surface digest is the future cross-run anchor: weekly artifacts may be compared for environment noise when that digest is unchanged even if unrelated repository commits changed the overall Git SHA.
 
 `scripts/summarize_renderer_browser_variance.py` writes `3d-lab/renderer-browser-variance/v1`. It retains every raw sample, the calibration-surface digest, and reports min, median, mean, p95, max, median absolute deviation, population standard deviation, coefficient of variation, and range relative to the median for:
 
