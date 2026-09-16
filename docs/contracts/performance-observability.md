@@ -7,6 +7,7 @@
 - `three-d-*` domain crates own deterministic work facts that are meaningful without a clock. For scene normalization this includes source/materialized vertex counts, visited indices, and materialized attribute values.
 - `@moritzbrantner/three-d-renderer` owns deterministic renderer work facts for the concrete Three.js adapter: scene-node visits, object/resource creation and reuse, removals, evictions, and live cache sizes.
 - The scene-editor model owns edit semantics and the structural-sharing boundary for local transform and vertex mutations. Imported or externally constructed scenes are validated once at the trust boundary; local mutations validate only the values they introduce and preserve unaffected invariants by construction.
+- The editor command log owns deterministic mutation history and undo/redo semantics. It records semantic deltas and a cursor, never renderer state or per-command scene snapshots.
 - `three-d-export` reports whether it had to normalize its input. An already-normalized `SceneSnapshot` is reused directly instead of rematerializing mesh and attribute buffers.
 - Repository-owned profile scripts and browser journeys define representative deterministic workloads.
 - `runtime-profiler` owns elapsed-time, resident-memory, browser runtime identity, Chromium traces, immutable evidence bundles, and reference/candidate comparison.
@@ -62,9 +63,17 @@ The editor hot path follows the same “compute only what changed” rule. `vali
 
 This is not an unsafe unchecked path: the source scene is expected to have been validated at its trust boundary, and each local operation validates every value capable of breaking the invariant it owns. The distinction prevents large meshes from being scanned and deep-copied merely because a user moved one object or vertex.
 
-`profiles/runtime-profiler/editor-mutations.json` exercises those public mutation APIs against a deterministic scene containing a 96×96 subdivided plane (9,409 vertices), 128 auxiliary nodes, 1,024 transform edits, and 192 vertex edits. The script emits a deterministic semantic checksum. Pull-request evidence copies exactly that workload into the base checkout, requires byte-identical base/candidate output, and then captures seven process samples per revision through `runtime-profiler`. Runtime comparison remains advisory; semantic equivalence is blocking.
+### Deterministic command history
 
-When deterministic edit-command/undo semantics land, this same workload should be extended rather than replaced so command-log replay can be measured against the same underlying mutation costs.
+`scene-editor-history.ts` layers undo/redo on top of those mutation primitives without introducing snapshots. Transform commands store the node id plus before/after transforms. Vertex commands store the node id, vertex index, before/after position, and only the derived normal/tangent references needed to restore the exact pre-edit semantic state.
+
+The command log is an immutable `{ scene, entries, cursor }` value. Undo applies the inverse of `entries[cursor - 1]`; redo reapplies `entries[cursor]`; committing after undo truncates only the redo suffix. Commands fail closed if the current transform, position, or derived-attribute state does not match the command precondition. This makes in-memory replay deterministic and prevents stale history from silently applying to drifted state.
+
+Undoing a vertex edit does not rebuild the whole mesh. It copies the vertex-reference array and edited tuple, reuses indices/UVs/colors, and restores previously valid normal/tangent arrays by reference. Renderer objects remain outside this model entirely.
+
+`profiles/runtime-profiler/editor-mutations.json` exercises the public editor mutation and command-log APIs against a deterministic scene containing a 96×96 subdivided plane (9,409 vertices), 128 auxiliary nodes, 1,024 transform edits, and 192 vertex edits. The workload then undoes and redoes all 192 vertex edits before emitting its deterministic semantic checksum and command-log cursor/count. Pull-request evidence copies exactly that workload into the base checkout, requires byte-identical base/candidate output, and then captures seven process samples per revision through `runtime-profiler`. Runtime comparison remains advisory; semantic equivalence is blocking.
+
+For the first command-log slice only, the workflow injects the new history module into a base revision that predates the feature so both revisions can execute the same workload. Once command history exists on `main`, future PRs keep the base implementation intact and compare old-vs-new command-log behavior normally.
 
 ## Runtime canaries
 
@@ -78,6 +87,7 @@ The profiles remain separate from correctness tests:
 
 - ordinary CI proves semantic behavior;
 - structural-sharing identity tests protect known editor allocation boundaries;
+- command-log tests prove exact undo/redo, branch truncation, replay, and fail-closed preconditions;
 - deterministic work observations protect known algorithmic and renderer-cache boundaries;
 - runtime-profiler records process/browser runtime evidence;
 - browser comparison must first establish strict workload/runtime comparability;
@@ -110,6 +120,6 @@ The report is explicitly `calibration-only` and always has `release_verdict: fal
 Extend the same evidence pattern rather than introducing another profiler:
 
 1. accumulate several scheduled renderer calibration artifacts with the same calibration-surface digest and decide whether the same-run and cross-run spread is stable enough for an explicit evaluator margin policy;
-2. extend the editor mutation workload to deterministic command-log replay/undo when the edit-command architecture lands;
+2. keep the editor command-log workload representative as drag gizmos and topology commands are added, preserving exact replay/undo semantics without snapshotting;
 3. add downstream game/application journeys where the reusable renderer is a meaningful part of frame cost; and
 4. introduce evaluator-owned budgets only for workloads whose variance and product relevance are understood.

@@ -6,6 +6,8 @@ on:
     paths:
       - "web/lib/scene-editor.ts"
       - "web/lib/scene-editor.test.ts"
+      - "web/lib/scene-editor-history.ts"
+      - "web/lib/scene-editor-history.test.ts"
       - "web/lib/mesh.ts"
       - "scripts/profile-editor-mutations.ts"
       - "profiles/runtime-profiler/editor-mutations.json"
@@ -54,12 +56,21 @@ jobs:
 
       - name: Give the base the identical editor workload
         run: |
-          mkdir -p reference/profiles/runtime-profiler reference/scripts
+          set -euo pipefail
+          mkdir -p reference/profiles/runtime-profiler reference/scripts reference/web/lib
           cp candidate/profiles/runtime-profiler/editor-mutations.json reference/profiles/runtime-profiler/editor-mutations.json
           cp candidate/scripts/profile-editor-mutations.ts reference/scripts/profile-editor-mutations.ts
+
+          # The command-log module is introduced by this slice. Inject it only while the base does not
+          # have the feature yet; after merge, future PRs compare the base and candidate implementations.
+          if [[ ! -f reference/web/lib/scene-editor-history.ts ]]; then
+            cp candidate/web/lib/scene-editor-history.ts reference/web/lib/scene-editor-history.ts
+          fi
+
           git -C reference add \
             profiles/runtime-profiler/editor-mutations.json \
-            scripts/profile-editor-mutations.ts
+            scripts/profile-editor-mutations.ts \
+            web/lib/scene-editor-history.ts
           if ! git -C reference diff --cached --quiet; then
             git -C reference \
               -c user.name='runtime-profiler' \

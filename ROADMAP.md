@@ -54,7 +54,7 @@
 - [x] Add an interactive scene editor with node-hierarchy selection, viewport mesh picking, vertex handles, transform editing, and direct vertex-position editing.
 - [ ] Add drag gizmos for node transforms and selected vertices with explicit local/world coordinate modes.
 - [ ] Add face and edge selection plus bounded topology operations such as split, inset, and extrude.
-- [ ] Add undo/redo as a deterministic edit-command log instead of renderer snapshots.
+- [x] Add undo/redo as a deterministic semantic edit-command log instead of renderer or scene snapshots.
 - [ ] Add format-neutral scene snapshot import/export before teaching glTF authoring round-trips.
 
 ### Cross-cutting performance foundation
@@ -67,5 +67,5 @@
 - [x] Add deterministic renderer work observations for node visits, object/resource creation, reuse, and eviction without moving renderer authority into performance tooling.
 - [x] Add seven-sample unchanged-source renderer-browser calibration with fail-closed source/runtime identity, machine-readable spread statistics, and scheduled recalibration.
 - [x] Add a representative editor transform/vertex-mutation workload and structural-sharing hot path so local edits do not rematerialize or revalidate unrelated scene and mesh data.
-- [ ] Extend the editor mutation workload to deterministic command-log replay/undo once the edit-command architecture lands.
+- [x] Extend the editor mutation workload through deterministic command-log execution plus full vertex-edit undo/redo round-trips.
 - [ ] Promote calibration evidence into evaluator-owned regression budgets only after repeated calibration runs establish stable cross-run variance and an explicit margin policy.
