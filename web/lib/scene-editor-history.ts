@@ -173,13 +173,15 @@ function applyVertexState(scene: EditorScene, nodeId: string, vertexIndex: numbe
   return { nodes };
 }
 
+function staleTopologyViewError(nodeId: string): Error {
+  return new Error(`topology command appended-vertex precondition failed: compatibility-view precondition failed for node ${nodeId}`);
+}
+
 function topologyStoreFor(log: EditorCommandLog, nodeId: string): PersistentMeshTopology {
   const existing = log.topologyStores.get(nodeId);
   if (existing) {
     const { node } = findNode(log.scene, nodeId);
-    if (!node.mesh || topologyViewStores.get(node.mesh) !== existing) {
-      throw new Error(`topology command compatibility-view precondition failed for node ${nodeId}`);
-    }
+    if (!node.mesh || topologyViewStores.get(node.mesh) !== existing) throw staleTopologyViewError(nodeId);
     return existing;
   }
   const { node } = findNode(log.scene, nodeId);
@@ -190,20 +192,14 @@ function topologyStoreFor(log: EditorCommandLog, nodeId: string): PersistentMesh
 function withTopologyStore(log: EditorCommandLog, nodeId: string, topology: PersistentMeshTopology): EditorCommandLog {
   const topologyStores = new Map(log.topologyStores);
   topologyStores.set(nodeId, topology);
-  return {
-    ...log,
-    scene: replaceNodeMesh(log.scene, nodeId, lazyMaterializedMesh(topology)),
-    topologyStores,
-  };
+  return { ...log, scene: replaceNodeMesh(log.scene, nodeId, lazyMaterializedMesh(topology)), topologyStores };
 }
 
 function materializeTopologyNode(log: EditorCommandLog, nodeId: string): EditorCommandLog {
   const topology = log.topologyStores.get(nodeId);
   if (!topology) return log;
   const { node } = findNode(log.scene, nodeId);
-  if (!node.mesh || topologyViewStores.get(node.mesh) !== topology) {
-    throw new Error(`topology command compatibility-view precondition failed for node ${nodeId}`);
-  }
+  if (!node.mesh || topologyViewStores.get(node.mesh) !== topology) throw staleTopologyViewError(nodeId);
   const mesh = materializePersistentMeshTopology(topology).mesh;
   const topologyStores = new Map(log.topologyStores);
   topologyStores.delete(nodeId);
@@ -218,9 +214,7 @@ export function currentEditorMesh(log: EditorCommandLog, nodeId: string): Indexe
   const topology = log.topologyStores.get(nodeId);
   if (topology) {
     const { node } = findNode(log.scene, nodeId);
-    if (!node.mesh || topologyViewStores.get(node.mesh) !== topology) {
-      throw new Error(`topology command compatibility-view precondition failed for node ${nodeId}`);
-    }
+    if (!node.mesh || topologyViewStores.get(node.mesh) !== topology) throw staleTopologyViewError(nodeId);
     return materializePersistentMeshTopology(topology).mesh;
   }
   const { node } = findNode(log.scene, nodeId);
@@ -331,9 +325,7 @@ export function commitMeshTopology(log: EditorCommandLog, nodeId: string, operat
 export function undoEditorCommand(sourceLog: EditorCommandLog): EditorCommandLog {
   if (!canUndoEditorCommand(sourceLog)) return sourceLog;
   const command = sourceLog.entries[sourceLog.cursor - 1];
-  if (command.kind === "edit-mesh-topology") {
-    return { ...applyTopologyCommand(sourceLog, command, "reverse"), cursor: sourceLog.cursor - 1 };
-  }
+  if (command.kind === "edit-mesh-topology") return { ...applyTopologyCommand(sourceLog, command, "reverse"), cursor: sourceLog.cursor - 1 };
   const log = command.kind === "set-mesh-vertex" ? materializeTopologyNode(sourceLog, command.nodeId) : sourceLog;
   return { ...log, scene: applyNonTopologyCommand(log.scene, command, "reverse"), cursor: sourceLog.cursor - 1 };
 }
@@ -341,23 +333,18 @@ export function undoEditorCommand(sourceLog: EditorCommandLog): EditorCommandLog
 export function redoEditorCommand(sourceLog: EditorCommandLog): EditorCommandLog {
   if (!canRedoEditorCommand(sourceLog)) return sourceLog;
   const command = sourceLog.entries[sourceLog.cursor];
-  if (command.kind === "edit-mesh-topology") {
-    return { ...applyTopologyCommand(sourceLog, command, "forward"), cursor: sourceLog.cursor + 1 };
-  }
+  if (command.kind === "edit-mesh-topology") return { ...applyTopologyCommand(sourceLog, command, "forward"), cursor: sourceLog.cursor + 1 };
   const log = command.kind === "set-mesh-vertex" ? materializeTopologyNode(sourceLog, command.nodeId) : sourceLog;
   return { ...log, scene: applyNonTopologyCommand(log.scene, command, "forward"), cursor: sourceLog.cursor + 1 };
 }
 
 export function replayEditorCommands(initialScene: EditorScene, commands: readonly EditorCommand[], count = commands.length): EditorScene {
-  if (!Number.isInteger(count) || count < 0 || count > commands.length) {
-    throw new Error(`command replay count ${count} is outside the command log`);
-  }
+  if (!Number.isInteger(count) || count < 0 || count > commands.length) throw new Error(`command replay count ${count} is outside the command log`);
   let log = createEditorCommandLog(initialScene);
   for (let index = 0; index < count; index += 1) {
     const command = commands[index];
-    if (command.kind === "edit-mesh-topology") {
-      log = applyTopologyCommand(log, command, "forward");
-    } else {
+    if (command.kind === "edit-mesh-topology") log = applyTopologyCommand(log, command, "forward");
+    else {
       const ready = command.kind === "set-mesh-vertex" ? materializeTopologyNode(log, command.nodeId) : log;
       log = { ...ready, scene: applyNonTopologyCommand(ready.scene, command, "forward") };
     }
