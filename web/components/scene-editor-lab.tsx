@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import {
   childrenOf,
   createEditorScene,
@@ -10,6 +11,12 @@ import {
   type EditorNode,
   type EditorScene,
 } from "@/lib/scene-editor";
+import {
+  effectiveEditorGizmoMode,
+  effectiveEditorGizmoSpace,
+  type EditorGizmoMode,
+  type EditorGizmoSpace,
+} from "@/lib/scene-editor-gizmo";
 import {
   canRedoEditorCommand,
   canUndoEditorCommand,
@@ -26,11 +33,18 @@ import styles from "./scene-editor-lab.module.css";
 
 type Axis = 0 | 1 | 2;
 
+type GizmoTarget =
+  | { kind: "node"; nodeId: string }
+  | { kind: "vertex"; nodeId: string; vertexIndex: number };
+
 type Runtime = {
   renderer: THREE.WebGLRenderer;
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
   controls: OrbitControls;
+  transformControls: TransformControls;
+  transformHelper: THREE.Object3D;
+  gizmoAnchor: THREE.Object3D;
   objects: Map<string, THREE.Object3D>;
   vertexPoints: THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial> | null;
   resizeObserver: ResizeObserver;
@@ -42,6 +56,9 @@ const AXES: readonly [label: string, axis: Axis][] = [
   ["Y", 1],
   ["Z", 2],
 ];
+
+const GIZMO_MODES: readonly EditorGizmoMode[] = ["translate", "rotate", "scale"];
+const GIZMO_SPACES: readonly EditorGizmoSpace[] = ["local", "world"];
 
 function toDegrees(value: number): number {
   return (value * 180) / Math.PI;
@@ -55,6 +72,18 @@ function mutableVec3(value: Vec3): [number, number, number] {
   return [value[0], value[1], value[2]];
 }
 
+function vectorFromThree(value: THREE.Vector3): Vec3 {
+  return [value.x, value.y, value.z];
+}
+
+function transformFromObject(object: THREE.Object3D): EditableTransform {
+  return {
+    translation: vectorFromThree(object.position),
+    rotation: [object.rotation.x, object.rotation.y, object.rotation.z],
+    scale: vectorFromThree(object.scale),
+  };
+}
+
 function createGeometry(node: EditorNode): THREE.BufferGeometry {
   const geometry = new THREE.BufferGeometry();
   if (!node.mesh) return geometry;
@@ -63,6 +92,24 @@ function createGeometry(node: EditorNode): THREE.BufferGeometry {
   geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
   return geometry;
+}
+
+function previewVertexPosition(runtime: Runtime, target: Extract<GizmoTarget, { kind: "vertex" }>, position: Vec3): void {
+  const object = runtime.objects.get(target.nodeId);
+  if (!(object instanceof THREE.Mesh)) return;
+  const positionAttribute = object.geometry.getAttribute("position") as THREE.BufferAttribute;
+  if (target.vertexIndex < 0 || target.vertexIndex >= positionAttribute.count) return;
+  positionAttribute.setXYZ(target.vertexIndex, position[0], position[1], position[2]);
+  positionAttribute.needsUpdate = true;
+  object.geometry.computeVertexNormals();
+  object.geometry.computeBoundingSphere();
+
+  const points = runtime.vertexPoints;
+  if (!points || points.userData.nodeId !== target.nodeId) return;
+  const pointPositions = points.geometry.getAttribute("position") as THREE.BufferAttribute;
+  if (target.vertexIndex < 0 || target.vertexIndex >= pointPositions.count) return;
+  pointPositions.setXYZ(target.vertexIndex, position[0], position[1], position[2]);
+  pointPositions.needsUpdate = true;
 }
 
 function VectorEditor({
@@ -138,6 +185,9 @@ export function SceneEditorLab() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const runtimeRef = useRef<Runtime | null>(null);
   const initialSceneRef = useRef<EditorScene | null>(null);
+  const gizmoTargetRef = useRef<GizmoTarget | null>(null);
+  const suppressPickRef = useRef(false);
+  const cancelledDragRef = useRef(false);
   const [history, setHistory] = useState<EditorCommandLog>(() => {
     const scene = createEditorScene();
     initialSceneRef.current = scene;
@@ -148,6 +198,9 @@ export function SceneEditorLab() {
   const [selectedVertexIndex, setSelectedVertexIndex] = useState<number | null>(null);
   const [showVertices, setShowVertices] = useState(true);
   const [wireframe, setWireframe] = useState(false);
+  const [gizmoMode, setGizmoMode] = useState<EditorGizmoMode>("translate");
+  const [gizmoSpace, setGizmoSpace] = useState<EditorGizmoSpace>("local");
+  const [gizmoDragging, setGizmoDragging] = useState(false);
 
   const selectedNode = useMemo(
     () => editorScene.nodes.find((node) => node.id === selectedNodeId) ?? editorScene.nodes[0],
@@ -155,6 +208,9 @@ export function SceneEditorLab() {
   );
   const selectedVertex =
     selectedVertexIndex === null || !selectedNode.mesh ? null : selectedNode.mesh.vertices[selectedVertexIndex] ?? null;
+  const gizmoTargetKind = selectedVertexIndex === null ? "node" : "vertex";
+  const effectiveGizmoMode = effectiveEditorGizmoMode(gizmoTargetKind, gizmoMode);
+  const effectiveGizmoSpace = effectiveEditorGizmoSpace(effectiveGizmoMode, gizmoSpace);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -174,6 +230,12 @@ export function SceneEditorLab() {
     controls.enableDamping = true;
     controls.target.set(0, 0.2, 0);
     controls.update();
+
+    const transformControls = new TransformControls(camera, canvas);
+    const transformHelper = transformControls.getHelper();
+    scene.add(transformHelper);
+    const gizmoAnchor = new THREE.Object3D();
+    gizmoAnchor.name = "Selected vertex gizmo anchor";
 
     scene.add(new THREE.HemisphereLight(0xdce8ff, 0x20283a, 2.2));
     const key = new THREE.DirectionalLight(0xffffff, 3.4);
@@ -219,6 +281,10 @@ export function SceneEditorLab() {
     raycaster.params.Points = { threshold: 0.16 };
     const pointer = new THREE.Vector2();
     const pick = (event: MouseEvent) => {
+      if (suppressPickRef.current || transformControls.dragging) {
+        suppressPickRef.current = false;
+        return;
+      }
       const bounds = canvas.getBoundingClientRect();
       pointer.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
       pointer.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1;
@@ -248,6 +314,45 @@ export function SceneEditorLab() {
     };
     canvas.addEventListener("click", pick);
 
+    const handleDraggingChanged = () => {
+      const dragging = transformControls.dragging;
+      controls.enabled = !dragging;
+      setGizmoDragging(dragging);
+    };
+    const handleMouseDown = () => {
+      cancelledDragRef.current = false;
+    };
+    const handleObjectChange = () => {
+      const target = gizmoTargetRef.current;
+      const runtime = runtimeRef.current;
+      if (!runtime || target?.kind !== "vertex") return;
+      previewVertexPosition(runtime, target, vectorFromThree(runtime.gizmoAnchor.position));
+    };
+    const handleMouseUp = () => {
+      const target = gizmoTargetRef.current;
+      if (!target) return;
+      if (cancelledDragRef.current) {
+        cancelledDragRef.current = false;
+      } else if (target.kind === "node") {
+        const object = objects.get(target.nodeId);
+        if (object) {
+          const next = transformFromObject(object);
+          setHistory((log) => commitNodeTransform(log, target.nodeId, next));
+        }
+      } else {
+        const next = vectorFromThree(gizmoAnchor.position);
+        setHistory((log) => commitMeshVertex(log, target.nodeId, target.vertexIndex, next));
+      }
+      suppressPickRef.current = true;
+      window.setTimeout(() => {
+        suppressPickRef.current = false;
+      }, 0);
+    };
+    transformControls.addEventListener("dragging-changed", handleDraggingChanged);
+    transformControls.addEventListener("mouseDown", handleMouseDown);
+    transformControls.addEventListener("objectChange", handleObjectChange);
+    transformControls.addEventListener("mouseUp", handleMouseUp);
+
     let frameId = 0;
     const render = () => {
       controls.update();
@@ -262,6 +367,9 @@ export function SceneEditorLab() {
       scene,
       camera,
       controls,
+      transformControls,
+      transformHelper,
+      gizmoAnchor,
       objects,
       vertexPoints: null,
       resizeObserver,
@@ -271,6 +379,14 @@ export function SceneEditorLab() {
 
     return () => {
       canvas.removeEventListener("click", pick);
+      transformControls.removeEventListener("dragging-changed", handleDraggingChanged);
+      transformControls.removeEventListener("mouseDown", handleMouseDown);
+      transformControls.removeEventListener("objectChange", handleObjectChange);
+      transformControls.removeEventListener("mouseUp", handleMouseUp);
+      transformControls.detach();
+      transformControls.dispose();
+      transformHelper.removeFromParent();
+      gizmoAnchor.removeFromParent();
       cancelAnimationFrame(runtimeRef.current?.frameId ?? frameId);
       resizeObserver.disconnect();
       controls.dispose();
@@ -345,11 +461,59 @@ export function SceneEditorLab() {
   }, [editorScene, selectedNode, selectedVertexIndex, showVertices]);
 
   useEffect(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime) return;
+    const controls = runtime.transformControls;
+    controls.detach();
+
+    if (selectedVertexIndex !== null && selectedVertex && selectedNode.mesh) {
+      const selectedObject = runtime.objects.get(selectedNode.id);
+      if (!selectedObject) return;
+      if (runtime.gizmoAnchor.parent !== selectedObject) {
+        runtime.gizmoAnchor.removeFromParent();
+        selectedObject.add(runtime.gizmoAnchor);
+      }
+      runtime.gizmoAnchor.position.set(...selectedVertex);
+      runtime.gizmoAnchor.rotation.set(0, 0, 0);
+      runtime.gizmoAnchor.scale.set(1, 1, 1);
+      gizmoTargetRef.current = {
+        kind: "vertex",
+        nodeId: selectedNode.id,
+        vertexIndex: selectedVertexIndex,
+      };
+      controls.setMode(effectiveEditorGizmoMode("vertex", gizmoMode));
+      controls.setSpace(effectiveEditorGizmoSpace("translate", gizmoSpace));
+      controls.attach(runtime.gizmoAnchor);
+      return;
+    }
+
+    runtime.gizmoAnchor.removeFromParent();
+    const selectedObject = runtime.objects.get(selectedNode.id);
+    if (!selectedObject) {
+      gizmoTargetRef.current = null;
+      return;
+    }
+    gizmoTargetRef.current = { kind: "node", nodeId: selectedNode.id };
+    const mode = effectiveEditorGizmoMode("node", gizmoMode);
+    controls.setMode(mode);
+    controls.setSpace(effectiveEditorGizmoSpace(mode, gizmoSpace));
+    controls.attach(selectedObject);
+  }, [selectedNode, selectedVertex, selectedVertexIndex, gizmoMode, gizmoSpace]);
+
+  useEffect(() => {
     if (!selectedNode.mesh && selectedVertexIndex !== null) setSelectedVertexIndex(null);
   }, [selectedNode, selectedVertexIndex]);
 
   useEffect(() => {
     const handleHistoryShortcut = (event: KeyboardEvent) => {
+      const runtime = runtimeRef.current;
+      if (event.key === "Escape" && runtime?.transformControls.dragging) {
+        event.preventDefault();
+        cancelledDragRef.current = true;
+        runtime.transformControls.reset();
+        return;
+      }
+      if (runtime?.transformControls.dragging) return;
       if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
       const key = event.key.toLowerCase();
       const undo = key === "z" && !event.shiftKey;
@@ -443,11 +607,43 @@ export function SceneEditorLab() {
             {selectedVertexIndex !== null && <span> / vertex {selectedVertexIndex}</span>}
           </div>
           <div className={styles.toolbarActions}>
+            {GIZMO_MODES.map((mode) => {
+              const vertexBlocked = selectedVertexIndex !== null && mode !== "translate";
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  className={`${styles.toolButton} ${effectiveGizmoMode === mode ? styles.toolButtonActive : ""}`}
+                  onClick={() => setGizmoMode(mode)}
+                  disabled={vertexBlocked || gizmoDragging}
+                  aria-pressed={effectiveGizmoMode === mode}
+                  title={vertexBlocked ? "Selected vertices are position-only" : `${mode} gizmo`}
+                >
+                  {mode[0].toUpperCase() + mode.slice(1)}
+                </button>
+              );
+            })}
+            {GIZMO_SPACES.map((space) => {
+              const scaleBlocked = effectiveGizmoMode === "scale" && space === "world";
+              return (
+                <button
+                  key={space}
+                  type="button"
+                  className={`${styles.toolButton} ${effectiveGizmoSpace === space ? styles.toolButtonActive : ""}`}
+                  onClick={() => setGizmoSpace(space)}
+                  disabled={scaleBlocked || gizmoDragging}
+                  aria-pressed={effectiveGizmoSpace === space}
+                  title={scaleBlocked ? "Scale uses local axes" : `${space} coordinate axes`}
+                >
+                  {space[0].toUpperCase() + space.slice(1)}
+                </button>
+              );
+            })}
             <button
               type="button"
               className={styles.toolButton}
               onClick={() => setHistory((log) => undoEditorCommand(log))}
-              disabled={!canUndoEditorCommand(history)}
+              disabled={!canUndoEditorCommand(history) || gizmoDragging}
               aria-keyshortcuts="Control+Z Meta+Z"
               title="Undo (Ctrl/Cmd+Z)"
             >
@@ -457,7 +653,7 @@ export function SceneEditorLab() {
               type="button"
               className={styles.toolButton}
               onClick={() => setHistory((log) => redoEditorCommand(log))}
-              disabled={!canRedoEditorCommand(history)}
+              disabled={!canRedoEditorCommand(history) || gizmoDragging}
               aria-keyshortcuts="Control+Y Control+Shift+Z Meta+Shift+Z"
               title="Redo (Ctrl+Y or Ctrl/Cmd+Shift+Z)"
             >
@@ -487,10 +683,10 @@ export function SceneEditorLab() {
         <canvas
           ref={canvasRef}
           className={styles.canvas}
-          aria-label="Interactive 3D scene editor. Orbit the camera, click meshes, and select visible vertex handles."
+          aria-label="Interactive 3D scene editor with local/world transform gizmos, mesh picking, and vertex handles."
         />
         <p className={styles.viewportHint}>
-          Drag to orbit, scroll to zoom, click a mesh to select it, then click a vertex handle to edit that position.
+          Drag the colored gizmo axes to edit the selection. Node translate/rotate support local or world axes; scale is local. Selected vertices use translation in local or world axes. One completed drag creates one undoable command; press Escape during a drag to cancel it.
         </p>
       </div>
 
@@ -539,7 +735,7 @@ export function SceneEditorLab() {
               <VectorEditor label="Local position" value={selectedVertex} step={0.05} onChange={updateVertexAxis} />
             )}
             <p>
-              Position edits mutate the format-neutral mesh draft. Derived normals/tangents are treated as stale and rebuilt downstream.
+              Position edits mutate the format-neutral mesh draft. The drag gizmo previews in Three.js, then commits one semantic vertex command on pointer release. Derived normals/tangents are treated as stale and rebuilt downstream.
             </p>
           </section>
         )}
@@ -547,7 +743,7 @@ export function SceneEditorLab() {
         <section className={styles.boundary}>
           <strong>Ownership boundary</strong>
           <p>
-            The editor owns selection, semantic edit commands, and undo/redo. Mesh validity stays aligned with <code>three-d-core</code>; hierarchy ordering stays aligned with <code>three-d-animation</code>. Three.js only renders and ray-picks the current model, and renderer snapshots never enter history.
+            The editor owns selection, local/world gizmo semantics, semantic edit commands, and undo/redo. Mesh validity stays aligned with <code>three-d-core</code>; hierarchy ordering stays aligned with <code>three-d-animation</code>. Three.js supplies the temporary drag preview and ray picking only; renderer snapshots and pointer-move samples never enter history.
           </p>
         </section>
 
