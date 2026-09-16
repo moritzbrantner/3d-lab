@@ -270,18 +270,6 @@ export function createThreeSceneRenderer(canvas, options = {}) {
   const materials = new Map()
   const pixelRatioLimit = options.pixelRatioLimit ?? DEFAULT_PIXEL_RATIO_LIMIT
 
-  function acquireGeometry(descriptor) {
-    const key = geometryKey(descriptor)
-    const {resource: geometry, created} = acquireResource(geometries, key, () => createGeometry(descriptor))
-    return {key, geometry, created}
-  }
-
-  function acquireMaterial(node) {
-    const key = materialKey(node)
-    const {resource: material, created} = acquireResource(materials, key, () => createMaterial(node))
-    return {key, material, created}
-  }
-
   function applyCamera(frameCamera) {
     camera.matrixWorldInverse.fromArray(frameCamera.viewMatrix)
     camera.matrixWorld.copy(camera.matrixWorldInverse).invert()
@@ -311,22 +299,26 @@ export function createThreeSceneRenderer(canvas, options = {}) {
       const liveMaterialKeys = new Set()
       for (const node of frame.nodes) {
         liveObjectIds.add(node.id)
-        const {
-          key: nextGeometryKey,
-          geometry: nextGeometry,
-          created: geometryCreated,
-        } = acquireGeometry(node.geometry)
-        const {
-          key: nextMaterialKey,
-          material: nextMaterial,
-          created: materialCreated,
-        } = acquireMaterial(node)
+        const nextGeometryKey = geometryKey(node.geometry)
+        const nextGeometry = acquireResource(
+          geometries,
+          nextGeometryKey,
+          createGeometry,
+          node.geometry,
+          observations,
+          "geometryCreateCount",
+        )
+        const nextMaterialKey = materialKey(node)
+        const nextMaterial = acquireResource(
+          materials,
+          nextMaterialKey,
+          createMaterial,
+          node,
+          observations,
+          "materialCreateCount",
+        )
         liveGeometryKeys.add(nextGeometryKey)
         liveMaterialKeys.add(nextMaterialKey)
-        if (geometryCreated) observations.geometryCreateCount += 1
-        else observations.geometryReuseCount += 1
-        if (materialCreated) observations.materialCreateCount += 1
-        else observations.materialReuseCount += 1
 
         let mesh = objects.get(node.id)
         if (!mesh) {
@@ -340,12 +332,15 @@ export function createThreeSceneRenderer(canvas, options = {}) {
         } else {
           mesh.geometry = nextGeometry
           mesh.material = nextMaterial
-          observations.objectReuseCount += 1
         }
         applyNodeTransform(mesh, node)
         mesh.matrixWorldNeedsUpdate = true
         mesh.visible = node.visible !== false
       }
+
+      observations.objectReuseCount = observations.nodeVisitCount - observations.objectCreateCount
+      observations.geometryReuseCount = observations.nodeVisitCount - observations.geometryCreateCount
+      observations.materialReuseCount = observations.nodeVisitCount - observations.materialCreateCount
 
       for (const [id, mesh] of objects) {
         if (liveObjectIds.has(id)) continue
@@ -360,7 +355,7 @@ export function createThreeSceneRenderer(canvas, options = {}) {
       observations.liveMaterialCount = materials.size
 
       renderer.render(scene, camera)
-      return Object.freeze(observations)
+      return observations
     },
 
     dispose() {
