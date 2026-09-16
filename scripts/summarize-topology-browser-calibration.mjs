@@ -20,6 +20,11 @@ const metricDefinitions = [
   ],
   ["otherInclusiveDurationUs", "us", (summary) => runtimeDuration(summary, "other")],
 ];
+const relativeDeltaMetrics = new Set([
+  "topLevelDurationUs",
+  "javascriptInclusiveDurationUs",
+  "otherInclusiveDurationUs",
+]);
 
 function runtimeDuration(summary, runtimeKind) {
   return (
@@ -150,12 +155,15 @@ function metricSummary(runs) {
 function pairedDeltaSummary(referenceRuns, candidateRuns) {
   return Object.fromEntries(
     metricDefinitions
-      .filter(([, unit]) => unit === "us")
+      .filter(([name, unit]) => unit === "us" && relativeDeltaMetrics.has(name))
       .map(([name, , readMetric]) => {
         const deltas = referenceRuns.map((referenceRun, index) => {
           const reference = readMetric(referenceRun.summary);
           const candidate = readMetric(candidateRuns[index].summary);
-          return reference === 0 ? 0 : ((candidate - reference) / reference) * 100;
+          if (reference <= 0) {
+            throw new Error(`relative calibration metric ${name} requires a positive reference value`);
+          }
+          return ((candidate - reference) / reference) * 100;
         });
         return [name, { unit: "percent", ...stats(deltas) }];
       }),
