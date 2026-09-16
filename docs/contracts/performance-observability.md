@@ -9,7 +9,8 @@
 - `three-d-export` reports whether it had to normalize its input. An already-normalized `SceneSnapshot` is reused directly instead of rematerializing mesh and attribute buffers.
 - Repository-owned profile scripts and browser journeys define representative deterministic workloads.
 - `runtime-profiler` owns elapsed-time, resident-memory, browser runtime identity, Chromium traces, immutable evidence bundles, and reference/candidate comparison.
-- A future evaluator such as Moonlight may own regression thresholds after the workload has enough repeated evidence to understand normal variance. The profiler itself does not define release policy.
+- Repository-owned calibration tooling may summarize repeated, identity-equivalent profiler bundles. It owns descriptive spread statistics only, not a performance verdict.
+- A future evaluator such as Moonlight may own regression thresholds after repeated calibration has established normal same-run and cross-run variance. The profiler and calibration summarizer do not define release policy.
 
 This keeps observability downstream of domain authority: adding or removing a profiler must not change scene, mesh, camera, animation, or rendering semantics.
 
@@ -56,11 +57,31 @@ The profiles remain separate from correctness tests:
 - browser comparison must first establish strict workload/runtime comparability;
 - no brittle wall-clock threshold is embedded in unit tests.
 
+## Renderer variance calibration
+
+`.github/workflows/renderer-variance-calibration.yml` measures noise separately from code changes. It builds the renderer canary once, keeps one static server alive, and performs seven sequential Chromium captures of that exact source on one runner. The calibration summarizer fails closed unless all samples have identical:
+
+- source Git identity;
+- scenario id and digest;
+- execution-environment fingerprint; and
+- complete browser runtime identity, including journey, adapter, normalizer, Node, Playwright, Chromium, viewport, and trace categories.
+
+`scripts/summarize_renderer_browser_variance.py` then writes `3d-lab/renderer-browser-variance/v1`. It retains every raw sample and reports min, median, mean, p95, max, median absolute deviation, population standard deviation, coefficient of variation, and range relative to the median for:
+
+- the maximum top-level `EventDispatch` duration, which is the closest normalized Chromium signal for the synchronous canary action;
+- longest top-level task duration;
+- total top-level task duration;
+- inclusive JavaScript trace duration;
+- long-task count; and
+- trace-event count.
+
+The report is explicitly `calibration-only` and always has `release_verdict: false`. A single seven-sample run describes same-run noise; it is not enough to define a durable threshold. The workflow therefore also runs weekly on `main` and remains manually dispatchable so future policy can inspect cross-run variation caused by runner, browser, and operating-environment changes rather than hiding those changes inside one percentage budget.
+
 ## Next performance slices
 
 Extend the same evidence pattern rather than introducing another profiler:
 
-1. collect several unchanged-source renderer-browser captures and characterize normal long-task/hot-path variance;
+1. accumulate several scheduled renderer calibration artifacts and decide whether the same-run and cross-run spread is stable enough for an explicit evaluator margin policy;
 2. add representative editor mutation workloads once edit-command/undo semantics stabilize;
 3. add downstream game/application journeys where the reusable renderer is a meaningful part of frame cost; and
 4. introduce evaluator-owned budgets only for workloads whose variance and product relevance are understood.
