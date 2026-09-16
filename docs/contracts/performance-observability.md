@@ -5,9 +5,10 @@
 ## Ownership
 
 - `three-d-*` domain crates own deterministic work facts that are meaningful without a clock. For scene normalization this includes source/materialized vertex counts, visited indices, and materialized attribute values.
+- `@moritzbrantner/three-d-renderer` owns deterministic renderer work facts for the concrete Three.js adapter: scene-node visits, object/resource creation and reuse, removals, evictions, and live cache sizes.
 - `three-d-export` reports whether it had to normalize its input. An already-normalized `SceneSnapshot` is reused directly instead of rematerializing mesh and attribute buffers.
-- Repository-owned profile scripts define representative deterministic workloads.
-- `runtime-profiler` owns elapsed-time, resident-memory, environment identity, immutable evidence bundles, and reference/candidate comparison.
+- Repository-owned profile scripts and browser journeys define representative deterministic workloads.
+- `runtime-profiler` owns elapsed-time, resident-memory, browser runtime identity, Chromium traces, immutable evidence bundles, and reference/candidate comparison.
 - A future evaluator such as Moonlight may own regression thresholds after the workload has enough repeated evidence to understand normal variance. The profiler itself does not define release policy.
 
 This keeps observability downstream of domain authority: adding or removing a profiler must not change scene, mesh, camera, animation, or rendering semantics.
@@ -25,24 +26,41 @@ Normalization remains deterministic and idempotent. Re-normalizing an already-no
 
 `three-d-export` still accepts an ordinary `SceneSnapshot` for convenience. If the input is not normalized, export performs one normalization pass. If the input is already normalized, as in the asset-tooling scene adapter, export serializes it directly. `SceneExportObservations::normalization_pass_count` makes that boundary testable.
 
-## Runtime canary
+## Renderer work observations
+
+`ThreeSceneRenderer.render` returns a `RendererWorkObservations` value after each frame. The report is descriptive work evidence, not a timing result. It records:
+
+- scene nodes visited;
+- Three.js mesh objects created, reused, and removed;
+- geometry resources created, reused, and evicted;
+- material resources created, reused, and evicted; and
+- live object, geometry, and material cache sizes after the frame.
+
+Creation/reuse counts describe cache acquisitions performed by the renderer. They intentionally do not claim GPU allocation cost or exclusive CPU time. Chromium/runtime timing remains owned by `runtime-profiler`.
+
+The resource cache helpers expose creation-versus-reuse and eviction counts directly, so the observations are produced by the same code path that owns the actual cache. The performance fixture does not maintain a second shadow cache model.
+
+## Runtime canaries
 
 `profiles/runtime-profiler/scene-export.json` exercises the actual release-mode `scene_export_glb` adapter against a generated deterministic scene. The fixture intentionally contains enough meshes, vertices, attributes, and canonical reordering work to expose repeated materialization while staying bounded and repository-local.
 
-Pull requests that touch the Rust scene/export surface capture the same workload on the exact base and candidate revisions. The candidate workload definition is copied to the base before capture so the scenario itself is identical. The resulting runtime-profiler comparison is advisory evidence and is uploaded as a CI artifact.
+`profiles/runtime-profiler/renderer-browser.json` exercises the reusable Three.js renderer through the static `/renderer-performance/` route. Its 64-frame, 192-node workload includes one phase that removes the final users of a geometry/material and then restores them. On a renderer that exposes work observations, the route checks the exact aggregate create/reuse/remove/evict counts before reporting success.
 
-The profile is intentionally separate from correctness tests:
+For pull-request browser evidence, the candidate workload files are copied into the exact base checkout before either site is built. Both revisions therefore run the same route and journey module. `runtime-profiler compare-browser` verifies scenario, journey, Playwright, Chromium, viewport, trace configuration, and normalizer identity before the two captures are interpreted together.
+
+The profiles remain separate from correctness tests:
 
 - ordinary CI proves semantic behavior;
-- deterministic work observations protect known algorithmic boundaries;
-- runtime-profiler records timing/memory evidence;
+- deterministic work observations protect known algorithmic and cache boundaries;
+- runtime-profiler records process/browser runtime evidence;
+- browser comparison must first establish strict workload/runtime comparability;
 - no brittle wall-clock threshold is embedded in unit tests.
 
 ## Next performance slices
 
-After the scene-export canary has stable repeated evidence, extend the same pattern rather than introducing another profiler:
+Extend the same evidence pattern rather than introducing another profiler:
 
-1. add a browser journey for the reusable Three.js renderer that exercises stable scene reuse and records renderer-main hot paths;
-2. expose deterministic renderer work facts such as object/resource creations, reuses, evictions, and scene-node visits without moving renderer authority into a profiler;
-3. add representative editor mutation workloads once edit-command/undo semantics stabilize;
+1. collect several unchanged-source renderer-browser captures and characterize normal long-task/hot-path variance;
+2. add representative editor mutation workloads once edit-command/undo semantics stabilize;
+3. add downstream game/application journeys where the reusable renderer is a meaningful part of frame cost; and
 4. introduce evaluator-owned budgets only for workloads whose variance and product relevance are understood.
