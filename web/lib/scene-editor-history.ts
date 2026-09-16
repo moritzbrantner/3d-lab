@@ -60,6 +60,8 @@ export type EditorCommandLog = Readonly<{
   topologyStores: ReadonlyMap<string, PersistentMeshTopology>;
 }>;
 
+const topologyViewStores = new WeakMap<object, PersistentMeshTopology>();
+
 function cloneVec3(value: Vec3): Vec3 {
   return [value[0], value[1], value[2]];
 }
@@ -104,7 +106,7 @@ function lazyMaterializedMesh(topology: PersistentMeshTopology): IndexedMesh {
     cached ??= materializePersistentMeshTopology(topology).mesh;
     return cached;
   };
-  return {
+  const view: IndexedMesh = {
     get vertices() {
       return materialized().vertices;
     },
@@ -115,6 +117,8 @@ function lazyMaterializedMesh(topology: PersistentMeshTopology): IndexedMesh {
       return materialized().attributes;
     },
   };
+  topologyViewStores.set(view, topology);
+  return view;
 }
 
 function derivedAttributes(node: EditorNode): EditorDerivedVertexAttributes {
@@ -171,7 +175,13 @@ function applyVertexState(scene: EditorScene, nodeId: string, vertexIndex: numbe
 
 function topologyStoreFor(log: EditorCommandLog, nodeId: string): PersistentMeshTopology {
   const existing = log.topologyStores.get(nodeId);
-  if (existing) return existing;
+  if (existing) {
+    const { node } = findNode(log.scene, nodeId);
+    if (!node.mesh || topologyViewStores.get(node.mesh) !== existing) {
+      throw new Error(`topology command compatibility-view precondition failed for node ${nodeId}`);
+    }
+    return existing;
+  }
   const { node } = findNode(log.scene, nodeId);
   if (!node.mesh) throw new Error(`node ${nodeId} does not own a mesh`);
   return createPersistentMeshTopology(node.mesh);
@@ -190,6 +200,10 @@ function withTopologyStore(log: EditorCommandLog, nodeId: string, topology: Pers
 function materializeTopologyNode(log: EditorCommandLog, nodeId: string): EditorCommandLog {
   const topology = log.topologyStores.get(nodeId);
   if (!topology) return log;
+  const { node } = findNode(log.scene, nodeId);
+  if (!node.mesh || topologyViewStores.get(node.mesh) !== topology) {
+    throw new Error(`topology command compatibility-view precondition failed for node ${nodeId}`);
+  }
   const mesh = materializePersistentMeshTopology(topology).mesh;
   const topologyStores = new Map(log.topologyStores);
   topologyStores.delete(nodeId);
@@ -202,7 +216,13 @@ export function currentEditorTopology(log: EditorCommandLog, nodeId: string): Pe
 
 export function currentEditorMesh(log: EditorCommandLog, nodeId: string): IndexedMesh {
   const topology = log.topologyStores.get(nodeId);
-  if (topology) return materializePersistentMeshTopology(topology).mesh;
+  if (topology) {
+    const { node } = findNode(log.scene, nodeId);
+    if (!node.mesh || topologyViewStores.get(node.mesh) !== topology) {
+      throw new Error(`topology command compatibility-view precondition failed for node ${nodeId}`);
+    }
+    return materializePersistentMeshTopology(topology).mesh;
+  }
   const { node } = findNode(log.scene, nodeId);
   if (!node.mesh) throw new Error(`node ${nodeId} does not own a mesh`);
   return node.mesh;
