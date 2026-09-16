@@ -2,13 +2,11 @@ import { subdividedPlane, validateMesh, type IndexedMesh } from "../web/lib/mesh
 import type { EditorNode, EditorScene } from "../web/lib/scene-editor";
 import * as history from "../web/lib/scene-editor-history";
 import {
-  createMeshTopologyIndex,
   topologyStructuralBudgetViolations,
   type MeshTopologyOperation,
   type MeshTopologyWorkObservations,
 } from "../web/lib/scene-editor-topology";
 import {
-  createPersistentMeshTopologyIndex,
   materializePersistentMeshTopology,
   persistentTriangleAt,
   type PersistentMeshTopology,
@@ -92,6 +90,8 @@ type WorkTotals = {
   vertexReferencesCopied: number;
   authoredAttributeReferencesCopied: number;
   authoredAttributeValuesCreated: number;
+  topologyIndexBuildCount: number;
+  topologyIndexTriangleVisits: number;
   materializationCount: number;
   materializedVertexReferences: number;
   materializedIndexValues: number;
@@ -105,6 +105,8 @@ const totals: WorkTotals = {
   vertexReferencesCopied: 0,
   authoredAttributeReferencesCopied: 0,
   authoredAttributeValuesCreated: 0,
+  topologyIndexBuildCount: 0,
+  topologyIndexTriangleVisits: 0,
   materializationCount: 0,
   materializedVertexReferences: 0,
   materializedIndexValues: 0,
@@ -120,6 +122,16 @@ function addObservations(operation: MeshTopologyOperation, observations: MeshTop
   totals.vertexReferencesCopied += observations.vertexReferencesCopied;
   totals.authoredAttributeReferencesCopied += observations.authoredAttributeReferencesCopied;
   totals.authoredAttributeValuesCreated += observations.authoredAttributeValuesCreated;
+  totals.topologyIndexBuildCount += observations.topologyIndexBuildCount;
+  totals.topologyIndexTriangleVisits += observations.topologyIndexTriangleVisits;
+}
+
+function addLatestObservation(log: history.EditorCommandLog, expectedKind: MeshTopologyOperation["kind"]): void {
+  const command = log.entries[log.cursor - 1];
+  if (command.kind !== "edit-mesh-topology" || command.operation.kind !== expectedKind) {
+    throw new Error(`${expectedKind} did not create the expected topology command`);
+  }
+  addObservations(command.operation, command.observations);
 }
 
 function materializeForBoundary(log: history.EditorCommandLog): IndexedMesh {
@@ -132,53 +144,52 @@ function materializeForBoundary(log: history.EditorCommandLog): IndexedMesh {
   return materialized.mesh;
 }
 
+function triangleCount(log: history.EditorCommandLog): number {
+  return currentTopology(log)?.triangleCount ?? currentMesh(log).indices.length / 3;
+}
+
+function edgeAt(log: history.EditorCommandLog, triangleIndex: number): readonly [number, number] {
+  const topology = currentTopology(log);
+  if (topology) {
+    const triangle = persistentTriangleAt(topology, triangleIndex);
+    return [triangle[0], triangle[1]] as const;
+  }
+  const mesh = currentMesh(log);
+  const start = triangleIndex * 3;
+  return [mesh.indices[start], mesh.indices[start + 1]] as const;
+}
+
 const initialScene = createWorkloadScene();
 const initialMesh = meshFromScene(initialScene);
 const initialChecksum = checksumMesh(initialMesh);
 let log = history.createEditorCommandLog(initialScene);
-let topologyIndexTriangleVisits = 0;
 
-for (let edit = 0; edit < EDGE_SPLIT_COUNT; edit += 1) {
-  const topology = currentTopology(log);
-  let edge: readonly [number, number];
-  let topologyIndex;
-  if (topology) {
-    const triangleIndex = (edit * 997 + 17) % topology.triangleCount;
-    const triangle = persistentTriangleAt(topology, triangleIndex);
-    edge = [triangle[0], triangle[1]] as const;
-    topologyIndex = createPersistentMeshTopologyIndex(topology);
-  } else {
-    const mesh = currentMesh(log);
-    const triangleIndex = (edit * 997 + 17) % (mesh.indices.length / 3);
-    const start = triangleIndex * 3;
-    edge = [mesh.indices[start], mesh.indices[start + 1]] as const;
-    topologyIndex = createMeshTopologyIndex(mesh);
+for (let round = 0; round < EDGE_SPLIT_COUNT; round += 1) {
+  const splitTriangle = (round * 997 + 17) % triangleCount(log);
+  log = history.commitMeshTopology(log, MESH_NODE_ID, {
+    kind: "split-edge",
+    edge: edgeAt(log, splitTriangle),
+  });
+  addLatestObservation(log, "split-edge");
+
+  for (let local = 0; local < 2; local += 1) {
+    const edit = round * 2 + local;
+    const insetTriangle = (edit * 613 + 31) % triangleCount(log);
+    log = history.commitMeshTopology(log, MESH_NODE_ID, {
+      kind: "inset-face",
+      triangleIndex: insetTriangle,
+      ratio: 0.22,
+    });
+    addLatestObservation(log, "inset-face");
+
+    const extrudeTriangle = (edit * 431 + 47) % triangleCount(log);
+    log = history.commitMeshTopology(log, MESH_NODE_ID, {
+      kind: "extrude-face",
+      triangleIndex: extrudeTriangle,
+      distance: 0.035,
+    });
+    addLatestObservation(log, "extrude-face");
   }
-  topologyIndexTriangleVisits += topologyIndex.observations.triangleVisitCount;
-  log = history.commitMeshTopology(log, MESH_NODE_ID, { kind: "split-edge", edge }, topologyIndex);
-  const command = log.entries[log.cursor - 1];
-  if (command.kind !== "edit-mesh-topology") throw new Error("split did not create a topology command");
-  addObservations(command.operation, command.observations);
-}
-
-for (let edit = 0; edit < FACE_INSET_COUNT; edit += 1) {
-  const topology = currentTopology(log);
-  const triangleCount = topology?.triangleCount ?? currentMesh(log).indices.length / 3;
-  const triangleIndex = (edit * 613 + 31) % triangleCount;
-  log = history.commitMeshTopology(log, MESH_NODE_ID, { kind: "inset-face", triangleIndex, ratio: 0.22 });
-  const command = log.entries[log.cursor - 1];
-  if (command.kind !== "edit-mesh-topology") throw new Error("inset did not create a topology command");
-  addObservations(command.operation, command.observations);
-}
-
-for (let edit = 0; edit < FACE_EXTRUDE_COUNT; edit += 1) {
-  const topology = currentTopology(log);
-  const triangleCount = topology?.triangleCount ?? currentMesh(log).indices.length / 3;
-  const triangleIndex = (edit * 431 + 47) % triangleCount;
-  log = history.commitMeshTopology(log, MESH_NODE_ID, { kind: "extrude-face", triangleIndex, distance: 0.035 });
-  const command = log.entries[log.cursor - 1];
-  if (command.kind !== "edit-mesh-topology") throw new Error("extrude did not create a topology command");
-  addObservations(command.operation, command.observations);
 }
 
 const operationCount = EDGE_SPLIT_COUNT + FACE_INSET_COUNT + FACE_EXTRUDE_COUNT;
@@ -215,7 +226,6 @@ console.log(
       historyCursor: log.cursor,
       undoCount: operationCount,
       redoCount: operationCount,
-      topologyIndexTriangleVisits,
       initialChecksum,
       finalChecksum,
     },
