@@ -2,6 +2,8 @@
 set -euo pipefail
 
 root="$(git rev-parse --show-toplevel)"
+cd "$root"
+
 profile_dir="$root/target/runtime-profile/scene-export"
 scene="$profile_dir/scene.json"
 request="$profile_dir/request.json"
@@ -31,5 +33,4 @@ if [[ "$needs_build" -eq 1 ]]; then
     --bin scene_export_glb
 fi
 
-cd "$root"
 exec "$binary" generate "$request" "$output" "$observations"
