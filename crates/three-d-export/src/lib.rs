@@ -17,6 +17,16 @@ const COMPONENT_F32: u32 = 5126;
 const COMPONENT_U32: u32 = 5125;
 const TRIANGLES_MODE: u32 = 4;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SceneExportObservations {
+    pub normalization_pass_count: usize,
+    pub mesh_count: usize,
+    pub node_count: usize,
+    pub vertex_count: usize,
+    pub index_count: usize,
+    pub attribute_value_count: usize,
+}
+
 #[derive(Debug)]
 pub enum SceneExportError {
     Scene(SceneError),
@@ -151,8 +161,59 @@ fn position_bounds(vertices: &[three_d_core::Vec3]) -> (Vec<f32>, Vec<f32>) {
     (minimum.to_vec(), maximum.to_vec())
 }
 
+fn scene_export_observations(
+    scene: &SceneSnapshot,
+    normalization_pass_count: usize,
+) -> SceneExportObservations {
+    SceneExportObservations {
+        normalization_pass_count,
+        mesh_count: scene.meshes().len(),
+        node_count: scene.nodes().len(),
+        vertex_count: scene
+            .meshes()
+            .iter()
+            .map(|mesh| mesh.mesh().vertices().len())
+            .sum(),
+        index_count: scene
+            .meshes()
+            .iter()
+            .map(|mesh| mesh.mesh().indices().len())
+            .sum(),
+        attribute_value_count: scene
+            .meshes()
+            .iter()
+            .map(|mesh| {
+                let attributes = mesh.mesh().attributes();
+                attributes.normals.as_ref().map_or(0, Vec::len)
+                    + attributes.tangents.as_ref().map_or(0, Vec::len)
+                    + attributes.uvs.as_ref().map_or(0, Vec::len)
+                    + attributes.colors.as_ref().map_or(0, Vec::len)
+            })
+            .sum(),
+    }
+}
+
 pub fn export_scene_glb(scene: &SceneSnapshot) -> Result<Vec<u8>, SceneExportError> {
-    let scene = scene.normalized()?;
+    export_scene_glb_with_observations(scene).map(|(bytes, _)| bytes)
+}
+
+pub fn export_scene_glb_with_observations(
+    scene: &SceneSnapshot,
+) -> Result<(Vec<u8>, SceneExportObservations), SceneExportError> {
+    let normalized;
+    let (scene, normalization_pass_count) = if scene.is_normalized() {
+        (scene, 0)
+    } else {
+        normalized = scene.normalized()?;
+        (&normalized, 1)
+    };
+    let observations = scene_export_observations(scene, normalization_pass_count);
+    let bytes = export_normalized_scene_glb(scene)?;
+    Ok((bytes, observations))
+}
+
+fn export_normalized_scene_glb(scene: &SceneSnapshot) -> Result<Vec<u8>, SceneExportError> {
+    debug_assert!(scene.is_normalized());
     let mut binary = Vec::new();
     let mut buffer_views = Vec::new();
     let mut accessors = Vec::new();
@@ -396,6 +457,24 @@ mod tests {
         assert_eq!(rotation, [0.0, 0.0, 0.0, 1.0]);
         assert_eq!(scale, [1.0, 2.0, 1.0]);
         assert_eq!(node.name(), Some("root"));
+    }
+
+    #[test]
+    fn normalized_input_skips_duplicate_normalization_without_changing_output() {
+        let raw = scene_fixture();
+        let (raw_bytes, raw_observations) = export_scene_glb_with_observations(&raw).unwrap();
+        assert_eq!(raw_observations.normalization_pass_count, 1);
+
+        let normalized = raw.normalized().unwrap();
+        let (normalized_bytes, normalized_observations) =
+            export_scene_glb_with_observations(&normalized).unwrap();
+        assert_eq!(normalized_observations.normalization_pass_count, 0);
+        assert_eq!(normalized_observations.mesh_count, 1);
+        assert_eq!(normalized_observations.node_count, 1);
+        assert_eq!(normalized_observations.vertex_count, 3);
+        assert_eq!(normalized_observations.index_count, 3);
+        assert_eq!(normalized_observations.attribute_value_count, 3);
+        assert_eq!(normalized_bytes, raw_bytes);
     }
 
     #[test]
