@@ -41,22 +41,22 @@ describe("renderer depth adaptation", () => {
 })
 
 describe("renderer resource lifecycle", () => {
-  test("reports cache creation then reuse for the same resource key", () => {
+  test("reports cache creation without allocating a wrapper on reuse", () => {
     const cache = new Map()
-    let creations = 0
-    const first = acquireResource(cache, "shared", () => {
-      creations += 1
-      return {id: creations}
-    })
-    const second = acquireResource(cache, "shared", () => {
-      creations += 1
-      return {id: creations}
-    })
+    const observations = {createCount: 0}
+    let factoryCalls = 0
+    const create = (id) => {
+      factoryCalls += 1
+      return {id}
+    }
 
-    expect(first.created).toBe(true)
-    expect(second.created).toBe(false)
-    expect(second.resource).toBe(first.resource)
-    expect(creations).toBe(1)
+    const first = acquireResource(cache, "shared", create, 1, observations, "createCount")
+    const second = acquireResource(cache, "shared", create, 2, observations, "createCount")
+
+    expect(second).toBe(first)
+    expect(first.id).toBe(1)
+    expect(factoryCalls).toBe(1)
+    expect(observations.createCount).toBe(1)
   })
 
   test("disposes removes and counts cache entries with no live scene references", () => {
