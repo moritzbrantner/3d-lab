@@ -145,11 +145,27 @@ def load_bundle(bundle: Path) -> dict[str, Any]:
     }
 
 
+def validate_surface_digest(value: str) -> None:
+    prefix = "sha256:"
+    digest = value.removeprefix(prefix)
+    if (
+        not value.startswith(prefix)
+        or len(digest) != 64
+        or any(character not in "0123456789abcdef" for character in digest)
+    ):
+        raise ValueError(
+            "calibration surface digest must use the sha256:<64 lowercase hex> form"
+        )
+
+
 def summarize_bundles(
-    bundle_paths: list[Path], expected_samples: int | None = None
+    bundle_paths: list[Path],
+    calibration_surface_digest: str,
+    expected_samples: int | None = None,
 ) -> dict[str, Any]:
     if not bundle_paths:
         raise ValueError("at least one renderer browser evidence bundle is required")
+    validate_surface_digest(calibration_surface_digest)
     if expected_samples is not None and len(bundle_paths) != expected_samples:
         raise ValueError(
             f"expected {expected_samples} samples, got {len(bundle_paths)}"
@@ -188,6 +204,7 @@ def summarize_bundles(
             "environment_fingerprint": first["environment_fingerprint"],
             "source": first["source"],
             "browser_runtime": first["browser_runtime"],
+            "calibration_surface_digest": calibration_surface_digest,
         },
         "bundle_ids": [capture["bundle_id"] for capture in captures],
         "metrics": metrics,
@@ -207,13 +224,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("bundles", nargs="+", type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--expected-samples", type=int)
+    parser.add_argument("--surface-digest", required=True)
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
     try:
-        report = summarize_bundles(args.bundles, args.expected_samples)
+        report = summarize_bundles(
+            args.bundles,
+            calibration_surface_digest=args.surface_digest,
+            expected_samples=args.expected_samples,
+        )
     except ValueError as error:
         raise SystemExit(str(error)) from error
     args.output.parent.mkdir(parents=True, exist_ok=True)
