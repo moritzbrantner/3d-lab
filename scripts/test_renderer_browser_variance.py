@@ -12,6 +12,8 @@ from summarize_renderer_browser_variance import (
     summarize_bundles,
 )
 
+SURFACE_DIGEST = "sha256:" + "a" * 64
+
 
 class RendererBrowserVarianceTests(unittest.TestCase):
     def write_bundle(
@@ -78,7 +80,11 @@ class RendererBrowserVarianceTests(unittest.TestCase):
                 self.write_bundle(root, "b", 100),
                 self.write_bundle(root, "c", 110),
             ]
-            report = summarize_bundles(bundles, expected_samples=3)
+            report = summarize_bundles(
+                bundles,
+                calibration_surface_digest=SURFACE_DIGEST,
+                expected_samples=3,
+            )
             metric = report["metrics"]["event_dispatch_max_us"]
             self.assertEqual(report["sample_count"], 3)
             self.assertEqual(metric["min"], 90)
@@ -86,6 +92,9 @@ class RendererBrowserVarianceTests(unittest.TestCase):
             self.assertEqual(metric["p95"], 110)
             self.assertEqual(metric["max"], 110)
             self.assertEqual(metric["median_absolute_deviation"], 10)
+            self.assertEqual(
+                report["identity"]["calibration_surface_digest"], SURFACE_DIGEST
+            )
             self.assertEqual(report["policy"]["kind"], "calibration-only")
             self.assertFalse(report["policy"]["release_verdict"])
 
@@ -97,14 +106,31 @@ class RendererBrowserVarianceTests(unittest.TestCase):
                 self.write_bundle(root, "b", 100, "def"),
             ]
             with self.assertRaisesRegex(ValueError, "identical source"):
-                summarize_bundles(bundles)
+                summarize_bundles(
+                    bundles,
+                    calibration_surface_digest=SURFACE_DIGEST,
+                )
 
     def test_rejects_wrong_sample_count(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             bundle = self.write_bundle(root, "a", 90)
             with self.assertRaisesRegex(ValueError, "expected 7 samples"):
-                summarize_bundles([bundle], expected_samples=7)
+                summarize_bundles(
+                    [bundle],
+                    calibration_surface_digest=SURFACE_DIGEST,
+                    expected_samples=7,
+                )
+
+    def test_rejects_invalid_surface_digest(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bundle = self.write_bundle(root, "a", 90)
+            with self.assertRaisesRegex(ValueError, "sha256"):
+                summarize_bundles(
+                    [bundle],
+                    calibration_surface_digest="not-a-digest",
+                )
 
 
 if __name__ == "__main__":
