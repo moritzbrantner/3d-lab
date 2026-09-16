@@ -18,6 +18,7 @@ import {
   nearestTriangleEdge,
   topologyStructuralBudgetViolations,
   type MeshEdge,
+  type MeshTopologyOperation,
   type MeshTopologyWorkObservations,
 } from "@/lib/scene-editor-topology";
 import type { IndexedMesh, Vec3 } from "@/lib/mesh";
@@ -105,12 +106,12 @@ function edgeHighlight(mesh: IndexedMesh, edge: MeshEdge): THREE.Line | null {
 
 function latestTopologyObservation(log: EditorCommandLog): {
   observations: MeshTopologyWorkObservations;
-  operationKind: string;
+  operation: MeshTopologyOperation;
 } | null {
   if (log.cursor === 0) return null;
   const command = log.entries[log.cursor - 1];
   if (command.kind !== "edit-mesh-topology") return null;
-  return { observations: command.observations, operationKind: command.operation.kind };
+  return { observations: command.observations, operation: command.operation };
 }
 
 export function SceneTopologyLab() {
@@ -138,12 +139,7 @@ export function SceneTopologyLab() {
   );
   const latest = latestTopologyObservation(history);
   const budgetViolations = latest
-    ? topologyStructuralBudgetViolations(
-        history.entries[history.cursor - 1].kind === "edit-mesh-topology"
-          ? history.entries[history.cursor - 1].operation
-          : { kind: "inset-face", triangleIndex: 0, ratio: 0.25 },
-        latest.observations,
-      )
+    ? topologyStructuralBudgetViolations(latest.operation, latest.observations)
     : [];
 
   useEffect(() => {
@@ -184,7 +180,7 @@ export function SceneTopologyLab() {
       pointer.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1;
       raycaster.setFromCamera(pointer, camera);
       const hit = raycaster.intersectObject(meshObject, false)[0];
-      if (!hit || hit.faceIndex === undefined) {
+      if (!hit || hit.faceIndex == null) {
         setSelectedFace(null);
         setSelectedEdge(null);
         return;
@@ -448,7 +444,7 @@ export function SceneTopologyLab() {
 
           <p className={styles.observations}>
             {latest
-              ? `${latest.operationKind}: ${latest.observations.createdVertexCount} vertices created, ${latest.observations.affectedTriangleCount} source triangle(s) affected, ${latest.observations.indexValuesWritten / 3} replacement triangle(s) written, ${latest.observations.indexValuesCopied} unchanged index values copied. Structural budget: ${budgetViolations.length === 0 ? "within bound" : budgetViolations.join(", ")}.`
+              ? `${latest.operation.kind}: ${latest.observations.createdVertexCount} vertices created, ${latest.observations.affectedTriangleCount} source triangle(s) affected, ${latest.observations.indexValuesWritten / 3} replacement triangle(s) written, ${latest.observations.indexValuesCopied} unchanged index values copied. Structural budget: ${budgetViolations.length === 0 ? "within bound" : budgetViolations.join(", ")}.`
               : "No topology operation has been committed yet. Structural work observations will appear here after the first edit."}
           </p>
 
