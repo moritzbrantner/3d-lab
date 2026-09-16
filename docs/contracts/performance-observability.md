@@ -6,13 +6,14 @@
 
 - `three-d-*` domain crates own deterministic work facts that are meaningful without a clock. For scene normalization this includes source/materialized vertex counts, visited indices, and materialized attribute values.
 - `@moritzbrantner/three-d-renderer` owns deterministic renderer work facts for the concrete Three.js adapter: scene-node visits, object/resource creation and reuse, removals, evictions, and live cache sizes.
+- The scene-editor model owns edit semantics and the structural-sharing boundary for local transform and vertex mutations. Imported or externally constructed scenes are validated once at the trust boundary; local mutations validate only the values they introduce and preserve unaffected invariants by construction.
 - `three-d-export` reports whether it had to normalize its input. An already-normalized `SceneSnapshot` is reused directly instead of rematerializing mesh and attribute buffers.
 - Repository-owned profile scripts and browser journeys define representative deterministic workloads.
 - `runtime-profiler` owns elapsed-time, resident-memory, browser runtime identity, Chromium traces, immutable evidence bundles, and reference/candidate comparison.
 - Repository-owned calibration tooling may summarize repeated, identity-equivalent profiler bundles. It owns descriptive spread statistics only, not a performance verdict.
 - A future evaluator such as Moonlight may own regression thresholds after repeated calibration has established normal same-run and cross-run variance. The profiler and calibration summarizer do not define release policy.
 
-This keeps observability downstream of domain authority: adding or removing a profiler must not change scene, mesh, camera, animation, or rendering semantics.
+This keeps observability downstream of domain authority: adding or removing a profiler must not change scene, mesh, camera, animation, editing, or rendering semantics.
 
 ## Scene normalization provenance
 
@@ -41,6 +42,30 @@ Creation/reuse counts describe cache acquisitions performed by the renderer. The
 
 The resource cache helpers expose creation-versus-reuse and eviction counts directly, so the observations are produced by the same code path that owns the actual cache. The performance fixture does not maintain a second shadow cache model.
 
+## Editor mutation boundary
+
+The editor hot path follows the same “compute only what changed” rule. `validateEditorScene` remains the authoritative full validator for imported or externally constructed state. Once a scene has crossed that boundary, the local mutation APIs preserve the invariant rather than re-running whole-scene validation on every pointer/input event.
+
+`updateNodeTransform`:
+
+- validates only the new transform tuple(s);
+- copies only the top-level node-reference array and the edited node/transform object;
+- reuses sibling node objects and untouched transform tuples; and
+- does not revisit mesh buffers that a transform edit cannot invalidate.
+
+`updateMeshVertex`:
+
+- validates the new position and target vertex index;
+- copies only the top-level vertex-reference array and the edited `Vec3`;
+- reuses the index buffer, all untouched vertex tuples, sibling nodes, and UV/color authoring buffers; and
+- intentionally drops derived normal/tangent buffers because position changes invalidate them.
+
+This is not an unsafe unchecked path: the source scene is expected to have been validated at its trust boundary, and each local operation validates every value capable of breaking the invariant it owns. The distinction prevents large meshes from being scanned and deep-copied merely because a user moved one object or vertex.
+
+`profiles/runtime-profiler/editor-mutations.json` exercises those public mutation APIs against a deterministic scene containing a 96×96 subdivided plane (9,409 vertices), 128 auxiliary nodes, 1,024 transform edits, and 192 vertex edits. The script emits a deterministic semantic checksum. Pull-request evidence copies exactly that workload into the base checkout, requires byte-identical base/candidate output, and then captures seven process samples per revision through `runtime-profiler`. Runtime comparison remains advisory; semantic equivalence is blocking.
+
+When deterministic edit-command/undo semantics land, this same workload should be extended rather than replaced so command-log replay can be measured against the same underlying mutation costs.
+
 ## Runtime canaries
 
 `profiles/runtime-profiler/scene-export.json` exercises the actual release-mode `scene_export_glb` adapter against a generated deterministic scene. The fixture intentionally contains enough meshes, vertices, attributes, and canonical reordering work to expose repeated materialization while staying bounded and repository-local.
@@ -52,7 +77,8 @@ For pull-request browser evidence, the candidate workload files are copied into 
 The profiles remain separate from correctness tests:
 
 - ordinary CI proves semantic behavior;
-- deterministic work observations protect known algorithmic and cache boundaries;
+- structural-sharing identity tests protect known editor allocation boundaries;
+- deterministic work observations protect known algorithmic and renderer-cache boundaries;
 - runtime-profiler records process/browser runtime evidence;
 - browser comparison must first establish strict workload/runtime comparability;
 - no brittle wall-clock threshold is embedded in unit tests.
@@ -84,6 +110,6 @@ The report is explicitly `calibration-only` and always has `release_verdict: fal
 Extend the same evidence pattern rather than introducing another profiler:
 
 1. accumulate several scheduled renderer calibration artifacts with the same calibration-surface digest and decide whether the same-run and cross-run spread is stable enough for an explicit evaluator margin policy;
-2. add representative editor mutation workloads once edit-command/undo semantics stabilize;
+2. extend the editor mutation workload to deterministic command-log replay/undo when the edit-command architecture lands;
 3. add downstream game/application journeys where the reusable renderer is a meaningful part of frame cost; and
 4. introduce evaluator-owned budgets only for workloads whose variance and product relevance are understood.
