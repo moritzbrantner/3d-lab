@@ -70,5 +70,6 @@
 - [x] Extend the editor mutation workload through deterministic command-log execution plus full vertex-edit undo/redo round-trips.
 - [x] Add topology structural work budgets, deterministic topology runtime evidence, and weekly same-surface runtime calibration.
 - [x] Replace per-operation flat topology rematerialization with persistent vertex/attribute chunks and localized triangle chunks; materialize contiguous `IndexedMesh` data only at explicit compatibility/render/export boundaries.
-- [ ] Reduce remaining whole-mesh topology work such as repeated adjacency-index rebuilds and renderer-side full buffer replacement where measurements show it matters.
+- [x] Replace repeated full topology adjacency rebuilds with a lazily built vertex-incidence cache that follows localized chunk replacements and undo/redo without entering semantic history.
+- [ ] Reduce renderer-side full topology materialization and whole `BufferGeometry` replacement where browser evidence shows it is material.
 - [ ] After at least four independent same-surface calibration runs, review robust MAD-derived wall-time/RSS margins and move the accepted policy into an evaluator-owned confirmation gate.
