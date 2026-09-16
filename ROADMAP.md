@@ -63,6 +63,6 @@
 - [x] Preserve normalized-scene provenance so downstream export can reuse canonical buffers rather than normalizing and materializing them again.
 - [x] Add an observable GLB-export boundary that reports whether export had to perform normalization.
 - [x] Add a deterministic release-mode scene-export workload and exact-base/candidate `runtime-profiler` evidence in pull requests.
-- [ ] Add a browser journey for reusable Three.js renderer hot paths and resource/object reuse once the first runtime canary has stable repeated evidence.
-- [ ] Add deterministic renderer work observations for node visits, object/resource creation, reuse, and eviction without moving renderer authority into performance tooling.
+- [x] Add a browser journey for reusable Three.js renderer hot paths and resource/object reuse once the first runtime canary has stable repeated evidence.
+- [x] Add deterministic renderer work observations for node visits, object/resource creation, reuse, and eviction without moving renderer authority into performance tooling.
 - [ ] Adopt evaluator-owned regression budgets only after unchanged-source captures establish acceptable variance for each workload.

@@ -1,7 +1,7 @@
 import * as THREE from "three"
 import {webGpuProjectionToWebGl} from "./depth.js"
 import {projectWorldPointUnchecked} from "./projection.js"
-import {evictUnusedResources} from "./resources.js"
+import {acquireResource, evictUnusedResources} from "./resources.js"
 
 const DEFAULT_BACKGROUND = 0x0c111a
 const DEFAULT_PIXEL_RATIO_LIMIT = 2
@@ -224,6 +224,24 @@ function applyNodeTransform(mesh, node) {
   )
 }
 
+function createWorkObservations(nodeVisitCount) {
+  return {
+    nodeVisitCount,
+    objectCreateCount: 0,
+    objectReuseCount: 0,
+    objectRemoveCount: 0,
+    geometryCreateCount: 0,
+    geometryReuseCount: 0,
+    geometryEvictCount: 0,
+    materialCreateCount: 0,
+    materialReuseCount: 0,
+    materialEvictCount: 0,
+    liveObjectCount: 0,
+    liveGeometryCount: 0,
+    liveMaterialCount: 0,
+  }
+}
+
 export function createThreeSceneRenderer(canvas, options = {}) {
   if (!canvas || typeof canvas.getContext !== "function") {
     throw new ThreeRendererContractError("renderer requires a canvas-like target")
@@ -252,26 +270,6 @@ export function createThreeSceneRenderer(canvas, options = {}) {
   const materials = new Map()
   const pixelRatioLimit = options.pixelRatioLimit ?? DEFAULT_PIXEL_RATIO_LIMIT
 
-  function acquireGeometry(descriptor) {
-    const key = geometryKey(descriptor)
-    let geometry = geometries.get(key)
-    if (!geometry) {
-      geometry = createGeometry(descriptor)
-      geometries.set(key, geometry)
-    }
-    return {key, geometry}
-  }
-
-  function acquireMaterial(node) {
-    const key = materialKey(node)
-    let material = materials.get(key)
-    if (!material) {
-      material = createMaterial(node)
-      materials.set(key, material)
-    }
-    return {key, material}
-  }
-
   function applyCamera(frameCamera) {
     camera.matrixWorldInverse.fromArray(frameCamera.viewMatrix)
     camera.matrixWorld.copy(camera.matrixWorldInverse).invert()
@@ -295,13 +293,30 @@ export function createThreeSceneRenderer(canvas, options = {}) {
       validateRenderFrame(frame)
       applyCamera(frame.camera)
 
+      const observations = createWorkObservations(frame.nodes.length)
       const liveObjectIds = new Set()
       const liveGeometryKeys = new Set()
       const liveMaterialKeys = new Set()
       for (const node of frame.nodes) {
         liveObjectIds.add(node.id)
-        const {key: nextGeometryKey, geometry: nextGeometry} = acquireGeometry(node.geometry)
-        const {key: nextMaterialKey, material: nextMaterial} = acquireMaterial(node)
+        const nextGeometryKey = geometryKey(node.geometry)
+        const nextGeometry = acquireResource(
+          geometries,
+          nextGeometryKey,
+          createGeometry,
+          node.geometry,
+          observations,
+          "geometryCreateCount",
+        )
+        const nextMaterialKey = materialKey(node)
+        const nextMaterial = acquireResource(
+          materials,
+          nextMaterialKey,
+          createMaterial,
+          node,
+          observations,
+          "materialCreateCount",
+        )
         liveGeometryKeys.add(nextGeometryKey)
         liveMaterialKeys.add(nextMaterialKey)
 
@@ -313,6 +328,7 @@ export function createThreeSceneRenderer(canvas, options = {}) {
           mesh.receiveShadow = options.shadows === true
           objects.set(node.id, mesh)
           scene.add(mesh)
+          observations.objectCreateCount += 1
         } else {
           mesh.geometry = nextGeometry
           mesh.material = nextMaterial
@@ -322,15 +338,24 @@ export function createThreeSceneRenderer(canvas, options = {}) {
         mesh.visible = node.visible !== false
       }
 
+      observations.objectReuseCount = observations.nodeVisitCount - observations.objectCreateCount
+      observations.geometryReuseCount = observations.nodeVisitCount - observations.geometryCreateCount
+      observations.materialReuseCount = observations.nodeVisitCount - observations.materialCreateCount
+
       for (const [id, mesh] of objects) {
         if (liveObjectIds.has(id)) continue
         scene.remove(mesh)
         objects.delete(id)
+        observations.objectRemoveCount += 1
       }
-      evictUnusedResources(geometries, liveGeometryKeys)
-      evictUnusedResources(materials, liveMaterialKeys)
+      observations.geometryEvictCount = evictUnusedResources(geometries, liveGeometryKeys)
+      observations.materialEvictCount = evictUnusedResources(materials, liveMaterialKeys)
+      observations.liveObjectCount = objects.size
+      observations.liveGeometryCount = geometries.size
+      observations.liveMaterialCount = materials.size
 
       renderer.render(scene, camera)
+      return observations
     },
 
     dispose() {

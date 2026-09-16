@@ -59,6 +59,22 @@ export type RendererFrame = {
   nodes: RendererSceneNode[]
 }
 
+export type RendererWorkObservations = Readonly<{
+  nodeVisitCount: number
+  objectCreateCount: number
+  objectReuseCount: number
+  objectRemoveCount: number
+  geometryCreateCount: number
+  geometryReuseCount: number
+  geometryEvictCount: number
+  materialCreateCount: number
+  materialReuseCount: number
+  materialEvictCount: number
+  liveObjectCount: number
+  liveGeometryCount: number
+  liveMaterialCount: number
+}>
+
 export type ProjectionViewport = {
   x?: number
   y?: number
@@ -83,7 +99,7 @@ export type ThreeSceneRendererOptions = {
 
 export type ThreeSceneRenderer = {
   setSize(width: number, height: number, devicePixelRatio?: number): void
-  render(frame: RendererFrame): void
+  render(frame: RendererFrame): RendererWorkObservations
   dispose(): void
 }
 
