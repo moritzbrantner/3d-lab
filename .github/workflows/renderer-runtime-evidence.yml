@@ -141,6 +141,7 @@ jobs:
             --reference "$RUNNER_TEMP/reference-renderer-browser" \
             --candidate "$RUNNER_TEMP/candidate-renderer-browser" \
             --json | tee "$RUNNER_TEMP/renderer-browser-comparison.json"
+          jq -e '.status == "comparable"' "$RUNNER_TEMP/renderer-browser-comparison.json" >/dev/null
           {
             echo '### Reusable renderer Chromium evidence'
             echo
