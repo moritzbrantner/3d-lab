@@ -66,4 +66,6 @@
 - [x] Add a browser journey for reusable Three.js renderer hot paths and resource/object reuse once the first runtime canary has stable repeated evidence.
 - [x] Add deterministic renderer work observations for node visits, object/resource creation, reuse, and eviction without moving renderer authority into performance tooling.
 - [x] Add seven-sample unchanged-source renderer-browser calibration with fail-closed source/runtime identity, machine-readable spread statistics, and scheduled recalibration.
+- [x] Add a representative editor transform/vertex-mutation workload and structural-sharing hot path so local edits do not rematerialize or revalidate unrelated scene and mesh data.
+- [ ] Extend the editor mutation workload to deterministic command-log replay/undo once the edit-command architecture lands.
 - [ ] Promote calibration evidence into evaluator-owned regression budgets only after repeated calibration runs establish stable cross-run variance and an explicit margin policy.
