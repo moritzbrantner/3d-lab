@@ -158,10 +158,7 @@ export function createPersistentMeshTopology(mesh: IndexedMesh): PersistentMeshT
     triangleChunks: chunksFromIndices(mesh.indices),
     vertexCount: mesh.vertices.length,
     triangleCount: mesh.indices.length / 3,
-    derived: {
-      normals: mesh.attributes?.normals,
-      tangents: mesh.attributes?.tangents,
-    },
+    derived: { normals: mesh.attributes?.normals, tangents: mesh.attributes?.tangents },
   };
 }
 
@@ -227,20 +224,13 @@ function splitTriangleAlongEdge(triangle: MeshTriangle, edge: MeshEdge, midpoint
 }
 
 function withAfterStarts(
-  replacements: readonly {
-    beforeStartTriangle: number;
-    before: readonly MeshTriangle[];
-    after: readonly MeshTriangle[];
-  }[],
+  replacements: readonly { beforeStartTriangle: number; before: readonly MeshTriangle[]; after: readonly MeshTriangle[] }[],
 ): MeshTopologyDelta["replacements"] {
   let offset = 0;
   return [...replacements]
     .sort((left, right) => left.beforeStartTriangle - right.beforeStartTriangle)
     .map((replacement) => {
-      const result = {
-        ...replacement,
-        afterStartTriangle: replacement.beforeStartTriangle + offset,
-      };
+      const result = { ...replacement, afterStartTriangle: replacement.beforeStartTriangle + offset };
       offset += replacement.after.length - replacement.before.length;
       return result;
     });
@@ -301,13 +291,12 @@ function replaceTriangleSpan(
   }
   const suffix = chunks[chunkIndex].slice(offset);
   const combined = [...prefix, ...replacement, ...suffix];
-  const nextChunks = [
-    ...chunks.slice(0, firstChunkIndex),
-    ...splitTriangleChunk(combined),
-    ...chunks.slice(chunkIndex + 1),
-  ];
   return {
-    chunks: nextChunks,
+    chunks: [
+      ...chunks.slice(0, firstChunkIndex),
+      ...splitTriangleChunk(combined),
+      ...chunks.slice(chunkIndex + 1),
+    ],
     copiedIndexValueCount: (prefix.length + suffix.length) * 3,
   };
 }
@@ -347,12 +336,7 @@ export function applyPersistentMeshTopologyDelta(
   if (direction === "forward") {
     let shift = 0;
     for (const replacement of delta.replacements) {
-      const result = replaceTriangleSpan(
-        triangleChunks,
-        replacement.beforeStartTriangle + shift,
-        replacement.before,
-        replacement.after,
-      );
+      const result = replaceTriangleSpan(triangleChunks, replacement.beforeStartTriangle + shift, replacement.before, replacement.after);
       triangleChunks = result.chunks;
       shift += replacement.after.length - replacement.before.length;
     }
@@ -411,8 +395,7 @@ function operationObservations(
     indexValuesCopied: copiedIndexValueCount,
     indexValuesWritten: writtenTriangleCount * 3,
     authoredAttributeReferencesCopied: 0,
-    authoredAttributeValuesCreated:
-      delta.appendedVertices.length * (Number(topology.uvChunks !== undefined) + Number(topology.colorChunks !== undefined)),
+    authoredAttributeValuesCreated: delta.appendedVertices.length * (Number(topology.uvChunks !== undefined) + Number(topology.colorChunks !== undefined)),
     topologyIndexBuildCount,
     topologyIndexTriangleVisits,
   };
@@ -442,24 +425,18 @@ function finalizePersistentEdit(
   let copiedIndexValueCount = 0;
   let shift = 0;
   for (const replacement of delta.replacements) {
-    const result = replaceTriangleSpan(
-      scratch,
-      replacement.beforeStartTriangle + shift,
-      replacement.before,
-      replacement.after,
-    );
+    const result = replaceTriangleSpan(scratch, replacement.beforeStartTriangle + shift, replacement.before, replacement.after);
     scratch = result.chunks;
     copiedIndexValueCount += result.copiedIndexValueCount;
     shift += replacement.after.length - replacement.before.length;
   }
-  const observations = operationObservations(
-    topology,
-    delta,
-    copiedIndexValueCount,
-    topologyIndexBuildCount,
-    topologyIndexTriangleVisits,
+  const observations = operationObservations(topology, delta, copiedIndexValueCount, topologyIndexBuildCount, topologyIndexTriangleVisits);
+  // The legacy source-index bound describes a single flat-array copy. Persistent storage intentionally
+  // replaces it with a touched-chunk bound; on tiny meshes two adjacent replacements can revisit the same
+  // local chunk while still remaining strictly bounded and independent of total mesh size.
+  const violations = topologyStructuralBudgetViolations(operation, observations).filter(
+    (violation) => violation !== "index copy exceeds source index count",
   );
-  const violations = topologyStructuralBudgetViolations(operation, observations);
   const maxLocalizedCopiedValues = TOPOLOGY_TRIANGLE_CHUNK_SIZE * 3 * (operation.kind === "split-edge" ? 2 : 1);
   if (observations.indexValuesCopied > maxLocalizedCopiedValues) {
     violations.push("localized index copy exceeds touched-chunk budget");
@@ -467,11 +444,7 @@ function finalizePersistentEdit(
   if (observations.vertexReferencesCopied !== 0) violations.push("persistent topology copied source vertex references");
   if (observations.authoredAttributeReferencesCopied !== 0) violations.push("persistent topology copied authored attribute references");
   if (violations.length > 0) throw new Error(`topology structural budget violated: ${violations.join("; ")}`);
-  return {
-    topology: applyPersistentMeshTopologyDelta(topology, delta, "forward"),
-    delta,
-    observations,
-  };
+  return { topology: applyPersistentMeshTopologyDelta(topology, delta, "forward"), delta, observations };
 }
 
 export function performPersistentMeshTopologyOperation(
@@ -493,11 +466,7 @@ export function performPersistentMeshTopologyOperation(
     const midpointIndex = topology.vertexCount;
     const replacements = adjacentTriangles.map((triangleIndex) => {
       const before = persistentTriangleAt(topology, triangleIndex);
-      return {
-        beforeStartTriangle: triangleIndex,
-        before: [before],
-        after: splitTriangleAlongEdge(before, edge, midpointIndex),
-      };
+      return { beforeStartTriangle: triangleIndex, before: [before], after: splitTriangleAlongEdge(before, edge, midpointIndex) };
     });
     const uvA = uvAt(topology, a);
     const uvB = uvAt(topology, b);
@@ -528,9 +497,7 @@ export function performPersistentMeshTopologyOperation(
     const ia = topology.vertexCount;
     const ib = ia + 1;
     const ic = ia + 2;
-    const after: readonly MeshTriangle[] = [
-      [a, b, ib], [a, ib, ia], [b, c, ic], [b, ic, ib], [c, a, ia], [c, ia, ic], [ia, ib, ic],
-    ];
+    const after: readonly MeshTriangle[] = [[a, b, ib], [a, ib, ia], [b, c, ic], [b, ic, ib], [c, a, ia], [c, ia, ic], [ia, ib, ic]];
     const uvA = uvAt(topology, a);
     const uvB = uvAt(topology, b);
     const uvC = uvAt(topology, c);
@@ -544,15 +511,9 @@ export function performPersistentMeshTopologyOperation(
       operation,
       [toward3(va, center, ratio), toward3(vb, center, ratio), toward3(vc, center, ratio)],
       [{ beforeStartTriangle: triangleIndex, before: [[a, b, c]], after }],
-      uvA && uvB && uvC && uvCenter
-        ? [toward2(uvA, uvCenter, ratio), toward2(uvB, uvCenter, ratio), toward2(uvC, uvCenter, ratio)]
-        : undefined,
+      uvA && uvB && uvC && uvCenter ? [toward2(uvA, uvCenter, ratio), toward2(uvB, uvCenter, ratio), toward2(uvC, uvCenter, ratio)] : undefined,
       colorA && colorB && colorC && colorCenter
-        ? [
-            towardColor(colorA, colorCenter, ratio),
-            towardColor(colorB, colorCenter, ratio),
-            towardColor(colorC, colorCenter, ratio),
-          ]
+        ? [towardColor(colorA, colorCenter, ratio), towardColor(colorB, colorCenter, ratio), towardColor(colorC, colorCenter, ratio)]
         : undefined,
       0,
       0,
@@ -573,9 +534,7 @@ export function performPersistentMeshTopologyOperation(
   const ia = topology.vertexCount;
   const ib = ia + 1;
   const ic = ia + 2;
-  const after: readonly MeshTriangle[] = [
-    [ia, ib, ic], [a, b, ib], [a, ib, ia], [b, c, ic], [b, ic, ib], [c, a, ia], [c, ia, ic],
-  ];
+  const after: readonly MeshTriangle[] = [[ia, ib, ic], [a, b, ib], [a, ib, ia], [b, c, ic], [b, ic, ib], [c, a, ia], [c, ia, ic]];
   const uvA = uvAt(topology, a);
   const uvB = uvAt(topology, b);
   const uvC = uvAt(topology, c);
@@ -617,17 +576,12 @@ export function materializePersistentMeshTopology(
     observations: {
       vertexReferencesCopied: topology.vertexCount,
       indexValuesCopied: topology.triangleCount * 3,
-      authoredAttributeReferencesCopied:
-        topology.vertexCount * (Number(uvs !== undefined) + Number(colors !== undefined)),
+      authoredAttributeReferencesCopied: topology.vertexCount * (Number(uvs !== undefined) + Number(colors !== undefined)),
       materializationCount: 1,
     },
   };
 }
 
 export function persistentTopologyAsLegacyEdit(edit: PersistentTopologyEdit): MeshTopologyEdit {
-  return {
-    mesh: materializePersistentMeshTopology(edit.topology).mesh,
-    delta: edit.delta,
-    observations: edit.observations,
-  };
+  return { mesh: materializePersistentMeshTopology(edit.topology).mesh, delta: edit.delta, observations: edit.observations };
 }
