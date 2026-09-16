@@ -53,14 +53,6 @@ export type EditorTopologyCommand = Readonly<{
 
 export type EditorCommand = EditorTransformCommand | EditorVertexCommand | EditorTopologyCommand;
 
-/**
- * Deterministic command history for editor-domain mutations.
- *
- * Topology editing keeps a localized persistent sidecar while edits are active. `scene` stays authoritative
- * for hierarchy/transforms and ordinary meshes; topology consumers use `currentEditorMesh` when they need a
- * contiguous legacy mesh. This makes large copies explicit at renderer/export/validation boundaries instead
- * of repeating them inside every topology command.
- */
 export type EditorCommandLog = Readonly<{
   scene: EditorScene;
   entries: readonly EditorCommand[];
@@ -89,11 +81,7 @@ function sameVec3(left: Vec3, right: Vec3): boolean {
 }
 
 function sameTransform(left: EditableTransform, right: EditableTransform): boolean {
-  return (
-    sameVec3(left.translation, right.translation) &&
-    sameVec3(left.rotation, right.rotation) &&
-    sameVec3(left.scale, right.scale)
-  );
+  return sameVec3(left.translation, right.translation) && sameVec3(left.rotation, right.rotation) && sameVec3(left.scale, right.scale);
 }
 
 function findNode(scene: EditorScene, nodeId: string): { node: EditorNode; index: number } {
@@ -110,17 +98,30 @@ function replaceNodeMesh(scene: EditorScene, nodeId: string, mesh: IndexedMesh):
   return { nodes };
 }
 
-function derivedAttributes(node: EditorNode): EditorDerivedVertexAttributes {
+function lazyMaterializedMesh(topology: PersistentMeshTopology): IndexedMesh {
+  let cached: IndexedMesh | null = null;
+  const materialized = () => {
+    cached ??= materializePersistentMeshTopology(topology).mesh;
+    return cached;
+  };
   return {
-    normals: node.mesh?.attributes?.normals,
-    tangents: node.mesh?.attributes?.tangents,
+    get vertices() {
+      return materialized().vertices;
+    },
+    get indices() {
+      return materialized().indices;
+    },
+    get attributes() {
+      return materialized().attributes;
+    },
   };
 }
 
-function sameDerivedAttributeArray<T extends readonly number[]>(
-  left: readonly T[] | undefined,
-  right: readonly T[] | undefined,
-): boolean {
+function derivedAttributes(node: EditorNode): EditorDerivedVertexAttributes {
+  return { normals: node.mesh?.attributes?.normals, tangents: node.mesh?.attributes?.tangents };
+}
+
+function sameDerivedAttributeArray<T extends readonly number[]>(left: readonly T[] | undefined, right: readonly T[] | undefined): boolean {
   if (left === right) return true;
   if (!left || !right || left.length !== right.length) return false;
   return left.every((value, index) => {
@@ -129,43 +130,22 @@ function sameDerivedAttributeArray<T extends readonly number[]>(
   });
 }
 
-function sameDerivedAttributes(
-  left: EditorDerivedVertexAttributes,
-  right: EditorDerivedVertexAttributes,
-): boolean {
-  return (
-    sameDerivedAttributeArray(left.normals, right.normals) &&
-    sameDerivedAttributeArray(left.tangents, right.tangents)
-  );
+function sameDerivedAttributes(left: EditorDerivedVertexAttributes, right: EditorDerivedVertexAttributes): boolean {
+  return sameDerivedAttributeArray(left.normals, right.normals) && sameDerivedAttributeArray(left.tangents, right.tangents);
 }
 
-function validateDerivedAttributes(
-  nodeId: string,
-  vertexCount: number,
-  attributes: EditorDerivedVertexAttributes,
-): void {
-  const entries = [
-    ["normal", attributes.normals],
-    ["tangent", attributes.tangents],
-  ] as const;
+function validateDerivedAttributes(nodeId: string, vertexCount: number, attributes: EditorDerivedVertexAttributes): void {
+  const entries = [["normal", attributes.normals], ["tangent", attributes.tangents]] as const;
   for (const [name, values] of entries) {
     if (!values) continue;
-    if (values.length !== vertexCount) {
-      throw new Error(`${name} attribute count must match vertex count for node ${nodeId}`);
-    }
+    if (values.length !== vertexCount) throw new Error(`${name} attribute count must match vertex count for node ${nodeId}`);
     values.forEach((value, index) => {
       if (!finiteTuple(value)) throw new Error(`${name} attribute ${index} contains a non-finite value`);
     });
   }
 }
 
-function applyVertexState(
-  scene: EditorScene,
-  nodeId: string,
-  vertexIndex: number,
-  position: Vec3,
-  derived: EditorDerivedVertexAttributes,
-): EditorScene {
+function applyVertexState(scene: EditorScene, nodeId: string, vertexIndex: number, position: Vec3, derived: EditorDerivedVertexAttributes): EditorScene {
   if (!finiteTuple(position)) throw new Error("vertex position must be finite");
   const { node, index } = findNode(scene, nodeId);
   if (!node.mesh) throw new Error(`node ${nodeId} does not own a mesh`);
@@ -173,25 +153,15 @@ function applyVertexState(
     throw new Error(`vertex ${vertexIndex} is outside node ${nodeId}`);
   }
   validateDerivedAttributes(nodeId, node.mesh.vertices.length, derived);
-
   const vertices = [...node.mesh.vertices];
   vertices[vertexIndex] = cloneVec3(position);
   const sourceAttributes = node.mesh.attributes;
-  const hasAttributes =
-    derived.normals !== undefined ||
-    derived.tangents !== undefined ||
-    sourceAttributes?.uvs !== undefined ||
-    sourceAttributes?.colors !== undefined;
+  const hasAttributes = derived.normals !== undefined || derived.tangents !== undefined || sourceAttributes?.uvs !== undefined || sourceAttributes?.colors !== undefined;
   const mesh: IndexedMesh = {
     vertices,
     indices: node.mesh.indices,
     attributes: hasAttributes
-      ? {
-          normals: derived.normals,
-          tangents: derived.tangents,
-          uvs: sourceAttributes?.uvs,
-          colors: sourceAttributes?.colors,
-        }
+      ? { normals: derived.normals, tangents: derived.tangents, uvs: sourceAttributes?.uvs, colors: sourceAttributes?.colors }
       : undefined,
   };
   const nodes = [...scene.nodes];
@@ -207,14 +177,14 @@ function topologyStoreFor(log: EditorCommandLog, nodeId: string): PersistentMesh
   return createPersistentMeshTopology(node.mesh);
 }
 
-function withTopologyStore(
-  log: EditorCommandLog,
-  nodeId: string,
-  topology: PersistentMeshTopology,
-): EditorCommandLog {
+function withTopologyStore(log: EditorCommandLog, nodeId: string, topology: PersistentMeshTopology): EditorCommandLog {
   const topologyStores = new Map(log.topologyStores);
   topologyStores.set(nodeId, topology);
-  return { ...log, topologyStores };
+  return {
+    ...log,
+    scene: replaceNodeMesh(log.scene, nodeId, lazyMaterializedMesh(topology)),
+    topologyStores,
+  };
 }
 
 function materializeTopologyNode(log: EditorCommandLog, nodeId: string): EditorCommandLog {
@@ -223,11 +193,7 @@ function materializeTopologyNode(log: EditorCommandLog, nodeId: string): EditorC
   const mesh = materializePersistentMeshTopology(topology).mesh;
   const topologyStores = new Map(log.topologyStores);
   topologyStores.delete(nodeId);
-  return {
-    ...log,
-    scene: replaceNodeMesh(log.scene, nodeId, mesh),
-    topologyStores,
-  };
+  return { ...log, scene: replaceNodeMesh(log.scene, nodeId, mesh), topologyStores };
 }
 
 export function currentEditorTopology(log: EditorCommandLog, nodeId: string): PersistentMeshTopology {
@@ -248,21 +214,14 @@ export function materializeEditorCommandLog(log: EditorCommandLog): EditorComman
   return result;
 }
 
-function applyNonTopologyCommand(
-  scene: EditorScene,
-  command: EditorTransformCommand | EditorVertexCommand,
-  direction: "forward" | "reverse",
-): EditorScene {
+function applyNonTopologyCommand(scene: EditorScene, command: EditorTransformCommand | EditorVertexCommand, direction: "forward" | "reverse"): EditorScene {
   if (command.kind === "set-node-transform") {
     const { node } = findNode(scene, command.nodeId);
     const expected = direction === "forward" ? command.before : command.after;
     const target = direction === "forward" ? command.after : command.before;
-    if (!sameTransform(node.transform, expected)) {
-      throw new Error(`editor command precondition failed for node ${command.nodeId}`);
-    }
+    if (!sameTransform(node.transform, expected)) throw new Error(`editor command precondition failed for node ${command.nodeId}`);
     return updateNodeTransform(scene, command.nodeId, target);
   }
-
   const { node } = findNode(scene, command.nodeId);
   if (!node.mesh) throw new Error(`node ${command.nodeId} does not own a mesh`);
   const expectedPosition = direction === "forward" ? command.before : command.after;
@@ -279,17 +238,9 @@ function applyNonTopologyCommand(
   return applyVertexState(scene, command.nodeId, command.vertexIndex, targetPosition, targetDerived);
 }
 
-function applyTopologyCommand(
-  log: EditorCommandLog,
-  command: EditorTopologyCommand,
-  direction: "forward" | "reverse",
-): EditorCommandLog {
+function applyTopologyCommand(log: EditorCommandLog, command: EditorTopologyCommand, direction: "forward" | "reverse"): EditorCommandLog {
   const topology = topologyStoreFor(log, command.nodeId);
-  return withTopologyStore(
-    log,
-    command.nodeId,
-    applyPersistentMeshTopologyDelta(topology, command.delta, direction),
-  );
+  return withTopologyStore(log, command.nodeId, applyPersistentMeshTopologyDelta(topology, command.delta, direction));
 }
 
 export function createEditorCommandLog(scene: EditorScene): EditorCommandLog {
@@ -305,11 +256,7 @@ export function canRedoEditorCommand(log: EditorCommandLog): boolean {
   return log.cursor < log.entries.length;
 }
 
-export function commitNodeTransform(
-  log: EditorCommandLog,
-  nodeId: string,
-  patch: Partial<EditableTransform>,
-): EditorCommandLog {
+export function commitNodeTransform(log: EditorCommandLog, nodeId: string, patch: Partial<EditableTransform>): EditorCommandLog {
   const { node } = findNode(log.scene, nodeId);
   const after: EditableTransform = {
     translation: patch.translation ? cloneVec3(patch.translation) : node.transform.translation,
@@ -317,24 +264,13 @@ export function commitNodeTransform(
     scale: patch.scale ? cloneVec3(patch.scale) : node.transform.scale,
   };
   if (sameTransform(node.transform, after)) return log;
-
-  const command: EditorTransformCommand = {
-    kind: "set-node-transform",
-    nodeId,
-    before: cloneTransform(node.transform),
-    after: cloneTransform(after),
-  };
+  const command: EditorTransformCommand = { kind: "set-node-transform", nodeId, before: cloneTransform(node.transform), after: cloneTransform(after) };
   const scene = applyNonTopologyCommand(log.scene, command, "forward");
   const entries = [...log.entries.slice(0, log.cursor), command];
   return { ...log, scene, entries, cursor: entries.length };
 }
 
-export function commitMeshVertex(
-  sourceLog: EditorCommandLog,
-  nodeId: string,
-  vertexIndex: number,
-  position: Vec3,
-): EditorCommandLog {
+export function commitMeshVertex(sourceLog: EditorCommandLog, nodeId: string, vertexIndex: number, position: Vec3): EditorCommandLog {
   const log = materializeTopologyNode(sourceLog, nodeId);
   const { node } = findNode(log.scene, nodeId);
   if (!node.mesh) throw new Error(`node ${nodeId} does not own a mesh`);
@@ -344,7 +280,6 @@ export function commitMeshVertex(
   if (!finiteTuple(position)) throw new Error("vertex position must be finite");
   const before = node.mesh.vertices[vertexIndex];
   if (sameVec3(before, position)) return log;
-
   const command: EditorVertexCommand = {
     kind: "set-mesh-vertex",
     nodeId,
@@ -359,12 +294,7 @@ export function commitMeshVertex(
   return { ...log, scene, entries, cursor: entries.length };
 }
 
-export function commitMeshTopology(
-  log: EditorCommandLog,
-  nodeId: string,
-  operation: MeshTopologyOperation,
-  topologyIndex?: MeshTopologyIndex,
-): EditorCommandLog {
+export function commitMeshTopology(log: EditorCommandLog, nodeId: string, operation: MeshTopologyOperation, topologyIndex?: MeshTopologyIndex): EditorCommandLog {
   const topology = topologyStoreFor(log, nodeId);
   const edit = performPersistentMeshTopologyOperation(topology, operation, topologyIndex);
   const command: EditorTopologyCommand = {
@@ -375,48 +305,30 @@ export function commitMeshTopology(
     observations: edit.observations,
   };
   const entries = [...log.entries.slice(0, log.cursor), command];
-  return {
-    ...withTopologyStore(log, nodeId, edit.topology),
-    entries,
-    cursor: entries.length,
-  };
+  return { ...withTopologyStore(log, nodeId, edit.topology), entries, cursor: entries.length };
 }
 
 export function undoEditorCommand(sourceLog: EditorCommandLog): EditorCommandLog {
   if (!canUndoEditorCommand(sourceLog)) return sourceLog;
   const command = sourceLog.entries[sourceLog.cursor - 1];
   if (command.kind === "edit-mesh-topology") {
-    const log = applyTopologyCommand(sourceLog, command, "reverse");
-    return { ...log, cursor: sourceLog.cursor - 1 };
+    return { ...applyTopologyCommand(sourceLog, command, "reverse"), cursor: sourceLog.cursor - 1 };
   }
   const log = command.kind === "set-mesh-vertex" ? materializeTopologyNode(sourceLog, command.nodeId) : sourceLog;
-  return {
-    ...log,
-    scene: applyNonTopologyCommand(log.scene, command, "reverse"),
-    cursor: sourceLog.cursor - 1,
-  };
+  return { ...log, scene: applyNonTopologyCommand(log.scene, command, "reverse"), cursor: sourceLog.cursor - 1 };
 }
 
 export function redoEditorCommand(sourceLog: EditorCommandLog): EditorCommandLog {
   if (!canRedoEditorCommand(sourceLog)) return sourceLog;
   const command = sourceLog.entries[sourceLog.cursor];
   if (command.kind === "edit-mesh-topology") {
-    const log = applyTopologyCommand(sourceLog, command, "forward");
-    return { ...log, cursor: sourceLog.cursor + 1 };
+    return { ...applyTopologyCommand(sourceLog, command, "forward"), cursor: sourceLog.cursor + 1 };
   }
   const log = command.kind === "set-mesh-vertex" ? materializeTopologyNode(sourceLog, command.nodeId) : sourceLog;
-  return {
-    ...log,
-    scene: applyNonTopologyCommand(log.scene, command, "forward"),
-    cursor: sourceLog.cursor + 1,
-  };
+  return { ...log, scene: applyNonTopologyCommand(log.scene, command, "forward"), cursor: sourceLog.cursor + 1 };
 }
 
-export function replayEditorCommands(
-  initialScene: EditorScene,
-  commands: readonly EditorCommand[],
-  count = commands.length,
-): EditorScene {
+export function replayEditorCommands(initialScene: EditorScene, commands: readonly EditorCommand[], count = commands.length): EditorScene {
   if (!Number.isInteger(count) || count < 0 || count > commands.length) {
     throw new Error(`command replay count ${count} is outside the command log`);
   }
