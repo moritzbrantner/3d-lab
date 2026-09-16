@@ -1,0 +1,121 @@
+name: Editor mutation runtime evidence
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "web/lib/scene-editor.ts"
+      - "web/lib/scene-editor.test.ts"
+      - "web/lib/mesh.ts"
+      - "scripts/profile-editor-mutations.ts"
+      - "profiles/runtime-profiler/editor-mutations.json"
+      - ".github/workflows/editor-runtime-evidence.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  RUNTIME_PROFILER_REV: 9a7a451681c5598ec7aa888daf2a66cbbade3365
+
+jobs:
+  editor-mutations:
+    name: Editor mutation evidence
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: candidate
+          fetch-depth: 0
+
+      - name: Check out exact base
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: reference
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Install pinned runtime-profiler
+        run: cargo install --git https://github.com/moritzbrantner/runtime-profiler --rev "$RUNTIME_PROFILER_REV" --locked
+
+      - name: Give the base the identical editor workload
+        run: |
+          mkdir -p reference/profiles/runtime-profiler reference/scripts
+          cp candidate/profiles/runtime-profiler/editor-mutations.json reference/profiles/runtime-profiler/editor-mutations.json
+          cp candidate/scripts/profile-editor-mutations.ts reference/scripts/profile-editor-mutations.ts
+          git -C reference add \
+            profiles/runtime-profiler/editor-mutations.json \
+            scripts/profile-editor-mutations.ts
+          if ! git -C reference diff --cached --quiet; then
+            git -C reference \
+              -c user.name='runtime-profiler' \
+              -c user.email='runtime-profiler@invalid' \
+              commit -m 'chore: attach comparable editor mutation workload'
+          fi
+
+      - name: Prove workload semantic equivalence
+        run: |
+          set -euo pipefail
+          (cd reference && bun scripts/profile-editor-mutations.ts) | tee "$RUNNER_TEMP/reference-editor-result.json"
+          (cd candidate && bun scripts/profile-editor-mutations.ts) | tee "$RUNNER_TEMP/candidate-editor-result.json"
+          diff -u "$RUNNER_TEMP/reference-editor-result.json" "$RUNNER_TEMP/candidate-editor-result.json"
+
+      - name: Capture reference evidence
+        working-directory: reference
+        run: |
+          runtime-profiler capture \
+            --scenario profiles/runtime-profiler/editor-mutations.json \
+            --output "$RUNNER_TEMP/reference-editor-mutations"
+          runtime-profiler validate --bundle "$RUNNER_TEMP/reference-editor-mutations"
+
+      - name: Capture candidate evidence
+        working-directory: candidate
+        run: |
+          runtime-profiler capture \
+            --scenario profiles/runtime-profiler/editor-mutations.json \
+            --output "$RUNNER_TEMP/candidate-editor-mutations"
+          runtime-profiler validate --bundle "$RUNNER_TEMP/candidate-editor-mutations"
+
+      - name: Compare editor mutation runtime evidence
+        run: |
+          set -euo pipefail
+          runtime-profiler score \
+            --reference "$RUNNER_TEMP/reference-editor-mutations" \
+            --candidate "$RUNNER_TEMP/candidate-editor-mutations" \
+            --json | tee "$RUNNER_TEMP/editor-mutation-comparison.json"
+          {
+            echo '### Editor mutation runtime evidence'
+            echo
+            echo '> Advisory performance evidence only. Correctness and exact workload-output equivalence are blocking; the runtime score is not a release threshold.'
+            echo
+            echo '```json'
+            cat "$RUNNER_TEMP/editor-mutation-comparison.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload editor mutation evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: editor-mutation-runtime-${{ github.event.pull_request.head.sha }}
+          path: |
+            ${{ runner.temp }}/reference-editor-mutations
+            ${{ runner.temp }}/candidate-editor-mutations
+            ${{ runner.temp }}/reference-editor-result.json
+            ${{ runner.temp }}/candidate-editor-result.json
+            ${{ runner.temp }}/editor-mutation-comparison.json
+          if-no-files-found: warn
