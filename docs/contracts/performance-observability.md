@@ -66,7 +66,9 @@ The profiles remain separate from correctness tests:
 - execution-environment fingerprint; and
 - complete browser runtime identity, including journey, adapter, normalizer, Node, Playwright, Chromium, viewport, and trace categories.
 
-`scripts/summarize_renderer_browser_variance.py` then writes `3d-lab/renderer-browser-variance/v1`. It retains every raw sample and reports min, median, mean, p95, max, median absolute deviation, population standard deviation, coefficient of variation, and range relative to the median for:
+Before dependencies are installed, the workflow also records a `sha256:` calibration-surface digest derived from the committed Git objects for the root package/lock, `packages/renderer`, the complete `web` tree, and the renderer-browser scenario/journey. The full Git SHA still proves same-source identity within one seven-sample run. The narrower calibration-surface digest is the future cross-run anchor: weekly artifacts may be compared for environment noise when that digest is unchanged even if unrelated repository commits changed the overall Git SHA.
+
+`scripts/summarize_renderer_browser_variance.py` writes `3d-lab/renderer-browser-variance/v1`. It retains every raw sample, the calibration-surface digest, and reports min, median, mean, p95, max, median absolute deviation, population standard deviation, coefficient of variation, and range relative to the median for:
 
 - the maximum top-level `EventDispatch` duration, which is the closest normalized Chromium signal for the synchronous canary action;
 - longest top-level task duration;
@@ -81,7 +83,7 @@ The report is explicitly `calibration-only` and always has `release_verdict: fal
 
 Extend the same evidence pattern rather than introducing another profiler:
 
-1. accumulate several scheduled renderer calibration artifacts and decide whether the same-run and cross-run spread is stable enough for an explicit evaluator margin policy;
+1. accumulate several scheduled renderer calibration artifacts with the same calibration-surface digest and decide whether the same-run and cross-run spread is stable enough for an explicit evaluator margin policy;
 2. add representative editor mutation workloads once edit-command/undo semantics stabilize;
 3. add downstream game/application journeys where the reusable renderer is a meaningful part of frame cost; and
 4. introduce evaluator-owned budgets only for workloads whose variance and product relevance are understood.
