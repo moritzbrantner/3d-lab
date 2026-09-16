@@ -53,7 +53,7 @@
 
 - [x] Add an interactive scene editor with node-hierarchy selection, viewport mesh picking, vertex handles, transform editing, and direct vertex-position editing.
 - [x] Add drag gizmos for node transforms and selected vertices with explicit local/world coordinate modes and one semantic command per completed drag.
-- [ ] Add face and edge selection plus bounded topology operations such as split, inset, and extrude.
+- [x] Add face and edge selection plus bounded split, inset, and extrude operations backed by deterministic topology deltas.
 - [x] Add undo/redo as a deterministic semantic edit-command log instead of renderer or scene snapshots.
 - [ ] Add format-neutral scene snapshot import/export before teaching glTF authoring round-trips.
 
@@ -68,4 +68,5 @@
 - [x] Add seven-sample unchanged-source renderer-browser calibration with fail-closed source/runtime identity, machine-readable spread statistics, and scheduled recalibration.
 - [x] Add a representative editor transform/vertex-mutation workload and structural-sharing hot path so local edits do not rematerialize or revalidate unrelated scene and mesh data.
 - [x] Extend the editor mutation workload through deterministic command-log execution plus full vertex-edit undo/redo round-trips.
-- [ ] Promote calibration evidence into evaluator-owned regression budgets only after repeated calibration runs establish stable cross-run variance and an explicit margin policy.
+- [x] Add topology structural work budgets, deterministic topology runtime evidence, and weekly same-surface runtime calibration.
+- [ ] After at least four independent same-surface calibration runs, review robust MAD-derived wall-time/RSS margins and move the accepted policy into an evaluator-owned confirmation gate.
