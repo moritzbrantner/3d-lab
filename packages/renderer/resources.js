@@ -1,12 +1,18 @@
-export function acquireResource(cache, key, createResource) {
+export function acquireResource(
+  cache,
+  key,
+  createResource,
+  createInput,
+  observations,
+  createdCountKey,
+) {
   const cached = cache.get(key)
-  if (cached !== undefined) {
-    return {resource: cached, created: false}
-  }
+  if (cached !== undefined) return cached
 
-  const resource = createResource()
+  const resource = createResource(createInput)
   cache.set(key, resource)
-  return {resource, created: true}
+  if (observations && createdCountKey) observations[createdCountKey] += 1
+  return resource
 }
 
 export function evictUnusedResources(cache, liveKeys) {
