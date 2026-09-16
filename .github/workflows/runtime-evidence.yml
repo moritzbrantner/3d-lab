@@ -1,0 +1,117 @@
+name: Runtime evidence
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/**"
+      - "examples/asset-tooling-scene-adapter/**"
+      - "profiles/runtime-profiler/scene-export.json"
+      - "scripts/generate-scene-export-profile.py"
+      - "scripts/profile-scene-export.sh"
+      - ".github/workflows/runtime-evidence.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  RUNTIME_PROFILER_REV: 9a7a451681c5598ec7aa888daf2a66cbbade3365
+
+jobs:
+  scene-export:
+    name: Scene export runtime evidence
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: candidate
+          fetch-depth: 0
+
+      - name: Check out exact base
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: reference
+          fetch-depth: 0
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Install pinned runtime-profiler
+        run: cargo install --git https://github.com/moritzbrantner/runtime-profiler --rev "$RUNTIME_PROFILER_REV" --locked
+
+      - name: Give the base the identical scene-export workload
+        run: |
+          mkdir -p reference/profiles/runtime-profiler reference/scripts
+          cp candidate/profiles/runtime-profiler/scene-export.json reference/profiles/runtime-profiler/scene-export.json
+          cp candidate/scripts/generate-scene-export-profile.py reference/scripts/generate-scene-export-profile.py
+          cp candidate/scripts/profile-scene-export.sh reference/scripts/profile-scene-export.sh
+          git -C reference add \
+            profiles/runtime-profiler/scene-export.json \
+            scripts/generate-scene-export-profile.py \
+            scripts/profile-scene-export.sh
+          if ! git -C reference diff --cached --quiet; then
+            git -C reference \
+              -c user.name='runtime-profiler' \
+              -c user.email='runtime-profiler@invalid' \
+              commit -m 'chore: attach comparable scene-export workload'
+          fi
+
+      - name: Prime deterministic workload
+        run: |
+          (cd reference && bash scripts/profile-scene-export.sh >/dev/null)
+          (cd candidate && bash scripts/profile-scene-export.sh >/dev/null)
+
+      - name: Capture reference evidence
+        working-directory: reference
+        run: |
+          runtime-profiler capture \
+            --scenario profiles/runtime-profiler/scene-export.json \
+            --output "$RUNNER_TEMP/reference-scene-export"
+          runtime-profiler validate --bundle "$RUNNER_TEMP/reference-scene-export"
+
+      - name: Capture candidate evidence
+        working-directory: candidate
+        run: |
+          runtime-profiler capture \
+            --scenario profiles/runtime-profiler/scene-export.json \
+            --output "$RUNNER_TEMP/candidate-scene-export"
+          runtime-profiler validate --bundle "$RUNNER_TEMP/candidate-scene-export"
+
+      - name: Compare runtime evidence
+        run: |
+          set -euo pipefail
+          runtime-profiler score \
+            --reference "$RUNNER_TEMP/reference-scene-export" \
+            --candidate "$RUNNER_TEMP/candidate-scene-export" \
+            --json | tee "$RUNNER_TEMP/scene-export-comparison.json"
+          {
+            echo '### Scene export runtime evidence'
+            echo
+            echo '> Advisory evidence only. Correctness checks remain blocking while repeated captures establish workload variance.'
+            echo
+            echo '```json'
+            cat "$RUNNER_TEMP/scene-export-comparison.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload runtime evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: scene-export-runtime-${{ github.event.pull_request.head.sha }}
+          path: |
+            ${{ runner.temp }}/reference-scene-export
+            ${{ runner.temp }}/candidate-scene-export
+            ${{ runner.temp }}/scene-export-comparison.json
+          if-no-files-found: warn
