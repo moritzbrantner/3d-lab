@@ -74,10 +74,21 @@ impl SceneNode {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SceneNormalizationObservations {
+    pub mesh_count: usize,
+    pub node_count: usize,
+    pub source_vertex_count: usize,
+    pub materialized_vertex_count: usize,
+    pub index_visit_count: usize,
+    pub materialized_attribute_value_count: usize,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct SceneSnapshot {
     meshes: Vec<SceneMesh>,
     nodes: Vec<SceneNode>,
+    normalization_observations: Option<SceneNormalizationObservations>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -196,7 +207,11 @@ impl SceneSnapshot {
             validate_transform(node.local, node_index)?;
         }
 
-        Ok(Self { meshes, nodes })
+        Ok(Self {
+            meshes,
+            nodes,
+            normalization_observations: None,
+        })
     }
 
     pub fn meshes(&self) -> &[SceneMesh] {
@@ -207,11 +222,34 @@ impl SceneSnapshot {
         &self.nodes
     }
 
+    pub const fn is_normalized(&self) -> bool {
+        self.normalization_observations.is_some()
+    }
+
+    pub const fn normalization_observations(&self) -> Option<SceneNormalizationObservations> {
+        self.normalization_observations
+    }
+
     pub fn normalized(&self) -> Result<Self, SceneError> {
+        if self.is_normalized() {
+            return Ok(self.clone());
+        }
+
+        let source_vertex_count = self
+            .meshes
+            .iter()
+            .map(|mesh| mesh.mesh.vertices().len())
+            .sum();
+        let index_visit_count = self
+            .meshes
+            .iter()
+            .map(|mesh| mesh.mesh.indices().len())
+            .sum();
+
         let mut mesh_order: Vec<_> = (0..self.meshes.len()).collect();
         mesh_order.sort_by(|left, right| self.meshes[*left].id.cmp(&self.meshes[*right].id));
         let mut mesh_remap = vec![0usize; self.meshes.len()];
-        let meshes = mesh_order
+        let meshes: Vec<_> = mesh_order
             .into_iter()
             .enumerate()
             .map(|(new_index, old_index)| {
@@ -222,6 +260,21 @@ impl SceneSnapshot {
                 )
             })
             .collect();
+
+        let materialized_vertex_count = meshes
+            .iter()
+            .map(|mesh| mesh.mesh.vertices().len())
+            .sum();
+        let materialized_attribute_value_count = meshes
+            .iter()
+            .map(|mesh| {
+                let attributes = mesh.mesh.attributes();
+                attributes.normals.as_ref().map_or(0, Vec::len)
+                    + attributes.tangents.as_ref().map_or(0, Vec::len)
+                    + attributes.uvs.as_ref().map_or(0, Vec::len)
+                    + attributes.colors.as_ref().map_or(0, Vec::len)
+            })
+            .sum();
 
         let mut children = vec![Vec::new(); self.nodes.len()];
         let mut roots = Vec::new();
@@ -259,7 +312,16 @@ impl SceneSnapshot {
             })
             .collect();
 
-        Self::new(meshes, nodes)
+        let mut normalized = Self::new(meshes, nodes)?;
+        normalized.normalization_observations = Some(SceneNormalizationObservations {
+            mesh_count: normalized.meshes.len(),
+            node_count: normalized.nodes.len(),
+            source_vertex_count,
+            materialized_vertex_count,
+            index_visit_count,
+            materialized_attribute_value_count,
+        });
+        Ok(normalized)
     }
 }
 
@@ -419,7 +481,7 @@ mod tests {
     }
 
     #[test]
-    fn normalization_sorts_scene_semantics_and_compacts_meshes() {
+    fn normalization_sorts_scene_semantics_compacts_meshes_and_reports_cost() {
         let snapshot = SceneSnapshot::new(
             vec![
                 SceneMesh::new("z-mesh", triangle_with_unused_vertex()),
@@ -458,6 +520,34 @@ mod tests {
             assert_eq!(mesh.mesh().indices(), &[0, 1, 2]);
             assert_eq!(mesh.mesh().vertices()[0].x.to_bits(), 0.0_f32.to_bits());
         }
+        assert!(normalized.is_normalized());
+        assert_eq!(
+            normalized.normalization_observations(),
+            Some(SceneNormalizationObservations {
+                mesh_count: 2,
+                node_count: 3,
+                source_vertex_count: 8,
+                materialized_vertex_count: 6,
+                index_visit_count: 6,
+                materialized_attribute_value_count: 6,
+            })
+        );
+    }
+
+    #[test]
+    fn normalization_is_idempotent_and_preserves_cost_observations() {
+        let snapshot = SceneSnapshot::new(
+            vec![SceneMesh::new("mesh", triangle_with_unused_vertex())],
+            vec![SceneNode::new("root", None, Some(0), Transform::IDENTITY)],
+        )
+        .unwrap();
+        let normalized = snapshot.normalized().unwrap();
+        let normalized_again = normalized.normalized().unwrap();
+        assert_eq!(normalized_again, normalized);
+        assert_eq!(
+            normalized_again.normalization_observations(),
+            normalized.normalization_observations()
+        );
     }
 
     #[test]
