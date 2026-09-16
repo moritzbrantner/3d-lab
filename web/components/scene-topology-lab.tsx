@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { createEditorScene } from "@/lib/scene-editor";
@@ -9,18 +9,28 @@ import {
   canUndoEditorCommand,
   commitMeshTopology,
   createEditorCommandLog,
+  currentEditorTopology,
   redoEditorCommand,
   undoEditorCommand,
   type EditorCommandLog,
 } from "@/lib/scene-editor-history";
 import {
-  nearestTriangleEdge,
+  persistentTriangleAt,
+  persistentVertexAt,
+  type PersistentMeshTopology,
+} from "@/lib/scene-editor-topology-persistent";
+import {
   topologyStructuralBudgetViolations,
   type MeshEdge,
   type MeshTopologyOperation,
   type MeshTopologyWorkObservations,
 } from "@/lib/scene-editor-topology";
-import type { IndexedMesh, Vec3 } from "@/lib/mesh";
+import {
+  createTopologyGeometryAdapter,
+  type TopologyGeometryAdapter,
+  type TopologyRendererWorkObservations,
+} from "@/lib/topology-renderer-adapter";
+import type { Vec3 } from "@/lib/mesh";
 import styles from "./scene-topology-lab.module.css";
 
 type SelectionMode = "face" | "edge";
@@ -30,29 +40,68 @@ type Runtime = {
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
   controls: OrbitControls;
-  meshObject: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
+  material: THREE.MeshStandardMaterial;
+  adapter: TopologyGeometryAdapter | null;
+  nodeId: string | null;
   highlight: THREE.Object3D | null;
   resizeObserver: ResizeObserver;
   frameId: number;
 };
 
-function geometryFromMesh(mesh: IndexedMesh): THREE.BufferGeometry {
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(mesh.vertices.flat(), 3));
-  geometry.setIndex([...mesh.indices]);
-  geometry.computeVertexNormals();
-  geometry.computeBoundingSphere();
-  return geometry;
-}
-
-function triangleIndices(mesh: IndexedMesh, triangleIndex: number): readonly [number, number, number] | null {
-  const start = triangleIndex * 3;
-  if (start < 0 || start + 2 >= mesh.indices.length) return null;
-  return [mesh.indices[start], mesh.indices[start + 1], mesh.indices[start + 2]];
-}
-
 function localPoint(value: THREE.Vector3): Vec3 {
   return [value.x, value.y, value.z];
+}
+
+function subtract(a: Vec3, b: Vec3): Vec3 {
+  return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+}
+
+function dot(a: Vec3, b: Vec3): number {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+function addScaled(a: Vec3, direction: Vec3, scale: number): Vec3 {
+  return [a[0] + direction[0] * scale, a[1] + direction[1] * scale, a[2] + direction[2] * scale];
+}
+
+function pointSegmentDistanceSquared(point: Vec3, a: Vec3, b: Vec3): number {
+  const direction = subtract(b, a);
+  const denominator = dot(direction, direction);
+  if (denominator <= Number.EPSILON) return dot(subtract(point, a), subtract(point, a));
+  const t = Math.max(0, Math.min(1, dot(subtract(point, a), direction) / denominator));
+  const closest = addScaled(a, direction, t);
+  const delta = subtract(point, closest);
+  return dot(delta, delta);
+}
+
+function normalizedEdge(edge: MeshEdge): MeshEdge {
+  return edge[0] < edge[1] ? edge : [edge[1], edge[0]];
+}
+
+function nearestPersistentTriangleEdge(
+  topology: PersistentMeshTopology,
+  triangleIndex: number,
+  point: Vec3,
+): MeshEdge {
+  const [a, b, c] = persistentTriangleAt(topology, triangleIndex);
+  const candidates: readonly MeshEdge[] = [[a, b], [b, c], [c, a]];
+  let best = normalizedEdge(candidates[0]);
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const edge of candidates) {
+    const normalized = normalizedEdge(edge);
+    const distance = pointSegmentDistanceSquared(
+      point,
+      persistentVertexAt(topology, normalized[0]),
+      persistentVertexAt(topology, normalized[1]),
+    );
+    const key = `${normalized[0]}:${normalized[1]}`;
+    const bestKey = `${best[0]}:${best[1]}`;
+    if (distance < bestDistance || (distance === bestDistance && key < bestKey)) {
+      best = normalized;
+      bestDistance = distance;
+    }
+  }
+  return best;
 }
 
 function disposeHighlight(highlight: THREE.Object3D | null): void {
@@ -68,11 +117,10 @@ function disposeHighlight(highlight: THREE.Object3D | null): void {
   }
 }
 
-function faceHighlight(mesh: IndexedMesh, triangleIndex: number): THREE.Mesh | null {
-  const triangle = triangleIndices(mesh, triangleIndex);
-  if (!triangle) return null;
-  const vertices = triangle.map((index) => mesh.vertices[index]);
-  if (vertices.some((vertex) => !vertex)) return null;
+function faceHighlight(topology: PersistentMeshTopology, triangleIndex: number): THREE.Mesh | null {
+  if (triangleIndex < 0 || triangleIndex >= topology.triangleCount) return null;
+  const triangle = persistentTriangleAt(topology, triangleIndex);
+  const vertices = triangle.map((index) => persistentVertexAt(topology, index));
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices.flat(), 3));
   geometry.setIndex([0, 1, 2]);
@@ -91,10 +139,10 @@ function faceHighlight(mesh: IndexedMesh, triangleIndex: number): THREE.Mesh | n
   return highlight;
 }
 
-function edgeHighlight(mesh: IndexedMesh, edge: MeshEdge): THREE.Line | null {
-  const a = mesh.vertices[edge[0]];
-  const b = mesh.vertices[edge[1]];
-  if (!a || !b) return null;
+function edgeHighlight(topology: PersistentMeshTopology, edge: MeshEdge): THREE.Line | null {
+  if (edge[0] >= topology.vertexCount || edge[1] >= topology.vertexCount) return null;
+  const a = persistentVertexAt(topology, edge[0]);
+  const b = persistentVertexAt(topology, edge[1]);
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute([...a, ...b], 3));
   const material = new THREE.LineBasicMaterial({ color: 0xdce8ff, depthTest: false });
@@ -116,7 +164,7 @@ function latestTopologyObservation(log: EditorCommandLog): {
 export function SceneTopologyLab() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const runtimeRef = useRef<Runtime | null>(null);
-  const meshRef = useRef<IndexedMesh | null>(null);
+  const topologyRef = useRef<PersistentMeshTopology | null>(null);
   const selectionModeRef = useRef<SelectionMode>("face");
   const [history, setHistory] = useState<EditorCommandLog>(() => createEditorCommandLog(createEditorScene()));
   const [selectedNodeId, setSelectedNodeId] = useState("body");
@@ -125,11 +173,15 @@ export function SceneTopologyLab() {
   const [selectedEdge, setSelectedEdge] = useState<MeshEdge | null>(null);
   const [insetRatio, setInsetRatio] = useState(0.25);
   const [extrudeDistance, setExtrudeDistance] = useState(0.25);
+  const [rendererWork, setRendererWork] = useState<TopologyRendererWorkObservations | null>(null);
 
   const meshNodes = history.scene.nodes.filter((node) => node.mesh);
   const selectedNode = meshNodes.find((node) => node.id === selectedNodeId) ?? meshNodes[0];
-  const selectedMesh = selectedNode?.mesh ?? null;
-  meshRef.current = selectedMesh;
+  const selectedTopology = useMemo(
+    () => (selectedNode ? currentEditorTopology(history, selectedNode.id) : null),
+    [history, selectedNode],
+  );
+  topologyRef.current = selectedTopology;
   selectionModeRef.current = selectionMode;
 
   const latest = latestTopologyObservation(history);
@@ -162,31 +214,32 @@ export function SceneTopologyLab() {
     scene.add(grid);
 
     const material = new THREE.MeshStandardMaterial({ color: 0xaebbc9, roughness: 0.72, metalness: 0.06 });
-    const meshObject = new THREE.Mesh(new THREE.BufferGeometry(), material);
-    scene.add(meshObject);
 
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
     const pick = (event: MouseEvent) => {
-      const mesh = meshRef.current;
-      if (!mesh) return;
+      const runtime = runtimeRef.current;
+      const topology = topologyRef.current;
+      const adapter = runtime?.adapter;
+      if (!runtime || !topology || !adapter) return;
       const bounds = canvas.getBoundingClientRect();
       pointer.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
       pointer.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1;
       raycaster.setFromCamera(pointer, camera);
-      const hit = raycaster.intersectObject(meshObject, false)[0];
-      if (!hit || hit.faceIndex == null) {
+      const hit = raycaster.intersectObject(adapter.object, true)[0];
+      const semanticFace = hit?.faceIndex == null ? null : adapter.semanticTriangleIndex(hit.faceIndex);
+      if (!hit || semanticFace === null) {
         setSelectedFace(null);
         setSelectedEdge(null);
         return;
       }
       if (selectionModeRef.current === "face") {
-        setSelectedFace(hit.faceIndex);
+        setSelectedFace(semanticFace);
         setSelectedEdge(null);
         return;
       }
-      const point = meshObject.worldToLocal(hit.point.clone());
-      setSelectedEdge(nearestTriangleEdge(mesh, hit.faceIndex, localPoint(point)));
+      const point = adapter.object.worldToLocal(hit.point.clone());
+      setSelectedEdge(nearestPersistentTriangleEdge(topology, semanticFace, localPoint(point)));
       setSelectedFace(null);
     };
     canvas.addEventListener("click", pick);
@@ -214,7 +267,9 @@ export function SceneTopologyLab() {
       scene,
       camera,
       controls,
-      meshObject,
+      material,
+      adapter: null,
+      nodeId: null,
       highlight: null,
       resizeObserver,
       frameId,
@@ -227,7 +282,8 @@ export function SceneTopologyLab() {
       resizeObserver.disconnect();
       controls.dispose();
       disposeHighlight(runtimeRef.current?.highlight ?? null);
-      meshObject.geometry.dispose();
+      runtimeRef.current?.adapter?.object.removeFromParent();
+      runtimeRef.current?.adapter?.dispose();
       material.dispose();
       renderer.dispose();
       runtimeRef.current = null;
@@ -236,26 +292,35 @@ export function SceneTopologyLab() {
 
   useEffect(() => {
     const runtime = runtimeRef.current;
-    if (!runtime || !selectedMesh) return;
-    const nextGeometry = geometryFromMesh(selectedMesh);
-    const previousGeometry = runtime.meshObject.geometry;
-    runtime.meshObject.geometry = nextGeometry;
-    previousGeometry.dispose();
-  }, [selectedMesh]);
+    if (!runtime || !selectedNode || !selectedTopology) return;
+
+    if (!runtime.adapter || runtime.nodeId !== selectedNode.id) {
+      runtime.adapter?.object.removeFromParent();
+      runtime.adapter?.dispose();
+      const adapter = createTopologyGeometryAdapter(runtime.material, selectedTopology);
+      runtime.scene.add(adapter.object);
+      runtime.adapter = adapter;
+      runtime.nodeId = selectedNode.id;
+      setRendererWork(null);
+      return;
+    }
+
+    setRendererWork(runtime.adapter.update(selectedTopology));
+  }, [selectedNode, selectedTopology]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
-    if (!runtime || !selectedMesh) return;
+    if (!runtime?.adapter || !selectedTopology) return;
     disposeHighlight(runtime.highlight);
     const highlight =
       selectedFace !== null
-        ? faceHighlight(selectedMesh, selectedFace)
+        ? faceHighlight(selectedTopology, selectedFace)
         : selectedEdge
-          ? edgeHighlight(selectedMesh, selectedEdge)
+          ? edgeHighlight(selectedTopology, selectedEdge)
           : null;
-    if (highlight) runtime.meshObject.add(highlight);
+    if (highlight) runtime.adapter.object.add(highlight);
     runtime.highlight = highlight;
-  }, [selectedMesh, selectedFace, selectedEdge]);
+  }, [selectedTopology, selectedFace, selectedEdge]);
 
   const clearSelection = () => {
     setSelectedFace(null);
@@ -324,8 +389,8 @@ export function SceneTopologyLab() {
         <p className="eyebrow">Topology authoring</p>
         <h2 id="topology-editor-heading">Select a face or edge, then change only that bounded patch.</h2>
         <p>
-          Split, inset, and extrude operate on the format-neutral indexed mesh and enter the same deterministic undo/redo
-          log as transform and vertex edits. Selection and rendering stay downstream of those semantics.
+          Split, inset, and extrude operate on the persistent format-neutral topology and enter the same deterministic undo/redo
+          log as transform and vertex edits. Rendering consumes the same localized chunks without flattening the mesh after each edit.
         </p>
       </div>
 
@@ -443,10 +508,17 @@ export function SceneTopologyLab() {
               : "No topology operation has been committed yet. Structural work observations will appear here after the first edit."}
           </p>
 
+          {rendererWork && (
+            <p className={styles.observations}>
+              Renderer update: {rendererWork.positionValuesUploaded} position values and {rendererWork.indexValuesUploaded} index
+              values uploaded; {rendererWork.fullMaterializationCount} full materializations and {rendererWork.geometryCreateCount}
+              geometry replacements.
+            </p>
+          )}
+
           <p className={styles.boundary}>
-            <strong>Performance boundary.</strong> Topology mutation stays on persistent typed-array chunks. Edge adjacency is
-            derived lazily once and then carried forward by scanning only replaced chunks; contiguous mesh materialization is
-            reserved for renderer/export/validation consumers that actually require it.
+            <strong>Performance boundary.</strong> Topology mutation, adjacency, rendering, picking, and highlights stay on persistent
+            chunks. Contiguous mesh materialization is reserved for export/validation consumers that actually require it.
           </p>
         </aside>
       </div>
