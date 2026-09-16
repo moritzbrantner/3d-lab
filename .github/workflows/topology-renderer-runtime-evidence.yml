@@ -227,6 +227,7 @@ jobs:
             echo
             echo '> Semantic/runtime comparability is required. Runtime is calibration-only: no runtime budget or performance gate is enabled.'
             echo '> Capture order is counterbalanced so reference-first and candidate-first pairs are equally represented.'
+            echo '> Relative deltas are reported only for timings with a strictly positive reference; long-task evidence remains absolute.'
             echo
             echo '#### Capture order'
             echo '```text'
@@ -247,22 +248,19 @@ jobs:
               identity,
               reference: {
                 topLevelDurationUs: .reference.topLevelDurationUs,
+                longTaskCount: .reference.longTaskCount,
                 longTaskTotalDurationUs: .reference.longTaskTotalDurationUs,
                 longestTaskUs: .reference.longestTaskUs,
                 javascriptInclusiveDurationUs: .reference.javascriptInclusiveDurationUs
               },
               candidate: {
                 topLevelDurationUs: .candidate.topLevelDurationUs,
+                longTaskCount: .candidate.longTaskCount,
                 longTaskTotalDurationUs: .candidate.longTaskTotalDurationUs,
                 longestTaskUs: .candidate.longestTaskUs,
                 javascriptInclusiveDurationUs: .candidate.javascriptInclusiveDurationUs
               },
-              pairedCandidateVsReference: {
-                topLevelDurationUs: .pairedCandidateVsReference.topLevelDurationUs,
-                longTaskTotalDurationUs: .pairedCandidateVsReference.longTaskTotalDurationUs,
-                longestTaskUs: .pairedCandidateVsReference.longestTaskUs,
-                javascriptInclusiveDurationUs: .pairedCandidateVsReference.javascriptInclusiveDurationUs
-              }
+              pairedCandidateVsReference
             }' "$calibration_root/summary.json"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
