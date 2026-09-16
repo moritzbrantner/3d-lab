@@ -1,0 +1,16 @@
+{
+  "schema_version": "runtime-profiler/scenario/v1",
+  "id": "3d-lab-topology-renderer-browser",
+  "target": {
+    "type": "browser-journey",
+    "module": "profiles/runtime-profiler/topology-renderer-browser.mjs",
+    "working_directory": "../..",
+    "inherit_env": []
+  },
+  "run": {
+    "warmup_iterations": 0,
+    "measurement_iterations": 1,
+    "timeout_seconds": 90
+  },
+  "collectors": ["browser-chromium"]
+}
