@@ -56,3 +56,13 @@
 - [ ] Add face and edge selection plus bounded topology operations such as split, inset, and extrude.
 - [ ] Add undo/redo as a deterministic edit-command log instead of renderer snapshots.
 - [ ] Add format-neutral scene snapshot import/export before teaching glTF authoring round-trips.
+
+### Cross-cutting performance foundation
+
+- [x] Record deterministic scene-normalization work facts such as source/materialized vertices, visited indices, and materialized attribute values.
+- [x] Preserve normalized-scene provenance so downstream export can reuse canonical buffers rather than normalizing and materializing them again.
+- [x] Add an observable GLB-export boundary that reports whether export had to perform normalization.
+- [x] Add a deterministic release-mode scene-export workload and exact-base/candidate `runtime-profiler` evidence in pull requests.
+- [ ] Add a browser journey for reusable Three.js renderer hot paths and resource/object reuse once the first runtime canary has stable repeated evidence.
+- [ ] Add deterministic renderer work observations for node visits, object/resource creation, reuse, and eviction without moving renderer authority into performance tooling.
+- [ ] Adopt evaluator-owned regression budgets only after unchanged-source captures establish acceptable variance for each workload.
