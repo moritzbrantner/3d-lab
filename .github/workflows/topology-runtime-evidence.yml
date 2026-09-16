@@ -5,7 +5,9 @@ on:
     branches: [main]
     paths:
       - "web/lib/scene-editor-topology.ts"
+      - "web/lib/scene-editor-topology-persistent.ts"
       - "web/lib/scene-editor-topology.test.ts"
+      - "web/lib/scene-editor-topology-persistent.test.ts"
       - "web/lib/scene-editor-topology-history.test.ts"
       - "web/lib/scene-editor-history.ts"
       - "web/lib/scene-editor.ts"
@@ -65,6 +67,7 @@ jobs:
           mkdir -p reference/profiles/runtime-profiler reference/scripts reference/web/lib
           cp candidate/profiles/runtime-profiler/editor-topology.json reference/profiles/runtime-profiler/editor-topology.json
           cp candidate/scripts/profile-editor-topology.ts reference/scripts/profile-editor-topology.ts
+          cp candidate/web/lib/scene-editor-topology-persistent.ts reference/web/lib/scene-editor-topology-persistent.ts
           if [ ! -f reference/web/lib/scene-editor-topology.ts ]; then
             cp candidate/web/lib/scene-editor-topology.ts reference/web/lib/scene-editor-topology.ts
             cp candidate/web/lib/scene-editor-history.ts reference/web/lib/scene-editor-history.ts
@@ -72,6 +75,7 @@ jobs:
           git -C reference add \
             profiles/runtime-profiler/editor-topology.json \
             scripts/profile-editor-topology.ts \
+            web/lib/scene-editor-topology-persistent.ts \
             web/lib/scene-editor-topology.ts \
             web/lib/scene-editor-history.ts
           if ! git -C reference diff --cached --quiet; then
@@ -86,7 +90,9 @@ jobs:
           set -euo pipefail
           (cd reference && bun scripts/profile-editor-topology.ts) | tee "$RUNNER_TEMP/reference-topology-result.json"
           (cd candidate && bun scripts/profile-editor-topology.ts) | tee "$RUNNER_TEMP/candidate-topology-result.json"
-          diff -u "$RUNNER_TEMP/reference-topology-result.json" "$RUNNER_TEMP/candidate-topology-result.json"
+          jq -S '.semantic' "$RUNNER_TEMP/reference-topology-result.json" > "$RUNNER_TEMP/reference-topology-semantic.json"
+          jq -S '.semantic' "$RUNNER_TEMP/candidate-topology-result.json" > "$RUNNER_TEMP/candidate-topology-semantic.json"
+          diff -u "$RUNNER_TEMP/reference-topology-semantic.json" "$RUNNER_TEMP/candidate-topology-semantic.json"
 
       - name: Capture reference topology evidence
         working-directory: reference
@@ -116,6 +122,16 @@ jobs:
             echo
             echo '> Semantic output and deterministic structural budgets are blocking. Runtime comparison remains advisory until scheduled calibration establishes cross-run variance.'
             echo
+            echo '#### Copy-work evidence'
+            echo
+            echo 'Reference:'
+            jq '.work' "$RUNNER_TEMP/reference-topology-result.json"
+            echo
+            echo 'Candidate:'
+            jq '.work' "$RUNNER_TEMP/candidate-topology-result.json"
+            echo
+            echo '#### Runtime score'
+            echo
             echo '```json'
             cat "$RUNNER_TEMP/editor-topology-comparison.json"
             echo '```'
@@ -131,6 +147,8 @@ jobs:
             ${{ runner.temp }}/candidate-editor-topology
             ${{ runner.temp }}/reference-topology-result.json
             ${{ runner.temp }}/candidate-topology-result.json
+            ${{ runner.temp }}/reference-topology-semantic.json
+            ${{ runner.temp }}/candidate-topology-semantic.json
             ${{ runner.temp }}/editor-topology-comparison.json
           if-no-files-found: warn
           retention-days: 90
@@ -164,6 +182,7 @@ jobs:
           surface_digest="$(
             {
               git rev-parse HEAD:web/lib/scene-editor-topology.ts
+              git rev-parse HEAD:web/lib/scene-editor-topology-persistent.ts
               git rev-parse HEAD:web/lib/scene-editor-history.ts
               git rev-parse HEAD:web/lib/scene-editor.ts
               git rev-parse HEAD:web/lib/mesh.ts
