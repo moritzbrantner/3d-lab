@@ -1,0 +1,229 @@
+name: Editor topology runtime evidence
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "web/lib/scene-editor-topology.ts"
+      - "web/lib/scene-editor-topology.test.ts"
+      - "web/lib/scene-editor-topology-history.test.ts"
+      - "web/lib/scene-editor-history.ts"
+      - "web/lib/scene-editor.ts"
+      - "web/lib/mesh.ts"
+      - "scripts/profile-editor-topology.ts"
+      - "profiles/runtime-profiler/editor-topology.json"
+      - ".github/workflows/topology-runtime-evidence.yml"
+  workflow_dispatch:
+  schedule:
+    - cron: "47 4 * * 1"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  RUNTIME_PROFILER_REV: 9a7a451681c5598ec7aa888daf2a66cbbade3365
+
+jobs:
+  comparison:
+    if: github.event_name == 'pull_request'
+    name: Topology base/candidate evidence
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: candidate
+          fetch-depth: 0
+
+      - name: Check out exact base
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: reference
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Install pinned runtime-profiler
+        run: cargo install --git https://github.com/moritzbrantner/runtime-profiler --rev "$RUNTIME_PROFILER_REV" --locked
+
+      - name: Give the base the identical topology workload
+        run: |
+          set -euo pipefail
+          mkdir -p reference/profiles/runtime-profiler reference/scripts reference/web/lib
+          cp candidate/profiles/runtime-profiler/editor-topology.json reference/profiles/runtime-profiler/editor-topology.json
+          cp candidate/scripts/profile-editor-topology.ts reference/scripts/profile-editor-topology.ts
+          if [ ! -f reference/web/lib/scene-editor-topology.ts ]; then
+            cp candidate/web/lib/scene-editor-topology.ts reference/web/lib/scene-editor-topology.ts
+            cp candidate/web/lib/scene-editor-history.ts reference/web/lib/scene-editor-history.ts
+          fi
+          git -C reference add \
+            profiles/runtime-profiler/editor-topology.json \
+            scripts/profile-editor-topology.ts \
+            web/lib/scene-editor-topology.ts \
+            web/lib/scene-editor-history.ts
+          if ! git -C reference diff --cached --quiet; then
+            git -C reference \
+              -c user.name='runtime-profiler' \
+              -c user.email='runtime-profiler@invalid' \
+              commit -m 'chore: attach comparable topology workload'
+          fi
+
+      - name: Prove topology workload semantic equivalence
+        run: |
+          set -euo pipefail
+          (cd reference && bun scripts/profile-editor-topology.ts) | tee "$RUNNER_TEMP/reference-topology-result.json"
+          (cd candidate && bun scripts/profile-editor-topology.ts) | tee "$RUNNER_TEMP/candidate-topology-result.json"
+          diff -u "$RUNNER_TEMP/reference-topology-result.json" "$RUNNER_TEMP/candidate-topology-result.json"
+
+      - name: Capture reference topology evidence
+        working-directory: reference
+        run: |
+          runtime-profiler capture \
+            --scenario profiles/runtime-profiler/editor-topology.json \
+            --output "$RUNNER_TEMP/reference-editor-topology"
+          runtime-profiler validate --bundle "$RUNNER_TEMP/reference-editor-topology"
+
+      - name: Capture candidate topology evidence
+        working-directory: candidate
+        run: |
+          runtime-profiler capture \
+            --scenario profiles/runtime-profiler/editor-topology.json \
+            --output "$RUNNER_TEMP/candidate-editor-topology"
+          runtime-profiler validate --bundle "$RUNNER_TEMP/candidate-editor-topology"
+
+      - name: Compare topology runtime evidence
+        run: |
+          set -euo pipefail
+          runtime-profiler score \
+            --reference "$RUNNER_TEMP/reference-editor-topology" \
+            --candidate "$RUNNER_TEMP/candidate-editor-topology" \
+            --json | tee "$RUNNER_TEMP/editor-topology-comparison.json"
+          {
+            echo '### Editor topology runtime evidence'
+            echo
+            echo '> Semantic output and deterministic structural budgets are blocking. Runtime comparison remains advisory until scheduled calibration establishes cross-run variance.'
+            echo
+            echo '```json'
+            cat "$RUNNER_TEMP/editor-topology-comparison.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload topology comparison evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: editor-topology-runtime-${{ github.event.pull_request.head.sha }}
+          path: |
+            ${{ runner.temp }}/reference-editor-topology
+            ${{ runner.temp }}/candidate-editor-topology
+            ${{ runner.temp }}/reference-topology-result.json
+            ${{ runner.temp }}/candidate-topology-result.json
+            ${{ runner.temp }}/editor-topology-comparison.json
+          if-no-files-found: warn
+          retention-days: 90
+
+  calibration:
+    if: github.event_name != 'pull_request'
+    name: Topology unchanged-source calibration
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out calibration source
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Install pinned runtime-profiler
+        run: cargo install --git https://github.com/moritzbrantner/runtime-profiler --rev "$RUNTIME_PROFILER_REV" --locked
+
+      - name: Fingerprint topology calibration surface
+        run: |
+          set -euo pipefail
+          surface_digest="$(
+            {
+              git rev-parse HEAD:web/lib/scene-editor-topology.ts
+              git rev-parse HEAD:web/lib/scene-editor-history.ts
+              git rev-parse HEAD:web/lib/scene-editor.ts
+              git rev-parse HEAD:web/lib/mesh.ts
+              git rev-parse HEAD:scripts/profile-editor-topology.ts
+              git rev-parse HEAD:profiles/runtime-profiler/editor-topology.json
+              git rev-parse HEAD:bun.lock
+            } | sha256sum | awk '{print "sha256:" $1}'
+          )"
+          echo "TOPOLOGY_SURFACE_DIGEST=$surface_digest" >> "$GITHUB_ENV"
+          echo "Topology calibration surface: $surface_digest" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Prove deterministic topology workload
+        run: bun scripts/profile-editor-topology.ts | tee "$RUNNER_TEMP/topology-result.json"
+
+      - name: Capture topology calibration evidence
+        run: |
+          runtime-profiler capture \
+            --scenario profiles/runtime-profiler/editor-topology.json \
+            --output "$RUNNER_TEMP/editor-topology-calibration"
+          runtime-profiler validate --bundle "$RUNNER_TEMP/editor-topology-calibration"
+
+      - name: Record calibration metadata
+        run: |
+          set -euo pipefail
+          wall_median="$(jq '[.metrics[] | select(.id == "process.wall_time")][0].statistics.median' "$RUNNER_TEMP/editor-topology-calibration/metrics.json")"
+          wall_p95="$(jq '[.metrics[] | select(.id == "process.wall_time")][0].statistics.p95' "$RUNNER_TEMP/editor-topology-calibration/metrics.json")"
+          rss_median="$(jq '[.metrics[] | select(.id == "process.max_observed_rss")][0].statistics.median' "$RUNNER_TEMP/editor-topology-calibration/metrics.json")"
+          jq -n \
+            --arg surface "$TOPOLOGY_SURFACE_DIGEST" \
+            --arg source "$(git rev-parse HEAD)" \
+            --argjson wall_median "$wall_median" \
+            --argjson wall_p95 "$wall_p95" \
+            --argjson rss_median "$rss_median" \
+            '{
+              schema_version: "3d-lab/editor-topology-calibration/v1",
+              source_sha: $source,
+              surface_digest: $surface,
+              wall_time_median_ms: $wall_median,
+              wall_time_p95_ms: $wall_p95,
+              max_observed_rss_median_kib: $rss_median,
+              policy: {kind: "calibration-only", release_verdict: false}
+            }' | tee "$RUNNER_TEMP/editor-topology-calibration.json"
+          {
+            echo
+            echo '### Topology calibration sample'
+            echo
+            echo '> Calibration only; no wall-clock or RSS release threshold is active.'
+            echo
+            echo '```json'
+            cat "$RUNNER_TEMP/editor-topology-calibration.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload topology calibration evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: editor-topology-calibration-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/editor-topology-calibration
+            ${{ runner.temp }}/editor-topology-calibration.json
+            ${{ runner.temp }}/topology-result.json
+          if-no-files-found: error
+          retention-days: 120

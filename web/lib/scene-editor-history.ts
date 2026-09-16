@@ -6,7 +6,15 @@ import {
   type EditorNode,
   type EditorScene,
 } from "./scene-editor";
-import type { Vec3, Vec4 } from "./mesh";
+import {
+  applyMeshTopologyDelta,
+  performMeshTopologyOperation,
+  type MeshTopologyDelta,
+  type MeshTopologyIndex,
+  type MeshTopologyOperation,
+  type MeshTopologyWorkObservations,
+} from "./scene-editor-topology";
+import type { IndexedMesh, Vec3, Vec4 } from "./mesh";
 
 export type EditorDerivedVertexAttributes = Readonly<{
   normals?: readonly Vec3[];
@@ -30,13 +38,22 @@ export type EditorVertexCommand = Readonly<{
   afterDerived: EditorDerivedVertexAttributes;
 }>;
 
-export type EditorCommand = EditorTransformCommand | EditorVertexCommand;
+export type EditorTopologyCommand = Readonly<{
+  kind: "edit-mesh-topology";
+  nodeId: string;
+  operation: MeshTopologyOperation;
+  delta: MeshTopologyDelta;
+  observations: MeshTopologyWorkObservations;
+}>;
+
+export type EditorCommand = EditorTransformCommand | EditorVertexCommand | EditorTopologyCommand;
 
 /**
  * Deterministic command history for editor-domain mutations.
  *
  * `entries` stores semantic deltas only. The cursor partitions applied commands from redoable commands;
- * neither renderer state nor per-command scene snapshots are retained.
+ * neither renderer state nor per-command scene snapshots are retained. Topology commands retain bounded
+ * mesh deltas (appended vertices + replaced triangle spans), not complete scene snapshots.
  */
 export type EditorCommandLog = Readonly<{
   scene: EditorScene;
@@ -76,6 +93,14 @@ function findNode(scene: EditorScene, nodeId: string): { node: EditorNode; index
   const index = scene.nodes.findIndex((candidate) => candidate.id === nodeId);
   if (index < 0) throw new Error(`unknown node ${nodeId}`);
   return { node: scene.nodes[index], index };
+}
+
+function replaceNodeMesh(scene: EditorScene, nodeId: string, mesh: IndexedMesh): EditorScene {
+  const { node, index } = findNode(scene, nodeId);
+  if (!node.mesh) throw new Error(`node ${nodeId} does not own a mesh`);
+  const nodes = [...scene.nodes];
+  nodes[index] = { ...node, mesh };
+  return { nodes };
 }
 
 function derivedAttributes(node: EditorNode): EditorDerivedVertexAttributes {
@@ -150,7 +175,7 @@ function applyVertexState(
     derived.tangents !== undefined ||
     sourceAttributes?.uvs !== undefined ||
     sourceAttributes?.colors !== undefined;
-  const mesh = {
+  const mesh: IndexedMesh = {
     vertices,
     indices: node.mesh.indices,
     attributes: hasAttributes
@@ -176,6 +201,13 @@ function applyCommand(scene: EditorScene, command: EditorCommand, direction: "fo
       throw new Error(`editor command precondition failed for node ${command.nodeId}`);
     }
     return updateNodeTransform(scene, command.nodeId, target);
+  }
+
+  if (command.kind === "edit-mesh-topology") {
+    const { node } = findNode(scene, command.nodeId);
+    if (!node.mesh) throw new Error(`node ${command.nodeId} does not own a mesh`);
+    const mesh = applyMeshTopologyDelta(node.mesh, command.delta, direction);
+    return replaceNodeMesh(scene, command.nodeId, mesh);
   }
 
   const { node } = findNode(scene, command.nodeId);
@@ -256,6 +288,27 @@ export function commitMeshVertex(
     afterDerived: {},
   };
   const scene = updateMeshVertex(log.scene, nodeId, vertexIndex, position);
+  const entries = [...log.entries.slice(0, log.cursor), command];
+  return { scene, entries, cursor: entries.length };
+}
+
+export function commitMeshTopology(
+  log: EditorCommandLog,
+  nodeId: string,
+  operation: MeshTopologyOperation,
+  topologyIndex?: MeshTopologyIndex,
+): EditorCommandLog {
+  const { node } = findNode(log.scene, nodeId);
+  if (!node.mesh) throw new Error(`node ${nodeId} does not own a mesh`);
+  const edit = performMeshTopologyOperation(node.mesh, operation, topologyIndex);
+  const command: EditorTopologyCommand = {
+    kind: "edit-mesh-topology",
+    nodeId,
+    operation: edit.delta.operation,
+    delta: edit.delta,
+    observations: edit.observations,
+  };
+  const scene = replaceNodeMesh(log.scene, nodeId, edit.mesh);
   const entries = [...log.entries.slice(0, log.cursor), command];
   return { scene, entries, cursor: entries.length };
 }
