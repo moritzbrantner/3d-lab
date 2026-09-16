@@ -43,9 +43,28 @@ describe("scene editor model", () => {
     const edited = updateMeshVertex(scene, "body", 0, [-0.9, -0.5, -0.5]);
     expect(original).toEqual(cubeMesh.vertices[0]);
     expect(edited.nodes.find((node) => node.id === "body")?.mesh?.vertices[0]).toEqual([-0.9, -0.5, -0.5]);
+    expect(() => validateEditorScene(edited)).not.toThrow();
   });
 
-  test("moving positions invalidates derived normals and tangents but preserves UV/color authoring data", () => {
+  test("vertex edits reuse all unaffected mesh and scene data", () => {
+    const scene = createEditorScene();
+    const bodyIndex = scene.nodes.findIndex((node) => node.id === "body");
+    const sideIndex = scene.nodes.findIndex((node) => node.id === "side");
+    const bodyBefore = scene.nodes[bodyIndex];
+    const meshBefore = bodyBefore.mesh;
+    expect(meshBefore).toBeDefined();
+
+    const edited = updateMeshVertex(scene, "body", 0, [-0.9, -0.5, -0.5]);
+    const meshAfter = edited.nodes[bodyIndex].mesh;
+    expect(meshAfter).toBeDefined();
+
+    expect(edited.nodes[sideIndex]).toBe(scene.nodes[sideIndex]);
+    expect(meshAfter?.indices).toBe(meshBefore?.indices);
+    expect(meshAfter?.vertices[1]).toBe(meshBefore?.vertices[1]);
+    expect(meshAfter?.vertices[0]).not.toBe(meshBefore?.vertices[0]);
+  });
+
+  test("moving positions invalidates derived normals and tangents but reuses UV/color authoring data", () => {
     const scene: EditorScene = {
       nodes: [
         {
@@ -66,23 +85,36 @@ describe("scene editor model", () => {
         },
       ],
     };
+    const attributesBefore = scene.nodes[0].mesh?.attributes;
     const edited = updateMeshVertex(scene, "mesh", 2, [0, 1.5, 0]);
     expect(edited.nodes[0].mesh?.attributes?.normals).toBeUndefined();
     expect(edited.nodes[0].mesh?.attributes?.tangents).toBeUndefined();
-    expect(edited.nodes[0].mesh?.attributes?.uvs).toEqual([[0, 0], [1, 0], [0, 1]]);
-    expect(edited.nodes[0].mesh?.attributes?.colors).toEqual([[1, 0, 0], [0, 1, 0], [0, 0, 1]]);
+    expect(edited.nodes[0].mesh?.attributes?.uvs).toBe(attributesBefore?.uvs);
+    expect(edited.nodes[0].mesh?.attributes?.colors).toBe(attributesBefore?.colors);
+    expect(() => validateEditorScene(edited)).not.toThrow();
   });
 
-  test("transform edits do not touch sibling nodes", () => {
+  test("transform edits reuse siblings and untouched transform vectors", () => {
     const scene = createEditorScene();
-    const sideBefore = scene.nodes.find((node) => node.id === "side")?.transform;
+    const mastIndex = scene.nodes.findIndex((node) => node.id === "mast");
+    const sideIndex = scene.nodes.findIndex((node) => node.id === "side");
+    const mastBefore = scene.nodes[mastIndex];
     const edited = updateNodeTransform(scene, "mast", { translation: [0.5, 1, 0] });
-    expect(edited.nodes.find((node) => node.id === "mast")?.transform.translation).toEqual([0.5, 1, 0]);
-    expect(edited.nodes.find((node) => node.id === "side")?.transform).toEqual(sideBefore);
+    const mastAfter = edited.nodes[mastIndex];
+
+    expect(mastAfter.transform.translation).toEqual([0.5, 1, 0]);
+    expect(mastAfter.transform.rotation).toBe(mastBefore.transform.rotation);
+    expect(mastAfter.transform.scale).toBe(mastBefore.transform.scale);
+    expect(edited.nodes[sideIndex]).toBe(scene.nodes[sideIndex]);
+    expect(() => validateEditorScene(edited)).not.toThrow();
   });
 
-  test("vertex bounds remain fail-closed", () => {
+  test("mutation values remain fail-closed", () => {
     const scene = createEditorScene();
     expect(() => updateMeshVertex(scene, "body", 999, [0, 0, 0])).toThrow("is outside node body");
+    expect(() => updateMeshVertex(scene, "body", 0, [Number.NaN, 0, 0])).toThrow("vertex position must be finite");
+    expect(() => updateNodeTransform(scene, "mast", { translation: [Number.POSITIVE_INFINITY, 0, 0] })).toThrow(
+      "node mast has a non-finite translation",
+    );
   });
 });
