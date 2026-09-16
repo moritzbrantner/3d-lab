@@ -1,0 +1,204 @@
+name: Topology renderer runtime evidence
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "package.json"
+      - "web/lib/scene-editor-topology-persistent.ts"
+      - "web/lib/scene-editor-topology-adjacency.ts"
+      - "web/lib/scene-editor-history.ts"
+      - "web/lib/topology-renderer-adapter.ts"
+      - "web/app/topology-performance/**"
+      - "web/components/topology-renderer-performance-canary.tsx"
+      - "scripts/run-topology-renderer-canary.mjs"
+      - "profiles/runtime-profiler/topology-renderer-browser.json"
+      - "profiles/runtime-profiler/topology-renderer-browser.mjs"
+      - ".github/workflows/topology-renderer-runtime-evidence.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  RUNTIME_PROFILER_REV: 9a7a451681c5598ec7aa888daf2a66cbbade3365
+
+jobs:
+  topology-renderer-browser:
+    name: Topology renderer Chromium evidence
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: candidate
+          fetch-depth: 0
+
+      - name: Check out exact base
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: reference
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Install pinned runtime-profiler
+        run: cargo install --git https://github.com/moritzbrantner/runtime-profiler --rev "$RUNTIME_PROFILER_REV" --locked
+
+      - name: Give the base the identical topology renderer workload
+        run: |
+          set -euo pipefail
+          mkdir -p \
+            reference/profiles/runtime-profiler \
+            reference/scripts \
+            reference/web/app/topology-performance \
+            reference/web/components \
+            reference/web/lib
+          cp candidate/package.json reference/package.json
+          cp candidate/profiles/runtime-profiler/topology-renderer-browser.json reference/profiles/runtime-profiler/topology-renderer-browser.json
+          cp candidate/profiles/runtime-profiler/topology-renderer-browser.mjs reference/profiles/runtime-profiler/topology-renderer-browser.mjs
+          cp candidate/scripts/run-topology-renderer-canary.mjs reference/scripts/run-topology-renderer-canary.mjs
+          cp candidate/web/app/topology-performance/page.tsx reference/web/app/topology-performance/page.tsx
+          cp candidate/web/components/topology-renderer-performance-canary.tsx reference/web/components/topology-renderer-performance-canary.tsx
+          if [ ! -f reference/web/lib/topology-renderer-adapter.ts ]; then
+            cp candidate/web/lib/topology-renderer-adapter.ts reference/web/lib/topology-renderer-adapter.ts
+          fi
+          git -C reference add \
+            package.json \
+            profiles/runtime-profiler/topology-renderer-browser.json \
+            profiles/runtime-profiler/topology-renderer-browser.mjs \
+            scripts/run-topology-renderer-canary.mjs \
+            web/app/topology-performance/page.tsx \
+            web/components/topology-renderer-performance-canary.tsx \
+            web/lib/topology-renderer-adapter.ts
+          if ! git -C reference diff --cached --quiet; then
+            git -C reference \
+              -c user.name='runtime-profiler' \
+              -c user.email='runtime-profiler@invalid' \
+              commit -m 'chore: attach comparable topology renderer workload'
+          fi
+
+      - name: Install browser workload dependencies
+        run: |
+          (cd reference && bun install)
+          (cd candidate && bun install)
+          (cd reference/web && bun install)
+          (cd candidate/web && bun install)
+          (cd candidate && bunx playwright install --with-deps chromium)
+
+      - name: Build static benchmark sites
+        run: |
+          (cd reference/web && GITHUB_ACTIONS=false bun run build)
+          (cd candidate/web && GITHUB_ACTIONS=false bun run build)
+
+      - name: Capture reference topology renderer evidence
+        run: |
+          set -euo pipefail
+          python3 -m http.server 4173 \
+            --bind 127.0.0.1 \
+            --directory reference/web/out \
+            >"$RUNNER_TEMP/reference-topology-renderer-server.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          curl --fail --retry 20 --retry-delay 1 --retry-all-errors \
+            http://127.0.0.1:4173/topology-performance/ >/dev/null
+          (cd reference && bun scripts/run-topology-renderer-canary.mjs) \
+            | tee "$RUNNER_TEMP/reference-topology-renderer-result.json"
+          (
+            cd reference
+            runtime-profiler capture \
+              --scenario profiles/runtime-profiler/topology-renderer-browser.json \
+              --output "$RUNNER_TEMP/reference-topology-renderer-browser"
+            runtime-profiler validate --bundle "$RUNNER_TEMP/reference-topology-renderer-browser"
+          )
+          kill "$server_pid"
+          wait "$server_pid" 2>/dev/null || true
+          trap - EXIT
+
+      - name: Capture candidate topology renderer evidence
+        run: |
+          set -euo pipefail
+          python3 -m http.server 4173 \
+            --bind 127.0.0.1 \
+            --directory candidate/web/out \
+            >"$RUNNER_TEMP/candidate-topology-renderer-server.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          curl --fail --retry 20 --retry-delay 1 --retry-all-errors \
+            http://127.0.0.1:4173/topology-performance/ >/dev/null
+          (cd candidate && bun scripts/run-topology-renderer-canary.mjs) \
+            | tee "$RUNNER_TEMP/candidate-topology-renderer-result.json"
+          (
+            cd candidate
+            runtime-profiler capture \
+              --scenario profiles/runtime-profiler/topology-renderer-browser.json \
+              --output "$RUNNER_TEMP/candidate-topology-renderer-browser"
+            runtime-profiler validate --bundle "$RUNNER_TEMP/candidate-topology-renderer-browser"
+          )
+          kill "$server_pid"
+          wait "$server_pid" 2>/dev/null || true
+          trap - EXIT
+
+      - name: Verify semantic and browser comparability
+        run: |
+          set -euo pipefail
+          jq -S '{operationCount, finalVertexCount, finalTriangleCount}' \
+            "$RUNNER_TEMP/reference-topology-renderer-result.json" \
+            > "$RUNNER_TEMP/reference-topology-renderer-semantic.json"
+          jq -S '{operationCount, finalVertexCount, finalTriangleCount}' \
+            "$RUNNER_TEMP/candidate-topology-renderer-result.json" \
+            > "$RUNNER_TEMP/candidate-topology-renderer-semantic.json"
+          diff -u \
+            "$RUNNER_TEMP/reference-topology-renderer-semantic.json" \
+            "$RUNNER_TEMP/candidate-topology-renderer-semantic.json"
+          runtime-profiler compare-browser \
+            --reference "$RUNNER_TEMP/reference-topology-renderer-browser" \
+            --candidate "$RUNNER_TEMP/candidate-topology-renderer-browser" \
+            --json | tee "$RUNNER_TEMP/topology-renderer-browser-comparison.json"
+          jq -e '.status == "comparable"' "$RUNNER_TEMP/topology-renderer-browser-comparison.json" >/dev/null
+          {
+            echo '### Topology renderer Chromium evidence'
+            echo
+            echo '> Strict semantic/runtime comparability is required. Runtime remains advisory until repeated browser variance is characterized.'
+            echo
+            echo '#### Reference work'
+            jq '.work' "$RUNNER_TEMP/reference-topology-renderer-result.json"
+            echo
+            echo '#### Candidate work'
+            jq '.work' "$RUNNER_TEMP/candidate-topology-renderer-result.json"
+            echo
+            echo '#### Browser comparison'
+            echo '```json'
+            cat "$RUNNER_TEMP/topology-renderer-browser-comparison.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload topology renderer evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: topology-renderer-browser-runtime-${{ github.event.pull_request.head.sha }}
+          path: |
+            ${{ runner.temp }}/reference-topology-renderer-browser
+            ${{ runner.temp }}/candidate-topology-renderer-browser
+            ${{ runner.temp }}/reference-topology-renderer-result.json
+            ${{ runner.temp }}/candidate-topology-renderer-result.json
+            ${{ runner.temp }}/reference-topology-renderer-semantic.json
+            ${{ runner.temp }}/candidate-topology-renderer-semantic.json
+            ${{ runner.temp }}/topology-renderer-browser-comparison.json
+            ${{ runner.temp }}/reference-topology-renderer-server.log
+            ${{ runner.temp }}/candidate-topology-renderer-server.log
+          if-no-files-found: warn
+          retention-days: 90
