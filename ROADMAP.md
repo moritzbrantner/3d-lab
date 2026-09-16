@@ -65,4 +65,5 @@
 - [x] Add a deterministic release-mode scene-export workload and exact-base/candidate `runtime-profiler` evidence in pull requests.
 - [x] Add a browser journey for reusable Three.js renderer hot paths and resource/object reuse once the first runtime canary has stable repeated evidence.
 - [x] Add deterministic renderer work observations for node visits, object/resource creation, reuse, and eviction without moving renderer authority into performance tooling.
-- [ ] Adopt evaluator-owned regression budgets only after unchanged-source captures establish acceptable variance for each workload.
+- [x] Add seven-sample unchanged-source renderer-browser calibration with fail-closed source/runtime identity, machine-readable spread statistics, and scheduled recalibration.
+- [ ] Promote calibration evidence into evaluator-owned regression budgets only after repeated calibration runs establish stable cross-run variance and an explicit margin policy.
