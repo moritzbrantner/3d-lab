@@ -6,8 +6,7 @@ on:
     paths:
       - "package.json"
       - "packages/renderer/**"
-      - "web/app/renderer-performance/**"
-      - "web/components/renderer-performance-canary.tsx"
+      - "web/**"
       - "profiles/runtime-profiler/renderer-browser.json"
       - "profiles/runtime-profiler/renderer-browser.mjs"
       - "scripts/summarize_renderer_browser_variance.py"
@@ -47,6 +46,22 @@ jobs:
       - name: Test variance summarizer
         working-directory: candidate
         run: python3 scripts/test_renderer_browser_variance.py
+
+      - name: Fingerprint calibration surface
+        run: |
+          set -euo pipefail
+          surface_digest="$(
+            {
+              git -C candidate rev-parse HEAD:package.json
+              git -C candidate rev-parse HEAD:bun.lock
+              git -C candidate rev-parse HEAD:packages/renderer
+              git -C candidate rev-parse HEAD:web
+              git -C candidate rev-parse HEAD:profiles/runtime-profiler/renderer-browser.json
+              git -C candidate rev-parse HEAD:profiles/runtime-profiler/renderer-browser.mjs
+            } | sha256sum | awk '{print "sha256:" $1}'
+          )"
+          echo "CALIBRATION_SURFACE_DIGEST=$surface_digest" >> "$GITHUB_ENV"
+          echo "Calibration surface: $surface_digest" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Install Rust
         run: |
@@ -102,9 +117,12 @@ jobs:
           mapfile -t bundles < <(find "$variance_root" -mindepth 1 -maxdepth 1 -type d -name 'sample-*' | sort)
           python3 candidate/scripts/summarize_renderer_browser_variance.py \
             --expected-samples "$VARIANCE_SAMPLE_COUNT" \
+            --surface-digest "$CALIBRATION_SURFACE_DIGEST" \
             --output "$RUNNER_TEMP/renderer-browser-variance.json" \
             "${bundles[@]}"
-          jq -e '.sample_count == 7 and .policy.kind == "calibration-only" and .policy.release_verdict == false' \
+          jq -e \
+            --arg surface "$CALIBRATION_SURFACE_DIGEST" \
+            '.sample_count == 7 and .identity.calibration_surface_digest == $surface and .policy.kind == "calibration-only" and .policy.release_verdict == false' \
             "$RUNNER_TEMP/renderer-browser-variance.json" >/dev/null
           {
             echo '### Reusable renderer unchanged-source variance'
