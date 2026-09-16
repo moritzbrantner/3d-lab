@@ -6,12 +6,20 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import {
   childrenOf,
   createEditorScene,
-  updateMeshVertex,
-  updateNodeTransform,
   type EditableTransform,
   type EditorNode,
   type EditorScene,
 } from "@/lib/scene-editor";
+import {
+  canRedoEditorCommand,
+  canUndoEditorCommand,
+  commitMeshVertex,
+  commitNodeTransform,
+  createEditorCommandLog,
+  redoEditorCommand,
+  undoEditorCommand,
+  type EditorCommandLog,
+} from "@/lib/scene-editor-history";
 import { shouldSelectVertexHit } from "@/lib/scene-editor-picking";
 import type { Vec3 } from "@/lib/mesh";
 import styles from "./scene-editor-lab.module.css";
@@ -130,11 +138,12 @@ export function SceneEditorLab() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const runtimeRef = useRef<Runtime | null>(null);
   const initialSceneRef = useRef<EditorScene | null>(null);
-  const [editorScene, setEditorScene] = useState<EditorScene>(() => {
+  const [history, setHistory] = useState<EditorCommandLog>(() => {
     const scene = createEditorScene();
     initialSceneRef.current = scene;
-    return scene;
+    return createEditorCommandLog(scene);
   });
+  const editorScene = history.scene;
   const [selectedNodeId, setSelectedNodeId] = useState("body");
   const [selectedVertexIndex, setSelectedVertexIndex] = useState<number | null>(null);
   const [showVertices, setShowVertices] = useState(true);
@@ -339,15 +348,29 @@ export function SceneEditorLab() {
     if (!selectedNode.mesh && selectedVertexIndex !== null) setSelectedVertexIndex(null);
   }, [selectedNode, selectedVertexIndex]);
 
+  useEffect(() => {
+    const handleHistoryShortcut = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
+      const key = event.key.toLowerCase();
+      const undo = key === "z" && !event.shiftKey;
+      const redo = (key === "z" && event.shiftKey) || key === "y";
+      if (!undo && !redo) return;
+      event.preventDefault();
+      setHistory((log) => (undo ? undoEditorCommand(log) : redoEditorCommand(log)));
+    };
+    window.addEventListener("keydown", handleHistoryShortcut);
+    return () => window.removeEventListener("keydown", handleHistoryShortcut);
+  }, []);
+
   const selectNode = (nodeId: string) => {
     setSelectedNodeId(nodeId);
     setSelectedVertexIndex(null);
   };
 
   const updateTransformVector = (field: keyof EditableTransform, axis: Axis, value: number) => {
-    setEditorScene((scene) => {
-      const node = scene.nodes.find((candidate) => candidate.id === selectedNodeId);
-      if (!node) return scene;
+    setHistory((log) => {
+      const node = log.scene.nodes.find((candidate) => candidate.id === selectedNodeId);
+      if (!node) return log;
       const source = mutableVec3(node.transform[field]);
       source[axis] = field === "rotation" ? toRadians(value) : value;
       const patch: Partial<EditableTransform> =
@@ -356,19 +379,19 @@ export function SceneEditorLab() {
           : field === "rotation"
             ? { rotation: source }
             : { scale: source };
-      return updateNodeTransform(scene, selectedNodeId, patch);
+      return commitNodeTransform(log, selectedNodeId, patch);
     });
   };
 
   const updateVertexAxis = (axis: Axis, value: number) => {
     if (selectedVertexIndex === null) return;
-    setEditorScene((scene) => {
-      const node = scene.nodes.find((candidate) => candidate.id === selectedNodeId);
+    setHistory((log) => {
+      const node = log.scene.nodes.find((candidate) => candidate.id === selectedNodeId);
       const vertex = node?.mesh?.vertices[selectedVertexIndex];
-      if (!vertex) return scene;
+      if (!vertex) return log;
       const next = mutableVec3(vertex);
       next[axis] = value;
-      return updateMeshVertex(scene, selectedNodeId, selectedVertexIndex, next);
+      return commitMeshVertex(log, selectedNodeId, selectedVertexIndex, next);
     });
   };
 
@@ -391,7 +414,8 @@ export function SceneEditorLab() {
   };
 
   const resetScene = () => {
-    setEditorScene(createEditorScene());
+    const scene = createEditorScene();
+    setHistory(createEditorCommandLog(scene));
     setSelectedNodeId("body");
     setSelectedVertexIndex(null);
   };
@@ -419,6 +443,26 @@ export function SceneEditorLab() {
             {selectedVertexIndex !== null && <span> / vertex {selectedVertexIndex}</span>}
           </div>
           <div className={styles.toolbarActions}>
+            <button
+              type="button"
+              className={styles.toolButton}
+              onClick={() => setHistory((log) => undoEditorCommand(log))}
+              disabled={!canUndoEditorCommand(history)}
+              aria-keyshortcuts="Control+Z Meta+Z"
+              title="Undo (Ctrl/Cmd+Z)"
+            >
+              Undo
+            </button>
+            <button
+              type="button"
+              className={styles.toolButton}
+              onClick={() => setHistory((log) => redoEditorCommand(log))}
+              disabled={!canRedoEditorCommand(history)}
+              aria-keyshortcuts="Control+Y Control+Shift+Z Meta+Shift+Z"
+              title="Redo (Ctrl+Y or Ctrl/Cmd+Shift+Z)"
+            >
+              Redo
+            </button>
             <button type="button" className={styles.toolButton} onClick={frameSelected}>
               Frame selected
             </button>
@@ -503,7 +547,7 @@ export function SceneEditorLab() {
         <section className={styles.boundary}>
           <strong>Ownership boundary</strong>
           <p>
-            The editor owns selection and draft edits. Mesh validity stays aligned with <code>three-d-core</code>; hierarchy ordering stays aligned with <code>three-d-animation</code>. Three.js only renders and ray-picks the current model.
+            The editor owns selection, semantic edit commands, and undo/redo. Mesh validity stays aligned with <code>three-d-core</code>; hierarchy ordering stays aligned with <code>three-d-animation</code>. Three.js only renders and ray-picks the current model, and renderer snapshots never enter history.
           </p>
         </section>
 
