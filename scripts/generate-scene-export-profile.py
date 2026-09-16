@@ -22,10 +22,15 @@ def main() -> int:
     if len(sys.argv) != 3:
         raise SystemExit("usage: generate-scene-export-profile.py SCENE REQUEST")
 
-    scene_path = Path(sys.argv[1])
-    request_path = Path(sys.argv[2])
+    root = Path.cwd().resolve()
+    scene_path = Path(sys.argv[1]).resolve()
+    request_path = Path(sys.argv[2]).resolve()
     scene_path.parent.mkdir(parents=True, exist_ok=True)
     request_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        input_path = scene_path.relative_to(root).as_posix()
+    except ValueError as error:
+        raise SystemExit("scene profile path must stay under the repository root") from error
 
     meshes = []
     nodes = []
@@ -74,7 +79,7 @@ def main() -> int:
     request = {
         "schemaVersion": 1,
         "operation": "scene.export.glb",
-        "inputPath": scene_path.as_posix(),
+        "inputPath": input_path,
         "parameters": {},
     }
     request_path.write_text(
