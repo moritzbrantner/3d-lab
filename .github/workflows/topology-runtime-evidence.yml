@@ -6,8 +6,10 @@ on:
     paths:
       - "web/lib/scene-editor-topology.ts"
       - "web/lib/scene-editor-topology-persistent.ts"
+      - "web/lib/scene-editor-topology-adjacency.ts"
       - "web/lib/scene-editor-topology.test.ts"
       - "web/lib/scene-editor-topology-persistent.test.ts"
+      - "web/lib/scene-editor-topology-adjacency.test.ts"
       - "web/lib/scene-editor-topology-history.test.ts"
       - "web/lib/scene-editor-history.ts"
       - "web/lib/scene-editor.ts"
@@ -122,7 +124,7 @@ jobs:
             echo
             echo '> Semantic output and deterministic structural budgets are blocking. Runtime comparison remains advisory until scheduled calibration establishes cross-run variance.'
             echo
-            echo '#### Copy-work evidence'
+            echo '#### Work evidence'
             echo
             echo 'Reference:'
             jq '.work' "$RUNNER_TEMP/reference-topology-result.json"
@@ -183,6 +185,7 @@ jobs:
             {
               git rev-parse HEAD:web/lib/scene-editor-topology.ts
               git rev-parse HEAD:web/lib/scene-editor-topology-persistent.ts
+              git rev-parse HEAD:web/lib/scene-editor-topology-adjacency.ts
               git rev-parse HEAD:web/lib/scene-editor-history.ts
               git rev-parse HEAD:web/lib/scene-editor.ts
               git rev-parse HEAD:web/lib/mesh.ts

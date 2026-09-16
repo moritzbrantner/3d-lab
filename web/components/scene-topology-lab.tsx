@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { createEditorScene } from "@/lib/scene-editor";
@@ -14,7 +14,6 @@ import {
   type EditorCommandLog,
 } from "@/lib/scene-editor-history";
 import {
-  createMeshTopologyIndex,
   nearestTriangleEdge,
   topologyStructuralBudgetViolations,
   type MeshEdge,
@@ -133,10 +132,6 @@ export function SceneTopologyLab() {
   meshRef.current = selectedMesh;
   selectionModeRef.current = selectionMode;
 
-  const topologyIndex = useMemo(
-    () => (selectedMesh ? createMeshTopologyIndex(selectedMesh) : null),
-    [selectedMesh],
-  );
   const latest = latestTopologyObservation(history);
   const budgetViolations = latest
     ? topologyStructuralBudgetViolations(latest.operation, latest.observations)
@@ -268,9 +263,9 @@ export function SceneTopologyLab() {
   };
 
   const applySplit = () => {
-    if (!selectedEdge || !topologyIndex || !selectedNode) return;
+    if (!selectedEdge || !selectedNode) return;
     setHistory((log) =>
-      commitMeshTopology(log, selectedNode.id, { kind: "split-edge", edge: selectedEdge }, topologyIndex),
+      commitMeshTopology(log, selectedNode.id, { kind: "split-edge", edge: selectedEdge }),
     );
     clearSelection();
   };
@@ -444,14 +439,14 @@ export function SceneTopologyLab() {
 
           <p className={styles.observations}>
             {latest
-              ? `${latest.operation.kind}: ${latest.observations.createdVertexCount} vertices created, ${latest.observations.affectedTriangleCount} source triangle(s) affected, ${latest.observations.indexValuesWritten / 3} replacement triangle(s) written, ${latest.observations.indexValuesCopied} unchanged index values copied. Structural budget: ${budgetViolations.length === 0 ? "within bound" : budgetViolations.join(", ")}.`
+              ? `${latest.operation.kind}: ${latest.observations.createdVertexCount} vertices created, ${latest.observations.affectedTriangleCount} source triangle(s) affected, ${latest.observations.indexValuesWritten / 3} replacement triangle(s) written, ${latest.observations.indexValuesCopied} unchanged index values copied, ${latest.observations.topologyIndexTriangleVisits} adjacency triangle visits (${latest.observations.topologyIndexBuildCount} full build). Structural budget: ${budgetViolations.length === 0 ? "within bound" : budgetViolations.join(", ")}.`
               : "No topology operation has been committed yet. Structural work observations will appear here after the first edit."}
           </p>
 
           <p className={styles.boundary}>
-            <strong>Performance boundary.</strong> Operation-local work is bounded and blocking now. The flat indexed-mesh
-            representation still needs one output index-array copy when topology changes; runtime evidence will decide whether
-            that representation needs to become chunked before a wall-clock budget is activated.
+            <strong>Performance boundary.</strong> Topology mutation stays on persistent typed-array chunks. Edge adjacency is
+            derived lazily once and then carried forward by scanning only replaced chunks; contiguous mesh materialization is
+            reserved for renderer/export/validation consumers that actually require it.
           </p>
         </aside>
       </div>
