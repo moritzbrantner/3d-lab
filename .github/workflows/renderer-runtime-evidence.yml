@@ -1,0 +1,165 @@
+name: Renderer runtime evidence
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "package.json"
+      - "packages/renderer/**"
+      - "web/app/renderer-performance/**"
+      - "web/components/renderer-performance-canary.tsx"
+      - "profiles/runtime-profiler/renderer-browser.json"
+      - "profiles/runtime-profiler/renderer-browser.mjs"
+      - ".github/workflows/renderer-runtime-evidence.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  RUNTIME_PROFILER_REV: 9a7a451681c5598ec7aa888daf2a66cbbade3365
+
+jobs:
+  renderer-browser:
+    name: Reusable renderer Chromium evidence
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: candidate
+          fetch-depth: 0
+
+      - name: Check out exact base
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: reference
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Install pinned runtime-profiler
+        run: cargo install --git https://github.com/moritzbrantner/runtime-profiler --rev "$RUNTIME_PROFILER_REV" --locked
+
+      - name: Give the base the identical renderer workload
+        run: |
+          mkdir -p \
+            reference/profiles/runtime-profiler \
+            reference/web/app/renderer-performance \
+            reference/web/components
+          cp candidate/package.json reference/package.json
+          cp candidate/profiles/runtime-profiler/renderer-browser.json reference/profiles/runtime-profiler/renderer-browser.json
+          cp candidate/profiles/runtime-profiler/renderer-browser.mjs reference/profiles/runtime-profiler/renderer-browser.mjs
+          cp candidate/web/app/renderer-performance/page.tsx reference/web/app/renderer-performance/page.tsx
+          cp candidate/web/components/renderer-performance-canary.tsx reference/web/components/renderer-performance-canary.tsx
+          git -C reference add \
+            package.json \
+            profiles/runtime-profiler/renderer-browser.json \
+            profiles/runtime-profiler/renderer-browser.mjs \
+            web/app/renderer-performance/page.tsx \
+            web/components/renderer-performance-canary.tsx
+          if ! git -C reference diff --cached --quiet; then
+            git -C reference \
+              -c user.name='runtime-profiler' \
+              -c user.email='runtime-profiler@invalid' \
+              commit -m 'chore: attach comparable renderer browser workload'
+          fi
+
+      - name: Install browser workload dependencies
+        run: |
+          (cd reference && bun install)
+          (cd candidate && bun install)
+          (cd reference/web && bun install)
+          (cd candidate/web && bun install)
+          (cd candidate && bunx playwright install --with-deps chromium)
+
+      - name: Build static benchmark sites
+        run: |
+          (cd reference/web && GITHUB_ACTIONS=false bun run build)
+          (cd candidate/web && GITHUB_ACTIONS=false bun run build)
+
+      - name: Capture reference Chromium evidence
+        run: |
+          set -euo pipefail
+          python3 -m http.server 4173 \
+            --bind 127.0.0.1 \
+            --directory reference/web/out \
+            >"$RUNNER_TEMP/reference-renderer-server.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          curl --fail --retry 20 --retry-delay 1 --retry-all-errors \
+            http://127.0.0.1:4173/renderer-performance/ >/dev/null
+          (
+            cd reference
+            runtime-profiler capture \
+              --scenario profiles/runtime-profiler/renderer-browser.json \
+              --output "$RUNNER_TEMP/reference-renderer-browser"
+            runtime-profiler validate --bundle "$RUNNER_TEMP/reference-renderer-browser"
+          )
+          kill "$server_pid"
+          wait "$server_pid" 2>/dev/null || true
+          trap - EXIT
+
+      - name: Capture candidate Chromium evidence
+        run: |
+          set -euo pipefail
+          python3 -m http.server 4173 \
+            --bind 127.0.0.1 \
+            --directory candidate/web/out \
+            >"$RUNNER_TEMP/candidate-renderer-server.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          curl --fail --retry 20 --retry-delay 1 --retry-all-errors \
+            http://127.0.0.1:4173/renderer-performance/ >/dev/null
+          (
+            cd candidate
+            runtime-profiler capture \
+              --scenario profiles/runtime-profiler/renderer-browser.json \
+              --output "$RUNNER_TEMP/candidate-renderer-browser"
+            runtime-profiler validate --bundle "$RUNNER_TEMP/candidate-renderer-browser"
+          )
+          kill "$server_pid"
+          wait "$server_pid" 2>/dev/null || true
+          trap - EXIT
+
+      - name: Verify strict browser comparability
+        run: |
+          set -euo pipefail
+          runtime-profiler compare-browser \
+            --reference "$RUNNER_TEMP/reference-renderer-browser" \
+            --candidate "$RUNNER_TEMP/candidate-renderer-browser" \
+            --json | tee "$RUNNER_TEMP/renderer-browser-comparison.json"
+          {
+            echo '### Reusable renderer Chromium evidence'
+            echo
+            echo '> Strict workload/runtime comparability is required. Performance interpretation remains advisory until unchanged-source variance is established.'
+            echo
+            echo '```json'
+            cat "$RUNNER_TEMP/renderer-browser-comparison.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: renderer-browser-runtime-${{ github.event.pull_request.head.sha }}
+          path: |
+            ${{ runner.temp }}/reference-renderer-browser
+            ${{ runner.temp }}/candidate-renderer-browser
+            ${{ runner.temp }}/renderer-browser-comparison.json
+            ${{ runner.temp }}/reference-renderer-server.log
+            ${{ runner.temp }}/candidate-renderer-server.log
+          if-no-files-found: warn
