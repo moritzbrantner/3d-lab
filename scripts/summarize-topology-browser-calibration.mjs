@@ -12,7 +12,7 @@ const metricDefinitions = [
   ["topLevelDurationUs", "us", (summary) => summary.top_level_duration_us],
   ["longTaskCount", "count", (summary) => summary.long_task_count],
   ["longTaskTotalDurationUs", "us", (summary) => summary.long_task_total_duration_us],
-  ["longestTaskUs", "us", (summary) => summary.longest_task_us],
+  ["longestTaskUs", "us", (summary) => summary.longest_task_us ?? 0],
   [
     "javascriptInclusiveDurationUs",
     "us",
@@ -43,6 +43,9 @@ function round(value, digits = 3) {
 }
 
 function stats(values) {
+  if (!values.every((value) => typeof value === "number" && Number.isFinite(value))) {
+    throw new Error(`calibration metric contains a non-finite value: ${JSON.stringify(values)}`);
+  }
   const sorted = [...values].sort((left, right) => left - right);
   const mean = sorted.reduce((sum, value) => sum + value, 0) / sorted.length;
   const variance = sorted.reduce((sum, value) => sum + (value - mean) ** 2, 0) / sorted.length;
