@@ -1,0 +1,16 @@
+{
+  "schema_version": "runtime-profiler/scenario/v1",
+  "id": "3d-lab-editor-topology",
+  "target": {
+    "type": "command",
+    "program": "bun",
+    "args": ["scripts/profile-editor-topology.ts"],
+    "working_directory": "../.."
+  },
+  "run": {
+    "warmup_iterations": 1,
+    "measurement_iterations": 7,
+    "timeout_seconds": 60
+  },
+  "collectors": ["process"]
+}
