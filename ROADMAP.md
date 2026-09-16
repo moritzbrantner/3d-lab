@@ -69,4 +69,6 @@
 - [x] Add a representative editor transform/vertex-mutation workload and structural-sharing hot path so local edits do not rematerialize or revalidate unrelated scene and mesh data.
 - [x] Extend the editor mutation workload through deterministic command-log execution plus full vertex-edit undo/redo round-trips.
 - [x] Add topology structural work budgets, deterministic topology runtime evidence, and weekly same-surface runtime calibration.
+- [x] Replace per-operation flat topology rematerialization with persistent vertex/attribute chunks and localized triangle chunks; materialize contiguous `IndexedMesh` data only at explicit compatibility/render/export boundaries.
+- [ ] Reduce remaining whole-mesh topology work such as repeated adjacency-index rebuilds and renderer-side full buffer replacement where measurements show it matters.
 - [ ] After at least four independent same-surface calibration runs, review robust MAD-derived wall-time/RSS margins and move the accepted policy into an evaluator-owned confirmation gate.
