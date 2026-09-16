@@ -1,0 +1,160 @@
+name: Renderer variance calibration
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "package.json"
+      - "bun.lock"
+      - "packages/renderer/**"
+      - "web/package.json"
+      - "web/bun.lock"
+      - "web/next.config.ts"
+      - "web/app/layout.tsx"
+      - "web/app/globals.css"
+      - "web/app/renderer-performance/**"
+      - "web/components/renderer-performance-canary.tsx"
+      - "profiles/runtime-profiler/renderer-browser.json"
+      - "profiles/runtime-profiler/renderer-browser.mjs"
+      - "scripts/summarize_renderer_browser_variance.py"
+      - "scripts/test_renderer_browser_variance.py"
+      - ".github/workflows/renderer-variance-calibration.yml"
+  workflow_dispatch:
+  schedule:
+    - cron: "17 4 * * 1"
+
+concurrency:
+  group: renderer-variance-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  RUNTIME_PROFILER_REV: 9a7a451681c5598ec7aa888daf2a66cbbade3365
+  VARIANCE_SAMPLE_COUNT: 7
+
+jobs:
+  renderer-browser-variance:
+    name: Reusable renderer unchanged-source variance
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact calibration source
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: candidate
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - name: Test variance summarizer
+        working-directory: candidate
+        run: python3 scripts/test_renderer_browser_variance.py
+
+      - name: Fingerprint calibration surface
+        run: |
+          set -euo pipefail
+          surface_digest="$(
+            {
+              git -C candidate rev-parse HEAD:package.json
+              git -C candidate rev-parse HEAD:bun.lock
+              git -C candidate rev-parse HEAD:packages/renderer
+              git -C candidate rev-parse HEAD:web/package.json
+              git -C candidate rev-parse HEAD:web/bun.lock
+              git -C candidate rev-parse HEAD:web/next.config.ts
+              git -C candidate rev-parse HEAD:web/app/layout.tsx
+              git -C candidate rev-parse HEAD:web/app/globals.css
+              git -C candidate rev-parse HEAD:web/app/renderer-performance
+              git -C candidate rev-parse HEAD:web/components/renderer-performance-canary.tsx
+              git -C candidate rev-parse HEAD:profiles/runtime-profiler/renderer-browser.json
+              git -C candidate rev-parse HEAD:profiles/runtime-profiler/renderer-browser.mjs
+            } | sha256sum | awk '{print "sha256:" $1}'
+          )"
+          echo "CALIBRATION_SURFACE_DIGEST=$surface_digest" >> "$GITHUB_ENV"
+          echo "Calibration surface: $surface_digest" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Install pinned runtime-profiler
+        run: cargo install --git https://github.com/moritzbrantner/runtime-profiler --rev "$RUNTIME_PROFILER_REV" --locked
+
+      - name: Install browser workload dependencies
+        run: |
+          (cd candidate && bun install)
+          (cd candidate/web && bun install)
+          (cd candidate && bunx playwright install --with-deps chromium)
+
+      - name: Build static benchmark site once
+        run: (cd candidate/web && GITHUB_ACTIONS=false bun run build)
+
+      - name: Capture unchanged-source samples
+        run: |
+          set -euo pipefail
+          variance_root="$RUNNER_TEMP/renderer-browser-variance"
+          mkdir -p "$variance_root"
+          python3 -m http.server 4173 \
+            --bind 127.0.0.1 \
+            --directory candidate/web/out \
+            >"$RUNNER_TEMP/renderer-variance-server.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          curl --fail --retry 20 --retry-delay 1 --retry-all-errors \
+            http://127.0.0.1:4173/renderer-performance/ >/dev/null
+
+          for sample in $(seq 1 "$VARIANCE_SAMPLE_COUNT"); do
+            sample_name="sample-$(printf '%02d' "$sample")"
+            output="$variance_root/$sample_name"
+            (
+              cd candidate
+              runtime-profiler capture \
+                --scenario profiles/runtime-profiler/renderer-browser.json \
+                --output "$output"
+              runtime-profiler validate --bundle "$output"
+            )
+          done
+
+          kill "$server_pid"
+          wait "$server_pid" 2>/dev/null || true
+          trap - EXIT
+
+      - name: Summarize unchanged-source variance
+        run: |
+          set -euo pipefail
+          variance_root="$RUNNER_TEMP/renderer-browser-variance"
+          mapfile -t bundles < <(find "$variance_root" -mindepth 1 -maxdepth 1 -type d -name 'sample-*' | sort)
+          python3 candidate/scripts/summarize_renderer_browser_variance.py \
+            --expected-samples "$VARIANCE_SAMPLE_COUNT" \
+            --surface-digest "$CALIBRATION_SURFACE_DIGEST" \
+            --output "$RUNNER_TEMP/renderer-browser-variance.json" \
+            "${bundles[@]}"
+          jq -e \
+            --arg surface "$CALIBRATION_SURFACE_DIGEST" \
+            '.sample_count == 7 and .identity.calibration_surface_digest == $surface and .policy.kind == "calibration-only" and .policy.release_verdict == false' \
+            "$RUNNER_TEMP/renderer-browser-variance.json" >/dev/null
+          {
+            echo '### Reusable renderer unchanged-source variance'
+            echo
+            echo '> Calibration evidence only. No performance budget or release verdict is derived from these samples.'
+            echo
+            echo '```json'
+            cat "$RUNNER_TEMP/renderer-browser-variance.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload variance evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: renderer-browser-variance-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            ${{ runner.temp }}/renderer-browser-variance
+            ${{ runner.temp }}/renderer-browser-variance.json
+            ${{ runner.temp }}/renderer-variance-server.log
+          if-no-files-found: warn
+          retention-days: 90
