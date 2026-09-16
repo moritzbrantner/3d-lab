@@ -12,6 +12,7 @@ on:
       - "web/app/topology-performance/**"
       - "web/components/topology-renderer-performance-canary.tsx"
       - "scripts/run-topology-renderer-canary.mjs"
+      - "scripts/summarize-topology-browser-calibration.mjs"
       - "profiles/runtime-profiler/topology-renderer-browser.json"
       - "profiles/runtime-profiler/topology-renderer-browser.mjs"
       - ".github/workflows/topology-renderer-runtime-evidence.yml"
@@ -25,6 +26,7 @@ permissions:
 
 env:
   RUNTIME_PROFILER_REV: 9a7a451681c5598ec7aa888daf2a66cbbade3365
+  TOPOLOGY_BROWSER_CALIBRATION_RUNS: "6"
 
 jobs:
   topology-renderer-browser:
@@ -103,57 +105,43 @@ jobs:
           (cd reference/web && GITHUB_ACTIONS=false bun run build)
           (cd candidate/web && GITHUB_ACTIONS=false bun run build)
 
-      - name: Capture reference topology renderer evidence
+      - name: Capture deterministic semantic evidence
         run: |
           set -euo pipefail
-          python3 -m http.server 4173 \
-            --bind 127.0.0.1 \
-            --directory reference/web/out \
-            >"$RUNNER_TEMP/reference-topology-renderer-server.log" 2>&1 &
-          server_pid=$!
-          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
-          curl --fail --retry 20 --retry-delay 1 --retry-all-errors \
-            http://127.0.0.1:4173/topology-performance/ >/dev/null
-          (cd reference && bun scripts/run-topology-renderer-canary.mjs) \
-            | tee "$RUNNER_TEMP/reference-topology-renderer-result.json"
-          (
-            cd reference
-            runtime-profiler capture \
-              --scenario profiles/runtime-profiler/topology-renderer-browser.json \
-              --output "$RUNNER_TEMP/reference-topology-renderer-browser"
-            runtime-profiler validate --bundle "$RUNNER_TEMP/reference-topology-renderer-browser"
-          )
-          kill "$server_pid"
-          wait "$server_pid" 2>/dev/null || true
-          trap - EXIT
 
-      - name: Capture candidate topology renderer evidence
-        run: |
-          set -euo pipefail
-          python3 -m http.server 4173 \
-            --bind 127.0.0.1 \
-            --directory candidate/web/out \
-            >"$RUNNER_TEMP/candidate-topology-renderer-server.log" 2>&1 &
-          server_pid=$!
-          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
-          curl --fail --retry 20 --retry-delay 1 --retry-all-errors \
-            http://127.0.0.1:4173/topology-performance/ >/dev/null
-          (cd candidate && bun scripts/run-topology-renderer-canary.mjs) \
-            | tee "$RUNNER_TEMP/candidate-topology-renderer-result.json"
-          (
-            cd candidate
-            runtime-profiler capture \
-              --scenario profiles/runtime-profiler/topology-renderer-browser.json \
-              --output "$RUNNER_TEMP/candidate-topology-renderer-browser"
-            runtime-profiler validate --bundle "$RUNNER_TEMP/candidate-topology-renderer-browser"
-          )
-          kill "$server_pid"
-          wait "$server_pid" 2>/dev/null || true
-          trap - EXIT
+          capture_semantics() {
+            local side="$1"
+            local output="$2"
+            local server_log="$3"
+            python3 -m http.server 4173 \
+              --bind 127.0.0.1 \
+              --directory "$side/web/out" \
+              >"$server_log" 2>&1 &
+            local server_pid=$!
+            if ! curl --fail --retry 20 --retry-delay 1 --retry-all-errors \
+              http://127.0.0.1:4173/topology-performance/ >/dev/null; then
+              kill "$server_pid" 2>/dev/null || true
+              wait "$server_pid" 2>/dev/null || true
+              return 1
+            fi
+            if ! (cd "$side" && bun scripts/run-topology-renderer-canary.mjs) | tee "$output"; then
+              kill "$server_pid" 2>/dev/null || true
+              wait "$server_pid" 2>/dev/null || true
+              return 1
+            fi
+            kill "$server_pid" 2>/dev/null || true
+            wait "$server_pid" 2>/dev/null || true
+          }
 
-      - name: Verify semantic and browser comparability
-        run: |
-          set -euo pipefail
+          capture_semantics \
+            reference \
+            "$RUNNER_TEMP/reference-topology-renderer-result.json" \
+            "$RUNNER_TEMP/reference-topology-renderer-server.log"
+          capture_semantics \
+            candidate \
+            "$RUNNER_TEMP/candidate-topology-renderer-result.json" \
+            "$RUNNER_TEMP/candidate-topology-renderer-server.log"
+
           jq -S '{operationCount, finalVertexCount, finalTriangleCount}' \
             "$RUNNER_TEMP/reference-topology-renderer-result.json" \
             > "$RUNNER_TEMP/reference-topology-renderer-semantic.json"
@@ -163,41 +151,131 @@ jobs:
           diff -u \
             "$RUNNER_TEMP/reference-topology-renderer-semantic.json" \
             "$RUNNER_TEMP/candidate-topology-renderer-semantic.json"
-          runtime-profiler compare-browser \
-            --reference "$RUNNER_TEMP/reference-topology-renderer-browser" \
-            --candidate "$RUNNER_TEMP/candidate-topology-renderer-browser" \
-            --json | tee "$RUNNER_TEMP/topology-renderer-browser-comparison.json"
-          jq -e '.status == "comparable"' "$RUNNER_TEMP/topology-renderer-browser-comparison.json" >/dev/null
+
+      - name: Capture repeated Chromium calibration evidence
+        run: |
+          set -euo pipefail
+          calibration_root="$RUNNER_TEMP/topology-renderer-browser-calibration"
+          mkdir -p \
+            "$calibration_root/reference" \
+            "$calibration_root/candidate" \
+            "$calibration_root/comparisons" \
+            "$calibration_root/server-logs"
+          printf 'run_id\tfirst\tsecond\n' > "$calibration_root/capture-order.tsv"
+
+          capture_browser() {
+            local side="$1"
+            local run_id="$2"
+            local output="$calibration_root/$side/$run_id"
+            local server_log="$calibration_root/server-logs/$side-$run_id.log"
+            python3 -m http.server 4173 \
+              --bind 127.0.0.1 \
+              --directory "$side/web/out" \
+              >"$server_log" 2>&1 &
+            local server_pid=$!
+            if ! curl --fail --retry 20 --retry-delay 1 --retry-all-errors \
+              http://127.0.0.1:4173/topology-performance/ >/dev/null; then
+              kill "$server_pid" 2>/dev/null || true
+              wait "$server_pid" 2>/dev/null || true
+              return 1
+            fi
+            if ! (
+              cd "$side"
+              runtime-profiler capture \
+                --scenario profiles/runtime-profiler/topology-renderer-browser.json \
+                --output "$output"
+              runtime-profiler validate --bundle "$output"
+            ); then
+              kill "$server_pid" 2>/dev/null || true
+              wait "$server_pid" 2>/dev/null || true
+              return 1
+            fi
+            kill "$server_pid" 2>/dev/null || true
+            wait "$server_pid" 2>/dev/null || true
+          }
+
+          for run_number in $(seq 1 "$TOPOLOGY_BROWSER_CALIBRATION_RUNS"); do
+            run_id=$(printf 'run-%02d' "$run_number")
+            if (( run_number % 2 == 1 )); then
+              first=reference
+              second=candidate
+            else
+              first=candidate
+              second=reference
+            fi
+            printf '%s\t%s\t%s\n' "$run_id" "$first" "$second" >> "$calibration_root/capture-order.tsv"
+            capture_browser "$first" "$run_id"
+            capture_browser "$second" "$run_id"
+            runtime-profiler compare-browser \
+              --reference "$calibration_root/reference/$run_id" \
+              --candidate "$calibration_root/candidate/$run_id" \
+              --json | tee "$calibration_root/comparisons/$run_id.json"
+            jq -e '.status == "comparable"' "$calibration_root/comparisons/$run_id.json" >/dev/null
+          done
+
+          (cd candidate && bun scripts/summarize-topology-browser-calibration.mjs \
+            "$calibration_root/reference" \
+            "$calibration_root/candidate" \
+            "$calibration_root/summary.json")
+
+      - name: Summarize calibration evidence
+        run: |
+          set -euo pipefail
+          calibration_root="$RUNNER_TEMP/topology-renderer-browser-calibration"
           {
-            echo '### Topology renderer Chromium evidence'
+            echo '### Topology renderer Chromium calibration'
             echo
-            echo '> Strict semantic/runtime comparability is required. Runtime remains advisory until repeated browser variance is characterized.'
+            echo '> Semantic/runtime comparability is required. Runtime is calibration-only: no runtime budget or performance gate is enabled.'
+            echo '> Capture order is counterbalanced so reference-first and candidate-first pairs are equally represented.'
+            echo '> Relative deltas are reported only for timings with a strictly positive reference; long-task evidence remains absolute.'
             echo
-            echo '#### Reference work'
+            echo '#### Capture order'
+            echo '```text'
+            cat "$calibration_root/capture-order.tsv"
+            echo '```'
+            echo
+            echo '#### Reference work counters'
             jq '.work' "$RUNNER_TEMP/reference-topology-renderer-result.json"
             echo
-            echo '#### Candidate work'
+            echo '#### Candidate work counters'
             jq '.work' "$RUNNER_TEMP/candidate-topology-renderer-result.json"
             echo
-            echo '#### Browser comparison'
+            echo '#### Repeated browser calibration'
             echo '```json'
-            cat "$RUNNER_TEMP/topology-renderer-browser-comparison.json"
+            jq '{
+              runCountPerSide,
+              runtimeBudget,
+              identity,
+              reference: {
+                topLevelDurationUs: .reference.topLevelDurationUs,
+                longTaskCount: .reference.longTaskCount,
+                longTaskTotalDurationUs: .reference.longTaskTotalDurationUs,
+                longestTaskUs: .reference.longestTaskUs,
+                javascriptInclusiveDurationUs: .reference.javascriptInclusiveDurationUs
+              },
+              candidate: {
+                topLevelDurationUs: .candidate.topLevelDurationUs,
+                longTaskCount: .candidate.longTaskCount,
+                longTaskTotalDurationUs: .candidate.longTaskTotalDurationUs,
+                longestTaskUs: .candidate.longestTaskUs,
+                javascriptInclusiveDurationUs: .candidate.javascriptInclusiveDurationUs
+              },
+              pairedCandidateVsReference
+            }' "$calibration_root/summary.json"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload topology renderer evidence
+      - name: Upload topology renderer calibration evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: topology-renderer-browser-runtime-${{ github.event.pull_request.head.sha }}
           path: |
-            ${{ runner.temp }}/reference-topology-renderer-browser
-            ${{ runner.temp }}/candidate-topology-renderer-browser
+            ${{ runner.temp }}/topology-renderer-browser-calibration
             ${{ runner.temp }}/reference-topology-renderer-result.json
             ${{ runner.temp }}/candidate-topology-renderer-result.json
             ${{ runner.temp }}/reference-topology-renderer-semantic.json
             ${{ runner.temp }}/candidate-topology-renderer-semantic.json
-            ${{ runner.temp }}/topology-renderer-browser-comparison.json
             ${{ runner.temp }}/reference-topology-renderer-server.log
             ${{ runner.temp }}/candidate-topology-renderer-server.log
           if-no-files-found: warn
