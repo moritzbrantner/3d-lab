@@ -7,7 +7,7 @@ import {
   type RendererFrame,
   type RendererSceneNode,
   type ThreeSceneRenderer,
-} from "@moritzbrantner/three-d-renderer";
+} from "../../packages/renderer/index.js";
 
 type RendererWorkObservations = {
   nodeVisitCount: number;
