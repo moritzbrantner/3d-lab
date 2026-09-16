@@ -5,8 +5,15 @@ on:
     branches: [main]
     paths:
       - "package.json"
+      - "bun.lock"
       - "packages/renderer/**"
-      - "web/**"
+      - "web/package.json"
+      - "web/bun.lock"
+      - "web/next.config.ts"
+      - "web/app/layout.tsx"
+      - "web/app/globals.css"
+      - "web/app/renderer-performance/**"
+      - "web/components/renderer-performance-canary.tsx"
       - "profiles/runtime-profiler/renderer-browser.json"
       - "profiles/runtime-profiler/renderer-browser.mjs"
       - "scripts/summarize_renderer_browser_variance.py"
@@ -55,7 +62,13 @@ jobs:
               git -C candidate rev-parse HEAD:package.json
               git -C candidate rev-parse HEAD:bun.lock
               git -C candidate rev-parse HEAD:packages/renderer
-              git -C candidate rev-parse HEAD:web
+              git -C candidate rev-parse HEAD:web/package.json
+              git -C candidate rev-parse HEAD:web/bun.lock
+              git -C candidate rev-parse HEAD:web/next.config.ts
+              git -C candidate rev-parse HEAD:web/app/layout.tsx
+              git -C candidate rev-parse HEAD:web/app/globals.css
+              git -C candidate rev-parse HEAD:web/app/renderer-performance
+              git -C candidate rev-parse HEAD:web/components/renderer-performance-canary.tsx
               git -C candidate rev-parse HEAD:profiles/runtime-profiler/renderer-browser.json
               git -C candidate rev-parse HEAD:profiles/runtime-profiler/renderer-browser.mjs
             } | sha256sum | awk '{print "sha256:" $1}'
