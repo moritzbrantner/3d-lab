@@ -7,7 +7,7 @@
 - [x] Establish renderer-independent Rust mesh primitives.
 - [x] Establish the parallel TypeScript mesh representation used by lessons.
 - [x] Publish a Three.js teaching surface with topic-based interactive examples.
-- [x] Cover coordinates, vertices, triangles, indexed meshes, attributes, normals, tangents, transforms, cameras, lighting, procedural geometry, animation, skinning, asset pipelines, and scene authoring.
+- [x] Cover coordinates, vertices, triangles, indexed meshes, normals, transforms, projection, lighting, and animation.
 - [x] Add CI and GitHub Pages deployment.
 
 ### Slice 2 — topology and attributes
