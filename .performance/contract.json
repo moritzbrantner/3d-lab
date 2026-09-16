@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "suite": "3d-lab/renderer-contract-v1",
+  "description": "Generic renderer-foundation work contract. Product repositories own scene meaning; 3d-lab owns generic frame validation, projection and renderer resource lifecycle.",
+  "scenarios": [
+    {
+      "id": "validate-and-project-10k",
+      "kind": "scaling",
+      "description": "Validate a deterministic 10,000-node render frame and project 10,000 world points through the shared camera contract.",
+      "dimensions": {
+        "nodes": 10000,
+        "projections": 10000,
+        "runs": 3,
+        "viewport": "1920x1080"
+      },
+      "correctnessEvidence": [
+        "render frame validation succeeds",
+        "projection checksum is identical across repeated runs",
+        "box/sphere/cylinder geometry variants are represented"
+      ],
+      "metrics": [
+        {
+          "name": "node_validations",
+          "unit": "nodes",
+          "direction": "lower",
+          "signal": "operation-count",
+          "blocking": true,
+          "budget": { "max": 10000 }
+        },
+        {
+          "name": "projections",
+          "unit": "points",
+          "direction": "lower",
+          "signal": "operation-count",
+          "blocking": true,
+          "budget": { "max": 10000 }
+        },
+        {
+          "name": "median_elapsed_ms",
+          "unit": "ms",
+          "direction": "lower",
+          "signal": "wall-clock",
+          "blocking": false
+        }
+      ]
+    },
+    {
+      "id": "retained-render-resources",
+      "kind": "journey",
+      "description": "Future browser/WebGL evidence should prove unchanged geometry/materials retain shared resources instead of rebuilding every frame.",
+      "dimensions": {
+        "authority": "ThreeSceneRenderer"
+      },
+      "correctnessEvidence": [
+        "rendered scene semantics stay unchanged across repeated equivalent frames"
+      ],
+      "metrics": [
+        {
+          "name": "geometry_builds",
+          "unit": "builds",
+          "direction": "lower",
+          "signal": "operation-count",
+          "blocking": false,
+          "notes": "Expose deterministic renderer resource build/reuse counters before enabling this blocking budget."
+        },
+        {
+          "name": "material_builds",
+          "unit": "builds",
+          "direction": "lower",
+          "signal": "operation-count",
+          "blocking": false,
+          "notes": "Retained material reuse should become an explicit resource-lifecycle contract."
+        },
+        {
+          "name": "buffer_uploads",
+          "unit": "uploads",
+          "direction": "lower",
+          "signal": "operation-count",
+          "blocking": false,
+          "notes": "Browser/runtime evidence should distinguish upload work from draw work."
+        }
+      ]
+    }
+  ]
+}
