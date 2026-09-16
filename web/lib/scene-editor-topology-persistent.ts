@@ -17,12 +17,13 @@ import {
 } from "./scene-editor-topology";
 
 export const TOPOLOGY_TRIANGLE_CHUNK_SIZE = 128;
+const INDEX_VALUES_PER_CHUNK = TOPOLOGY_TRIANGLE_CHUNK_SIZE * 3;
 
 export type PersistentMeshTopology = Readonly<{
   vertexChunks: readonly (readonly Vec3[])[];
   uvChunks?: readonly (readonly Vec2[])[];
   colorChunks?: readonly (readonly Color3[])[];
-  triangleChunks: readonly (readonly MeshTriangle[])[];
+  triangleChunks: readonly Uint32Array[];
   vertexCount: number;
   triangleCount: number;
   derived: MeshTopologyDerivedAttributes;
@@ -136,17 +137,14 @@ function towardColor(value: Color3, center: Color3, ratio: number): Color3 {
   ];
 }
 
-function chunksFromIndices(indices: readonly number[]): readonly (readonly MeshTriangle[])[] {
-  const chunks: MeshTriangle[][] = [];
-  let current: MeshTriangle[] = [];
-  for (let index = 0; index < indices.length; index += 3) {
-    if (current.length === TOPOLOGY_TRIANGLE_CHUNK_SIZE) {
-      chunks.push(current);
-      current = [];
-    }
-    current.push([indices[index], indices[index + 1], indices[index + 2]]);
+function chunksFromIndices(indices: readonly number[]): readonly Uint32Array[] {
+  const chunks: Uint32Array[] = [];
+  for (let start = 0; start < indices.length; start += INDEX_VALUES_PER_CHUNK) {
+    const length = Math.min(INDEX_VALUES_PER_CHUNK, indices.length - start);
+    const chunk = new Uint32Array(length);
+    for (let offset = 0; offset < length; offset += 1) chunk[offset] = indices[start + offset];
+    chunks.push(chunk);
   }
-  if (current.length > 0) chunks.push(current);
   return chunks;
 }
 
@@ -176,8 +174,25 @@ export function persistentVertexAt(topology: PersistentMeshTopology, vertexIndex
   return valueFromChunks(topology.vertexChunks, vertexIndex, "vertex");
 }
 
+function locateTriangle(chunks: readonly Uint32Array[], triangleIndex: number): { chunkIndex: number; valueOffset: number } {
+  if (!Number.isInteger(triangleIndex) || triangleIndex < 0) throw new Error(`triangle ${triangleIndex} is outside the mesh`);
+  let remaining = triangleIndex;
+  for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex += 1) {
+    const triangleCount = chunks[chunkIndex].length / 3;
+    if (remaining < triangleCount) return { chunkIndex, valueOffset: remaining * 3 };
+    remaining -= triangleCount;
+  }
+  throw new Error(`triangle ${triangleIndex} is outside the mesh`);
+}
+
+function triangleAtChunks(chunks: readonly Uint32Array[], triangleIndex: number): MeshTriangle {
+  const { chunkIndex, valueOffset } = locateTriangle(chunks, triangleIndex);
+  const chunk = chunks[chunkIndex];
+  return [chunk[valueOffset], chunk[valueOffset + 1], chunk[valueOffset + 2]];
+}
+
 export function persistentTriangleAt(topology: PersistentMeshTopology, triangleIndex: number): MeshTriangle {
-  return valueFromChunks(topology.triangleChunks, triangleIndex, "triangle");
+  return triangleAtChunks(topology.triangleChunks, triangleIndex);
 }
 
 function uvAt(topology: PersistentMeshTopology, vertexIndex: number): Vec2 | undefined {
@@ -192,7 +207,10 @@ export function createPersistentMeshTopologyIndex(topology: PersistentMeshTopolo
   const edgeTriangles = new Map<string, number[]>();
   let triangleIndex = 0;
   for (const chunk of topology.triangleChunks) {
-    for (const [a, b, c] of chunk) {
+    for (let offset = 0; offset < chunk.length; offset += 3) {
+      const a = chunk[offset];
+      const b = chunk[offset + 1];
+      const c = chunk[offset + 2];
       const edges: readonly MeshEdge[] = [[a, b], [b, c], [c, a]];
       for (const edge of edges) {
         const key = edgeKey(edge);
@@ -236,68 +254,60 @@ function withAfterStarts(
     });
 }
 
-function splitTriangleChunk(chunk: readonly MeshTriangle[]): readonly (readonly MeshTriangle[])[] {
-  if (chunk.length <= TOPOLOGY_TRIANGLE_CHUNK_SIZE) return chunk.length === 0 ? [] : [chunk];
-  const chunks: MeshTriangle[][] = [];
-  for (let start = 0; start < chunk.length; start += TOPOLOGY_TRIANGLE_CHUNK_SIZE) {
-    chunks.push(chunk.slice(start, start + TOPOLOGY_TRIANGLE_CHUNK_SIZE));
+function writeLocalizedChunks(
+  prefix: Uint32Array,
+  replacement: readonly MeshTriangle[],
+  suffix: Uint32Array,
+): readonly Uint32Array[] {
+  const totalLength = prefix.length + replacement.length * 3 + suffix.length;
+  if (totalLength === 0) return [];
+  const chunks: Uint32Array[] = [];
+  for (let start = 0; start < totalLength; start += INDEX_VALUES_PER_CHUNK) {
+    chunks.push(new Uint32Array(Math.min(INDEX_VALUES_PER_CHUNK, totalLength - start)));
   }
+  let cursor = 0;
+  const write = (value: number) => {
+    const chunkIndex = Math.floor(cursor / INDEX_VALUES_PER_CHUNK);
+    const valueOffset = cursor % INDEX_VALUES_PER_CHUNK;
+    chunks[chunkIndex][valueOffset] = value;
+    cursor += 1;
+  };
+  for (const value of prefix) write(value);
+  for (const triangle of replacement) {
+    write(triangle[0]);
+    write(triangle[1]);
+    write(triangle[2]);
+  }
+  for (const value of suffix) write(value);
   return chunks;
 }
 
 type SpanReplacementResult = Readonly<{
-  chunks: readonly (readonly MeshTriangle[])[];
+  chunks: readonly Uint32Array[];
   copiedIndexValueCount: number;
 }>;
 
 function replaceTriangleSpan(
-  chunks: readonly (readonly MeshTriangle[])[],
+  chunks: readonly Uint32Array[],
   startTriangle: number,
   expected: readonly MeshTriangle[],
   replacement: readonly MeshTriangle[],
 ): SpanReplacementResult {
-  let remainingStart = startTriangle;
-  let firstChunkIndex = -1;
-  let firstOffset = -1;
-  for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex += 1) {
-    const chunk = chunks[chunkIndex];
-    if (remainingStart < chunk.length) {
-      firstChunkIndex = chunkIndex;
-      firstOffset = remainingStart;
-      break;
+  if (expected.length === 0) throw new Error("topology replacement must contain expected triangles");
+  for (let index = 0; index < expected.length; index += 1) {
+    if (!sameTuple(triangleAtChunks(chunks, startTriangle + index), expected[index])) {
+      throw new Error(`topology command triangle precondition failed at triangle ${startTriangle}`);
     }
-    remainingStart -= chunk.length;
   }
-  if (firstChunkIndex < 0) throw new Error(`topology command triangle precondition failed at triangle ${startTriangle}`);
 
-  const prefix = chunks[firstChunkIndex].slice(0, firstOffset);
-  const encountered: MeshTriangle[] = [];
-  let chunkIndex = firstChunkIndex;
-  let offset = firstOffset;
-  while (encountered.length < expected.length) {
-    const chunk = chunks[chunkIndex];
-    if (!chunk) throw new Error(`topology command triangle precondition failed at triangle ${startTriangle}`);
-    while (offset < chunk.length && encountered.length < expected.length) {
-      encountered.push(chunk[offset]);
-      offset += 1;
-    }
-    if (encountered.length < expected.length) {
-      chunkIndex += 1;
-      offset = 0;
-    }
-  }
-  if (encountered.length !== expected.length || encountered.some((triangle, index) => !sameTuple(triangle, expected[index]))) {
-    throw new Error(`topology command triangle precondition failed at triangle ${startTriangle}`);
-  }
-  const suffix = chunks[chunkIndex].slice(offset);
-  const combined = [...prefix, ...replacement, ...suffix];
+  const first = locateTriangle(chunks, startTriangle);
+  const last = locateTriangle(chunks, startTriangle + expected.length - 1);
+  const prefix = chunks[first.chunkIndex].subarray(0, first.valueOffset);
+  const suffix = chunks[last.chunkIndex].subarray(last.valueOffset + 3);
+  const localized = writeLocalizedChunks(prefix, replacement, suffix);
   return {
-    chunks: [
-      ...chunks.slice(0, firstChunkIndex),
-      ...splitTriangleChunk(combined),
-      ...chunks.slice(chunkIndex + 1),
-    ],
-    copiedIndexValueCount: (prefix.length + suffix.length) * 3,
+    chunks: [...chunks.slice(0, first.chunkIndex), ...localized, ...chunks.slice(last.chunkIndex + 1)],
+    copiedIndexValueCount: prefix.length + suffix.length,
   };
 }
 
@@ -346,7 +356,7 @@ export function applyPersistentMeshTopologyDelta(
       colorChunks: appendChunk(topology.colorChunks, delta.appendedColors),
       triangleChunks,
       vertexCount: topology.vertexCount + delta.appendedVertices.length,
-      triangleCount: topology.triangleCount + delta.replacements.reduce((sum, replacement) => sum + replacement.after.length - replacement.before.length, 0),
+      triangleCount: topology.triangleCount + delta.replacements.reduce((sum, item) => sum + item.after.length - item.before.length, 0),
       derived: {},
     };
   }
@@ -368,7 +378,7 @@ export function applyPersistentMeshTopologyDelta(
     colorChunks: removeLastChunk(topology.colorChunks, delta.appendedColors),
     triangleChunks,
     vertexCount: delta.beforeVertexCount,
-    triangleCount: topology.triangleCount - delta.replacements.reduce((sum, replacement) => sum + replacement.after.length - replacement.before.length, 0),
+    triangleCount: topology.triangleCount - delta.replacements.reduce((sum, item) => sum + item.after.length - item.before.length, 0),
     derived: delta.beforeDerived,
   };
 }
@@ -431,16 +441,11 @@ function finalizePersistentEdit(
     shift += replacement.after.length - replacement.before.length;
   }
   const observations = operationObservations(topology, delta, copiedIndexValueCount, topologyIndexBuildCount, topologyIndexTriangleVisits);
-  // The legacy source-index bound describes a single flat-array copy. Persistent storage intentionally
-  // replaces it with a touched-chunk bound; on tiny meshes two adjacent replacements can revisit the same
-  // local chunk while still remaining strictly bounded and independent of total mesh size.
   const violations = topologyStructuralBudgetViolations(operation, observations).filter(
     (violation) => violation !== "index copy exceeds source index count",
   );
-  const maxLocalizedCopiedValues = TOPOLOGY_TRIANGLE_CHUNK_SIZE * 3 * (operation.kind === "split-edge" ? 2 : 1);
-  if (observations.indexValuesCopied > maxLocalizedCopiedValues) {
-    violations.push("localized index copy exceeds touched-chunk budget");
-  }
+  const maxLocalizedCopiedValues = INDEX_VALUES_PER_CHUNK * (operation.kind === "split-edge" ? 2 : 1);
+  if (observations.indexValuesCopied > maxLocalizedCopiedValues) violations.push("localized index copy exceeds touched-chunk budget");
   if (observations.vertexReferencesCopied !== 0) violations.push("persistent topology copied source vertex references");
   if (observations.authoredAttributeReferencesCopied !== 0) violations.push("persistent topology copied authored attribute references");
   if (violations.length > 0) throw new Error(`topology structural budget violated: ${violations.join("; ")}`);
@@ -563,9 +568,10 @@ export function materializePersistentMeshTopology(
   topology: PersistentMeshTopology,
 ): Readonly<{ mesh: IndexedMesh; observations: MeshTopologyMaterializationObservations }> {
   const vertices = flattenChunks(topology.vertexChunks);
-  const indices: number[] = [];
+  const indices = new Array<number>(topology.triangleCount * 3);
+  let indexCursor = 0;
   for (const chunk of topology.triangleChunks) {
-    for (const triangle of chunk) indices.push(triangle[0], triangle[1], triangle[2]);
+    for (const value of chunk) indices[indexCursor++] = value;
   }
   const uvs = topology.uvChunks ? flattenChunks(topology.uvChunks) : undefined;
   const colors = topology.colorChunks ? flattenChunks(topology.colorChunks) : undefined;
