@@ -61,6 +61,18 @@ function findNodeIndex(scene: EditorScene, nodeId: string): number {
   return index;
 }
 
+function replaceNode(scene: EditorScene, index: number, node: EditorNode): EditorScene {
+  const nodes = [...scene.nodes];
+  nodes[index] = node;
+  return { nodes };
+}
+
+function validateTransform(nodeId: string, transform: EditableTransform): void {
+  if (!finiteVec3(transform.translation)) throw new Error(`node ${nodeId} has a non-finite translation`);
+  if (!finiteVec3(transform.rotation)) throw new Error(`node ${nodeId} has a non-finite rotation`);
+  if (!finiteVec3(transform.scale)) throw new Error(`node ${nodeId} has a non-finite scale`);
+}
+
 export function createEditorScene(): EditorScene {
   const makeCube = () => cloneMesh(cubeMesh);
   return {
@@ -126,9 +138,7 @@ export function validateEditorScene(scene: EditorScene): void {
     if (node.parent !== null && !seen.has(node.parent)) {
       throw new Error(`node ${node.id} references parent ${node.parent}; parents must appear before children`);
     }
-    if (!finiteVec3(node.transform.translation)) throw new Error(`node ${node.id} has a non-finite translation`);
-    if (!finiteVec3(node.transform.rotation)) throw new Error(`node ${node.id} has a non-finite rotation`);
-    if (!finiteVec3(node.transform.scale)) throw new Error(`node ${node.id} has a non-finite scale`);
+    validateTransform(node.id, node.transform);
     if (node.mesh) validateMesh(node.mesh);
     seen.add(node.id);
   });
@@ -138,6 +148,13 @@ export function childrenOf(scene: EditorScene, parent: string | null): readonly 
   return scene.nodes.filter((node) => node.parent === parent);
 }
 
+/**
+ * Apply a transform edit to an already validated editor scene.
+ *
+ * Imported or externally constructed scenes must pass validateEditorScene once at the trust boundary.
+ * Local edits then validate only the values they introduce and preserve every unrelated invariant by
+ * structural sharing instead of revalidating meshes and sibling nodes on each interaction.
+ */
 export function updateNodeTransform(
   scene: EditorScene,
   nodeId: string,
@@ -146,18 +163,21 @@ export function updateNodeTransform(
   const index = findNodeIndex(scene, nodeId);
   const node = scene.nodes[index];
   const transform: EditableTransform = {
-    translation: patch.translation ? cloneVec3(patch.translation) : cloneVec3(node.transform.translation),
-    rotation: patch.rotation ? cloneVec3(patch.rotation) : cloneVec3(node.transform.rotation),
-    scale: patch.scale ? cloneVec3(patch.scale) : cloneVec3(node.transform.scale),
+    translation: patch.translation ? cloneVec3(patch.translation) : node.transform.translation,
+    rotation: patch.rotation ? cloneVec3(patch.rotation) : node.transform.rotation,
+    scale: patch.scale ? cloneVec3(patch.scale) : node.transform.scale,
   };
-  const nodes = scene.nodes.map((candidate, candidateIndex) =>
-    candidateIndex === index ? { ...candidate, transform } : candidate,
-  );
-  const next = { nodes };
-  validateEditorScene(next);
-  return next;
+  validateTransform(nodeId, transform);
+  return replaceNode(scene, index, { ...node, transform });
 }
 
+/**
+ * Apply one position edit to an already validated editor scene.
+ *
+ * Only the vertex-reference array and the edited Vec3 are materialized. Index data, unaffected vertex
+ * tuples, UV/color authoring attributes, sibling nodes, and transforms are reused. Normals and tangents
+ * remain intentionally invalidated because they are derived from positions.
+ */
 export function updateMeshVertex(scene: EditorScene, nodeId: string, vertexIndex: number, position: Vec3): EditorScene {
   if (!finiteVec3(position)) throw new Error("vertex position must be finite");
   const index = findNodeIndex(scene, nodeId);
@@ -167,25 +187,19 @@ export function updateMeshVertex(scene: EditorScene, nodeId: string, vertexIndex
     throw new Error(`vertex ${vertexIndex} is outside node ${nodeId}`);
   }
 
-  const vertices = node.mesh.vertices.map((vertex, candidateIndex) =>
-    candidateIndex === vertexIndex ? cloneVec3(position) : cloneVec3(vertex),
-  );
+  const vertices = [...node.mesh.vertices];
+  vertices[vertexIndex] = cloneVec3(position);
   const sourceAttributes = node.mesh.attributes;
   const attributes = sourceAttributes
     ? {
-        uvs: sourceAttributes.uvs?.map((value) => [value[0], value[1]] as const),
-        colors: sourceAttributes.colors?.map(cloneVec3),
+        uvs: sourceAttributes.uvs,
+        colors: sourceAttributes.colors,
       }
     : undefined;
   const mesh: IndexedMesh = {
     vertices,
-    indices: [...node.mesh.indices],
+    indices: node.mesh.indices,
     attributes,
   };
-  const nodes = scene.nodes.map((candidate, candidateIndex) =>
-    candidateIndex === index ? { ...candidate, mesh } : candidate,
-  );
-  const next = { nodes };
-  validateEditorScene(next);
-  return next;
+  return replaceNode(scene, index, { ...node, mesh });
 }
