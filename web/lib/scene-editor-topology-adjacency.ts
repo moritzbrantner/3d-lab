@@ -1,25 +1,21 @@
 import type { PersistentMeshTopology } from "./scene-editor-topology-persistent";
 import type { MeshEdge, MeshTopologyIndex } from "./scene-editor-topology";
 
-const MAX_ADJACENCY_LAYER_DEPTH = 64;
+const TRIANGLES_PER_CHUNK = 128;
 
-type TriangleRef = Readonly<{
-  chunk: Uint32Array;
-  valueOffset: number;
-}>;
-
-type AdjacencyLayer = Readonly<{
-  parent: AdjacencyLayer | null;
-  overrides: ReadonlyMap<string, readonly TriangleRef[]>;
-  depth: number;
-}>;
+type IncidenceCache = {
+  vertexTriangles: Map<number, number[]>;
+  chunkIds: WeakMap<Uint32Array, number>;
+  chunksById: Map<number, Uint32Array>;
+  nextChunkId: number;
+};
 
 export type PersistentAdjacencyObservations = Readonly<{
   buildCount: number;
   triangleVisits: number;
 }>;
 
-const adjacencyByTopology = new WeakMap<PersistentMeshTopology, AdjacencyLayer>();
+const incidenceByTopology = new WeakMap<PersistentMeshTopology, IncidenceCache>();
 
 function normalizeEdge(edge: MeshEdge): MeshEdge {
   const [a, b] = edge;
@@ -34,73 +30,119 @@ function edgeKey(edge: MeshEdge): string {
   return `${a}:${b}`;
 }
 
-function triangleEdges(chunk: Uint32Array, valueOffset: number): readonly string[] {
-  const a = chunk[valueOffset];
-  const b = chunk[valueOffset + 1];
-  const c = chunk[valueOffset + 2];
-  return [edgeKey([a, b]), edgeKey([b, c]), edgeKey([c, a])];
+function packedRef(chunkId: number, localTriangle: number): number {
+  return chunkId * TRIANGLES_PER_CHUNK + localTriangle;
 }
 
-function buildAdjacency(topology: PersistentMeshTopology): Readonly<{
-  layer: AdjacencyLayer;
+function unpackRef(value: number): Readonly<{ chunkId: number; localTriangle: number }> {
+  return {
+    chunkId: Math.floor(value / TRIANGLES_PER_CHUNK),
+    localTriangle: value % TRIANGLES_PER_CHUNK,
+  };
+}
+
+function appendIncidence(cache: IncidenceCache, vertex: number, ref: number): void {
+  const refs = cache.vertexTriangles.get(vertex);
+  if (refs) refs.push(ref);
+  else cache.vertexTriangles.set(vertex, [ref]);
+}
+
+function removeIncidence(cache: IncidenceCache, vertex: number, ref: number): void {
+  const refs = cache.vertexTriangles.get(vertex);
+  if (!refs) throw new Error(`persistent adjacency is missing vertex ${vertex}`);
+  const index = refs.indexOf(ref);
+  if (index < 0) throw new Error(`persistent adjacency is missing triangle reference for vertex ${vertex}`);
+  refs.splice(index, 1);
+  if (refs.length === 0) cache.vertexTriangles.delete(vertex);
+}
+
+function registerChunk(cache: IncidenceCache, chunk: Uint32Array): number {
+  const existing = cache.chunkIds.get(chunk);
+  if (existing !== undefined) return existing;
+  const chunkId = cache.nextChunkId;
+  cache.nextChunkId += 1;
+  cache.chunkIds.set(chunk, chunkId);
+  cache.chunksById.set(chunkId, chunk);
+  for (let valueOffset = 0; valueOffset < chunk.length; valueOffset += 3) {
+    const ref = packedRef(chunkId, valueOffset / 3);
+    appendIncidence(cache, chunk[valueOffset], ref);
+    appendIncidence(cache, chunk[valueOffset + 1], ref);
+    appendIncidence(cache, chunk[valueOffset + 2], ref);
+  }
+  return chunkId;
+}
+
+function unregisterChunk(cache: IncidenceCache, chunk: Uint32Array): void {
+  const chunkId = cache.chunkIds.get(chunk);
+  if (chunkId === undefined) throw new Error("persistent adjacency is missing a removed chunk");
+  for (let valueOffset = 0; valueOffset < chunk.length; valueOffset += 3) {
+    const ref = packedRef(chunkId, valueOffset / 3);
+    removeIncidence(cache, chunk[valueOffset], ref);
+    removeIncidence(cache, chunk[valueOffset + 1], ref);
+    removeIncidence(cache, chunk[valueOffset + 2], ref);
+  }
+  cache.chunkIds.delete(chunk);
+  cache.chunksById.delete(chunkId);
+}
+
+function buildIncidence(topology: PersistentMeshTopology): Readonly<{
+  cache: IncidenceCache;
   observations: PersistentAdjacencyObservations;
 }> {
-  const edgeTriangles = new Map<string, TriangleRef[]>();
-  for (const chunk of topology.triangleChunks) {
-    for (let valueOffset = 0; valueOffset < chunk.length; valueOffset += 3) {
-      const ref: TriangleRef = { chunk, valueOffset };
-      for (const key of triangleEdges(chunk, valueOffset)) {
-        const refs = edgeTriangles.get(key);
-        if (refs) refs.push(ref);
-        else edgeTriangles.set(key, [ref]);
-      }
-    }
-  }
+  const cache: IncidenceCache = {
+    vertexTriangles: new Map(),
+    chunkIds: new WeakMap(),
+    chunksById: new Map(),
+    nextChunkId: 0,
+  };
+  for (const chunk of topology.triangleChunks) registerChunk(cache, chunk);
   return {
-    layer: { parent: null, overrides: edgeTriangles, depth: 0 },
+    cache,
     observations: { buildCount: 1, triangleVisits: topology.triangleCount },
   };
 }
 
-function lookup(layer: AdjacencyLayer, key: string): readonly TriangleRef[] {
-  for (let current: AdjacencyLayer | null = layer; current; current = current.parent) {
-    const value = current.overrides.get(key);
-    if (value !== undefined) return value;
-  }
-  return [];
-}
-
-function globalTriangleIndex(topology: PersistentMeshTopology, ref: TriangleRef): number {
+function globalTriangleIndex(topology: PersistentMeshTopology, cache: IncidenceCache, packed: number): number {
+  const { chunkId, localTriangle } = unpackRef(packed);
+  const target = cache.chunksById.get(chunkId);
+  if (!target) throw new Error("persistent adjacency reference is stale");
   let triangleBase = 0;
   for (const chunk of topology.triangleChunks) {
-    if (chunk === ref.chunk) {
-      if (ref.valueOffset < 0 || ref.valueOffset + 2 >= chunk.length || ref.valueOffset % 3 !== 0) {
+    if (chunk === target) {
+      if (localTriangle < 0 || localTriangle >= chunk.length / 3) {
         throw new Error("persistent adjacency reference is invalid");
       }
-      return triangleBase + ref.valueOffset / 3;
+      return triangleBase + localTriangle;
     }
     triangleBase += chunk.length / 3;
   }
-  throw new Error("persistent adjacency reference is stale");
+  throw new Error("persistent adjacency chunk is stale");
 }
 
 export function persistentTopologyEdgeIndex(
   topology: PersistentMeshTopology,
   edge: MeshEdge,
 ): Readonly<{ index: MeshTopologyIndex; observations: PersistentAdjacencyObservations }> {
-  let layer = adjacencyByTopology.get(topology);
+  let cache = incidenceByTopology.get(topology);
   let observations: PersistentAdjacencyObservations = { buildCount: 0, triangleVisits: 0 };
-  if (!layer) {
-    const built = buildAdjacency(topology);
-    layer = built.layer;
+  if (!cache) {
+    const built = buildIncidence(topology);
+    cache = built.cache;
     observations = built.observations;
-    adjacencyByTopology.set(topology, layer);
+    incidenceByTopology.set(topology, cache);
   }
 
-  const key = edgeKey(edge);
-  const triangleIndices = lookup(layer, key)
-    .map((ref) => globalTriangleIndex(topology, ref))
+  const [a, b] = normalizeEdge(edge);
+  const aRefs = cache.vertexTriangles.get(a) ?? [];
+  const bRefs = cache.vertexTriangles.get(b) ?? [];
+  const smaller = aRefs.length <= bRefs.length ? aRefs : bRefs;
+  const larger = smaller === aRefs ? bRefs : aRefs;
+  const triangleIndices = smaller
+    .filter((ref) => larger.includes(ref))
+    .map((ref) => globalTriangleIndex(topology, cache, ref))
     .sort((left, right) => left - right);
+
+  const key = edgeKey([a, b]);
   return {
     index: {
       edgeTriangles: new Map([[key, triangleIndices]]),
@@ -114,67 +156,37 @@ export function persistentTopologyEdgeIndex(
   };
 }
 
-function scanChunks(chunks: readonly Uint32Array[]): Readonly<{
-  edgeRefs: Map<string, TriangleRef[]>;
-  edgeKeys: Set<string>;
-  triangleVisits: number;
-}> {
-  const edgeRefs = new Map<string, TriangleRef[]>();
-  const edgeKeys = new Set<string>();
-  let triangleVisits = 0;
-  for (const chunk of chunks) {
-    for (let valueOffset = 0; valueOffset < chunk.length; valueOffset += 3) {
-      triangleVisits += 1;
-      const ref: TriangleRef = { chunk, valueOffset };
-      for (const key of triangleEdges(chunk, valueOffset)) {
-        edgeKeys.add(key);
-        const refs = edgeRefs.get(key);
-        if (refs) refs.push(ref);
-        else edgeRefs.set(key, [ref]);
-      }
-    }
-  }
-  return { edgeRefs, edgeKeys, triangleVisits };
-}
-
 export function inheritPersistentTopologyAdjacency(
   before: PersistentMeshTopology,
   after: PersistentMeshTopology,
 ): PersistentAdjacencyObservations {
-  const layer = adjacencyByTopology.get(before);
-  if (!layer) return { buildCount: 0, triangleVisits: 0 };
-
-  if (layer.depth >= MAX_ADJACENCY_LAYER_DEPTH) {
-    const rebuilt = buildAdjacency(after);
-    adjacencyByTopology.set(after, rebuilt.layer);
-    return rebuilt.observations;
-  }
+  const cache = incidenceByTopology.get(before);
+  if (!cache) return { buildCount: 0, triangleVisits: 0 };
 
   const beforeSet = new Set(before.triangleChunks);
   const afterSet = new Set(after.triangleChunks);
   const removedChunks = before.triangleChunks.filter((chunk) => !afterSet.has(chunk));
   const insertedChunks = after.triangleChunks.filter((chunk) => !beforeSet.has(chunk));
   if (removedChunks.length === 0 && insertedChunks.length === 0) {
-    adjacencyByTopology.set(after, layer);
+    incidenceByTopology.delete(before);
+    incidenceByTopology.set(after, cache);
     return { buildCount: 0, triangleVisits: 0 };
   }
 
-  const removed = scanChunks(removedChunks);
-  const inserted = scanChunks(insertedChunks);
-  const removedSet = new Set(removedChunks);
-  const keys = new Set([...removed.edgeKeys, ...inserted.edgeKeys]);
-  const overrides = new Map<string, readonly TriangleRef[]>();
-  for (const key of keys) {
-    const retained = lookup(layer, key).filter((ref) => !removedSet.has(ref.chunk));
-    overrides.set(key, [...retained, ...(inserted.edgeRefs.get(key) ?? [])]);
+  let triangleVisits = 0;
+  for (const chunk of removedChunks) {
+    triangleVisits += chunk.length / 3;
+    unregisterChunk(cache, chunk);
   }
-  adjacencyByTopology.set(after, { parent: layer, overrides, depth: layer.depth + 1 });
-  return {
-    buildCount: 0,
-    triangleVisits: removed.triangleVisits + inserted.triangleVisits,
-  };
+  for (const chunk of insertedChunks) {
+    triangleVisits += chunk.length / 3;
+    registerChunk(cache, chunk);
+  }
+  incidenceByTopology.delete(before);
+  incidenceByTopology.set(after, cache);
+  return { buildCount: 0, triangleVisits };
 }
 
 export function hasPersistentTopologyAdjacency(topology: PersistentMeshTopology): boolean {
-  return adjacencyByTopology.has(topology);
+  return incidenceByTopology.has(topology);
 }
