@@ -7,6 +7,11 @@ import {
   type EditorScene,
 } from "./scene-editor";
 import {
+  inheritPersistentTopologyAdjacency,
+  persistentTopologyEdgeIndex,
+  type PersistentAdjacencyObservations,
+} from "./scene-editor-topology-adjacency";
+import {
   applyPersistentMeshTopologyDelta,
   createPersistentMeshTopology,
   materializePersistentMeshTopology,
@@ -252,9 +257,24 @@ function applyNonTopologyCommand(scene: EditorScene, command: EditorTransformCom
   return applyVertexState(scene, command.nodeId, command.vertexIndex, targetPosition, targetDerived);
 }
 
+function addAdjacencyObservations(
+  observations: MeshTopologyWorkObservations,
+  ...extras: readonly PersistentAdjacencyObservations[]
+): MeshTopologyWorkObservations {
+  return {
+    ...observations,
+    topologyIndexBuildCount:
+      observations.topologyIndexBuildCount + extras.reduce((sum, item) => sum + item.buildCount, 0),
+    topologyIndexTriangleVisits:
+      observations.topologyIndexTriangleVisits + extras.reduce((sum, item) => sum + item.triangleVisits, 0),
+  };
+}
+
 function applyTopologyCommand(log: EditorCommandLog, command: EditorTopologyCommand, direction: "forward" | "reverse"): EditorCommandLog {
   const topology = topologyStoreFor(log, command.nodeId);
-  return withTopologyStore(log, command.nodeId, applyPersistentMeshTopologyDelta(topology, command.delta, direction));
+  const nextTopology = applyPersistentMeshTopologyDelta(topology, command.delta, direction);
+  inheritPersistentTopologyAdjacency(topology, nextTopology);
+  return withTopologyStore(log, command.nodeId, nextTopology);
 }
 
 export function createEditorCommandLog(scene: EditorScene): EditorCommandLog {
@@ -310,13 +330,22 @@ export function commitMeshVertex(sourceLog: EditorCommandLog, nodeId: string, ve
 
 export function commitMeshTopology(log: EditorCommandLog, nodeId: string, operation: MeshTopologyOperation, topologyIndex?: MeshTopologyIndex): EditorCommandLog {
   const topology = topologyStoreFor(log, nodeId);
-  const edit = performPersistentMeshTopologyOperation(topology, operation, topologyIndex);
+  let effectiveIndex = topologyIndex;
+  let lookupObservations: PersistentAdjacencyObservations = { buildCount: 0, triangleVisits: 0 };
+  if (operation.kind === "split-edge" && !effectiveIndex) {
+    const resolved = persistentTopologyEdgeIndex(topology, operation.edge);
+    effectiveIndex = resolved.index;
+    lookupObservations = resolved.observations;
+  }
+  const edit = performPersistentMeshTopologyOperation(topology, operation, effectiveIndex);
+  const maintenanceObservations = inheritPersistentTopologyAdjacency(topology, edit.topology);
+  const observations = addAdjacencyObservations(edit.observations, lookupObservations, maintenanceObservations);
   const command: EditorTopologyCommand = {
     kind: "edit-mesh-topology",
     nodeId,
     operation: edit.delta.operation,
     delta: edit.delta,
-    observations: edit.observations,
+    observations,
   };
   const entries = [...log.entries.slice(0, log.cursor), command];
   return { ...withTopologyStore(log, nodeId, edit.topology), entries, cursor: entries.length };
