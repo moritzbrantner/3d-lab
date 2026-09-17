@@ -269,6 +269,9 @@ export function createThreeSceneRenderer(canvas, options = {}) {
   const geometries = new Map()
   const materials = new Map()
   const pixelRatioLimit = options.pixelRatioLimit ?? DEFAULT_PIXEL_RATIO_LIMIT
+  let configuredWidth = null
+  let configuredHeight = null
+  let configuredPixelRatio = null
 
   function applyCamera(frameCamera) {
     camera.matrixWorldInverse.fromArray(frameCamera.viewMatrix)
@@ -285,8 +288,17 @@ export function createThreeSceneRenderer(canvas, options = {}) {
       if (!Number.isFinite(devicePixelRatio) || devicePixelRatio <= 0) {
         throw new ThreeRendererContractError("device pixel ratio must be finite and positive")
       }
-      renderer.setPixelRatio(Math.min(devicePixelRatio, pixelRatioLimit))
-      renderer.setSize(width, height, false)
+
+      const pixelRatio = Math.min(devicePixelRatio, pixelRatioLimit)
+      const pixelRatioChanged = pixelRatio !== configuredPixelRatio
+      const sizeChanged = width !== configuredWidth || height !== configuredHeight
+      if (!pixelRatioChanged && !sizeChanged) return
+
+      if (pixelRatioChanged) renderer.setPixelRatio(pixelRatio)
+      if (sizeChanged) renderer.setSize(width, height, false)
+      configuredWidth = width
+      configuredHeight = height
+      configuredPixelRatio = pixelRatio
     },
 
     render(frame) {
