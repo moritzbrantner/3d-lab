@@ -207,7 +207,7 @@ function createMaterial(node) {
   })
 }
 
-function applyNodeTransform(mesh, node) {
+function applyNodeTransform(mesh, node, scratch) {
   if (node.modelMatrix !== undefined) {
     mesh.matrix.fromArray(node.modelMatrix)
     return
@@ -216,12 +216,10 @@ function applyNodeTransform(mesh, node) {
   const translation = node.transform.translation
   const scale = node.transform.scale ?? UNIT_SCALE
   const rotation = node.transform.rotationQuaternion ?? IDENTITY_QUATERNION
-  const quaternion = new THREE.Quaternion(...rotation).normalize()
-  mesh.matrix.compose(
-    new THREE.Vector3(...translation),
-    quaternion,
-    new THREE.Vector3(...scale),
-  )
+  scratch.translation.fromArray(translation)
+  scratch.scale.fromArray(scale)
+  scratch.rotation.fromArray(rotation).normalize()
+  mesh.matrix.compose(scratch.translation, scratch.rotation, scratch.scale)
 }
 
 function createWorkObservations(nodeVisitCount) {
@@ -268,6 +266,11 @@ export function createThreeSceneRenderer(canvas, options = {}) {
   const objects = new Map()
   const geometries = new Map()
   const materials = new Map()
+  const transformScratch = {
+    translation: new THREE.Vector3(),
+    rotation: new THREE.Quaternion(),
+    scale: new THREE.Vector3(),
+  }
   const pixelRatioLimit = options.pixelRatioLimit ?? DEFAULT_PIXEL_RATIO_LIMIT
   let configuredWidth = null
   let configuredHeight = null
@@ -345,7 +348,7 @@ export function createThreeSceneRenderer(canvas, options = {}) {
           mesh.geometry = nextGeometry
           mesh.material = nextMaterial
         }
-        applyNodeTransform(mesh, node)
+        applyNodeTransform(mesh, node, transformScratch)
         mesh.matrixWorldNeedsUpdate = true
         mesh.visible = node.visible !== false
       }
