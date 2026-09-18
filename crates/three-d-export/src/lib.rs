@@ -30,6 +30,7 @@ pub struct SceneExportObservations {
 #[derive(Debug)]
 pub enum SceneExportError {
     Scene(SceneError),
+    NoMeshes,
     EmptyMesh { mesh: usize },
     Json(serde_json::Error),
     OutputTooLarge,
@@ -39,6 +40,9 @@ impl fmt::Display for SceneExportError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Scene(error) => write!(formatter, "scene normalization failed: {error}"),
+            Self::NoMeshes => {
+                formatter.write_str("scene must contain at least one mesh before GLB export")
+            }
             Self::EmptyMesh { mesh } => write!(
                 formatter,
                 "scene mesh {mesh} must contain indexed triangle geometry before GLB export"
@@ -214,6 +218,9 @@ pub fn export_scene_glb_with_observations(
 
 fn export_normalized_scene_glb(scene: &SceneSnapshot) -> Result<Vec<u8>, SceneExportError> {
     debug_assert!(scene.is_normalized());
+    if scene.meshes().is_empty() {
+        return Err(SceneExportError::NoMeshes);
+    }
     let mut binary = Vec::new();
     let mut buffer_views = Vec::new();
     let mut accessors = Vec::new();
@@ -485,6 +492,19 @@ mod tests {
         assert_eq!(mesh.vertices().len(), 3);
         assert_eq!(mesh.indices(), &[0, 1, 2]);
         assert_eq!(mesh.attributes().normals.as_ref().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn export_rejects_a_scene_without_meshes() {
+        let snapshot = SceneSnapshot::new(
+            vec![],
+            vec![SceneNode::new("root", None, None, Transform::IDENTITY)],
+        )
+        .unwrap();
+        assert!(matches!(
+            export_scene_glb(&snapshot),
+            Err(SceneExportError::NoMeshes)
+        ));
     }
 
     #[test]
