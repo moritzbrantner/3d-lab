@@ -18,6 +18,8 @@ The repository deliberately has parallel surfaces:
 
 The reusable browser renderer is intentionally Three.js-first. The Rust core crates do not depend on Three.js, WebGL, WebGPU, a windowing stack, or a glTF/OBJ parser; rendering and file-format adapters stay downstream of the renderer-independent models. Applications such as Zoo should consume the renderer package rather than constructing a parallel Three.js/CSS renderer, while still keeping their game-specific scene composition and interaction policy outside 3d-lab.
 
+This authority is deliberately **3D-only**. `3d-lab` is not the shared home for ordinary flat-map rendering or general 2D vector rasterization. Products such as Maps keep their 2D map render planning/backends authoritative, while `viz-engine` may benchmark 2D Rust/WASM techniques without becoming a scene authority.
+
 ## Curriculum
 
 The GitHub Pages curriculum currently covers:
