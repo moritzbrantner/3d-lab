@@ -53,6 +53,88 @@ describe("reusable Three renderer contract", () => {
     expect(validateRenderFrame(value)).toBe(value)
   })
 
+  test("accepts content-addressed indexed mesh geometry", () => {
+    const value = frame()
+    value.nodes = [
+      {
+        id: "asset:zoo-entrance",
+        transform: {translation: [0, 0, 0]},
+        geometry: {
+          kind: "mesh",
+          resourceKey: "sha256:entrance-fixture",
+          positions: [
+            [-0.5, 0, 0],
+            [0.5, 0, 0],
+            [0, 1, 0],
+          ],
+          indices: [0, 1, 2],
+          normals: [
+            [0, 0, 1],
+            [0, 0, 1],
+            [0, 0, 1],
+          ],
+        },
+        color: "#d8c79d",
+      },
+    ]
+
+    expect(validateRenderFrame(value)).toBe(value)
+  })
+
+  test("rejects invalid indexed mesh references before GPU submission", () => {
+    const value = frame()
+    value.nodes = [
+      {
+        id: "asset:broken",
+        transform: {translation: [0, 0, 0]},
+        geometry: {
+          kind: "mesh",
+          resourceKey: "sha256:broken-fixture",
+          positions: [
+            [0, 0, 0],
+            [1, 0, 0],
+            [0, 1, 0],
+          ],
+          indices: [0, 1, 3],
+        },
+        color: "#d8c79d",
+      },
+    ]
+
+    expect(() => validateRenderFrame(value)).toThrow(
+      "mesh index 3 must reference an existing position",
+    )
+  })
+
+  test("rejects mesh normals that do not align with positions", () => {
+    const value = frame() as unknown as {
+      camera: RendererFrame["camera"]
+      nodes: Array<Record<string, unknown>>
+    }
+    value.nodes = [
+      {
+        id: "asset:broken-normals",
+        transform: {translation: [0, 0, 0]},
+        geometry: {
+          kind: "mesh",
+          resourceKey: "sha256:broken-normal-fixture",
+          positions: [
+            [0, 0, 0],
+            [1, 0, 0],
+            [0, 1, 0],
+          ],
+          indices: [0, 1, 2],
+          normals: [[0, 0, 1]],
+        },
+        color: "#d8c79d",
+      },
+    ]
+
+    expect(() => validateRenderFrame(value as unknown as RendererFrame)).toThrow(
+      "mesh normals must align one-to-one with positions",
+    )
+  })
+
   test("projects world points for downstream DOM interaction overlays", () => {
     const projected = projectWorldPoint(frame().camera, [0, 0, 0], {
       x: 10,
