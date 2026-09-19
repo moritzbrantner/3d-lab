@@ -38,6 +38,40 @@ function requireColor(value) {
   }
 }
 
+function validateIndexedMeshGeometry(geometry) {
+  if (typeof geometry.resourceKey !== "string" || geometry.resourceKey.trim().length === 0) {
+    throw new ThreeRendererContractError("mesh resourceKey must be a non-empty string")
+  }
+  if (!Array.isArray(geometry.positions) || geometry.positions.length === 0) {
+    throw new ThreeRendererContractError("mesh positions must be a non-empty array")
+  }
+  for (const position of geometry.positions) {
+    requireFiniteTuple("mesh position", position, 3)
+  }
+  if (
+    !Array.isArray(geometry.indices) ||
+    geometry.indices.length === 0 ||
+    geometry.indices.length % 3 !== 0
+  ) {
+    throw new ThreeRendererContractError("mesh indices must be a non-empty triangle index array")
+  }
+  for (const index of geometry.indices) {
+    if (!Number.isSafeInteger(index) || index < 0 || index >= geometry.positions.length) {
+      throw new ThreeRendererContractError(
+        `mesh index ${String(index)} must reference an existing position`,
+      )
+    }
+  }
+  if (geometry.normals !== undefined) {
+    if (!Array.isArray(geometry.normals) || geometry.normals.length !== geometry.positions.length) {
+      throw new ThreeRendererContractError("mesh normals must align one-to-one with positions")
+    }
+    for (const normal of geometry.normals) {
+      requireFiniteTuple("mesh normal", normal, 3)
+    }
+  }
+}
+
 function validateGeometry(geometry) {
   if (!geometry || typeof geometry !== "object") {
     throw new ThreeRendererContractError("node geometry is required")
@@ -60,6 +94,9 @@ function validateGeometry(geometry) {
           throw new ThreeRendererContractError(`${name} must be finite and positive`)
         }
       }
+      return
+    case "mesh":
+      validateIndexedMeshGeometry(geometry)
       return
     default:
       throw new ThreeRendererContractError(`unsupported geometry kind: ${String(geometry.kind)}`)
@@ -173,6 +210,8 @@ function geometryKey(geometry) {
       return `sphere:${geometry.radius}`
     case "cylinder":
       return `cylinder:${geometry.radius}:${geometry.height}`
+    case "mesh":
+      return `mesh:${geometry.resourceKey}`
     default:
       throw new ThreeRendererContractError(`unsupported geometry kind: ${String(geometry.kind)}`)
   }
@@ -186,6 +225,24 @@ function createGeometry(geometry) {
       return new THREE.SphereGeometry(geometry.radius, 20, 12)
     case "cylinder":
       return new THREE.CylinderGeometry(geometry.radius, geometry.radius, geometry.height, 20)
+    case "mesh": {
+      const meshGeometry = new THREE.BufferGeometry()
+      meshGeometry.setAttribute(
+        "position",
+        new THREE.Float32BufferAttribute(geometry.positions.flat(), 3),
+      )
+      meshGeometry.setIndex([...geometry.indices])
+      if (geometry.normals !== undefined) {
+        meshGeometry.setAttribute(
+          "normal",
+          new THREE.Float32BufferAttribute(geometry.normals.flat(), 3),
+        )
+      } else {
+        meshGeometry.computeVertexNormals()
+      }
+      meshGeometry.computeBoundingSphere()
+      return meshGeometry
+    }
     default:
       throw new ThreeRendererContractError(`unsupported geometry kind: ${String(geometry.kind)}`)
   }
