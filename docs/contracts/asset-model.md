@@ -47,3 +47,12 @@ A format adapter validates and decodes its source, constructs `three-d-core::Mes
 ## Teaching surface
 
 The browser model-pipeline lesson intentionally exposes the full glTF chain—scene → node → mesh → primitive → accessors/bufferViews/buffer and material—because those format details are the subject being taught. The tangent-space lesson separately shows how geometry plus UVs produce the local basis used by a normal map. Neither teaching surface changes semantic ownership.
+
+
+## Browser renderer materialization boundary
+
+The reusable `@moritzbrantner/three-d-renderer` package accepts validated indexed mesh geometry as a renderer materialization boundary. A mesh descriptor carries positions, triangle indices, optional aligned normals, and a caller-supplied immutable `resourceKey`. The renderer validates structural safety, materializes one Three.js `BufferGeometry`, and caches it by that key.
+
+The `resourceKey` is identity, not a filename. Downstream consumers should use a content-derived identity such as the SHA-256 already carried by `asset-tooling` outputs and must change the key whenever geometry bytes/semantics change. The renderer does not infer provenance, decode glTF/OBJ, normalize coordinates, or own asset-processing policy; those responsibilities remain with `three-d-formats`, `three-d-scene`, and `asset-tooling`.
+
+This boundary is intentionally geometry-first. Texture/material transport remains a separate follow-up so applications do not grow local glTF loaders or ad-hoc renderer-specific asset semantics while waiting for full authored-model support.
