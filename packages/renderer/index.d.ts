@@ -26,7 +26,23 @@ export type CylinderGeometry = {
   height: number
 }
 
-export type RendererGeometry = BoxGeometry | SphereGeometry | CylinderGeometry
+export type IndexedMeshGeometry = {
+  kind: "mesh"
+  /**
+   * Stable immutable identity for this exact geometry payload.
+   * Content-addressed asset hashes are the preferred downstream value.
+   */
+  resourceKey: string
+  positions: ReadonlyArray<readonly [number, number, number]>
+  indices: ReadonlyArray<number>
+  normals?: ReadonlyArray<readonly [number, number, number]>
+}
+
+export type RendererGeometry =
+  | BoxGeometry
+  | SphereGeometry
+  | CylinderGeometry
+  | IndexedMeshGeometry
 
 export type RendererTransform = {
   translation: [number, number, number]
