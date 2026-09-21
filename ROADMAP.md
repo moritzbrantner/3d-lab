@@ -58,6 +58,16 @@
 - [x] Add undo/redo as a deterministic semantic edit-command log instead of renderer or scene snapshots.
 - [ ] Add format-neutral scene snapshot import/export before teaching glTF authoring round-trips.
 
+### Slice 7 — procedural character animation
+
+- [ ] Add renderer-independent analytical two-bone IK for arms and legs with explicit target, pole-vector, reach, and joint-limit semantics.
+- [ ] Add weighted post-sampling pose constraints so authored/keyframed animation remains the base pose and procedural correction can blend in and out without becoming gameplay authority.
+- [ ] Add foot/limb placement that consumes external world-contact samples (position, normal, support identity) without making `three-d-animation` depend on a physics engine.
+- [ ] Add authored contact/plant metadata, world-space foot locking, pelvis/body-height correction, and surface-normal alignment for stable walking on slopes, stairs, and uneven ground.
+- [ ] Add predictive swing/landing targets and bounded motion-warping primitives for interactions, attacks, vaults, and other target-relative animation while keeping authoritative movement outside the animation runtime.
+- [ ] Generalize proven constraint primitives to hand grips, look-at/aim constraints, quadruped limbs, and longer chains only after the two-bone/contact contracts are stable.
+- [ ] Add an interactive uneven-ground/stair acceptance lab plus deterministic pose/constraint fixtures so render adapters can share the same semantics.
+
 ### Cross-cutting performance foundation
 
 - [x] Record deterministic scene-normalization work facts such as source/materialized vertices, visited indices, and materialized attribute values.
