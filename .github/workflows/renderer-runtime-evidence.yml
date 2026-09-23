@@ -125,6 +125,11 @@ jobs:
             http://127.0.0.1:4173/renderer-performance/ >/dev/null
           (
             cd candidate
+            # Reuse this lane's built site, Chromium installation and server.
+            # Keep character acceptance outside the paired timing capture.
+            bun scripts/character-browser-smoke.mjs \
+              http://127.0.0.1:4173/skeletal-animation/ \
+              "$RUNNER_TEMP/character-browser-smoke"
             runtime-profiler capture \
               --scenario profiles/runtime-profiler/renderer-browser.json \
               --output "$RUNNER_TEMP/candidate-renderer-browser"
@@ -161,6 +166,7 @@ jobs:
             ${{ runner.temp }}/reference-renderer-browser
             ${{ runner.temp }}/candidate-renderer-browser
             ${{ runner.temp }}/renderer-browser-comparison.json
+            ${{ runner.temp }}/character-browser-smoke
             ${{ runner.temp }}/reference-renderer-server.log
             ${{ runner.temp }}/candidate-renderer-server.log
           if-no-files-found: warn
