@@ -13,7 +13,8 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: path.join(__dirname, ".."),
     resolveAlias: {
-      "@moritzbrantner/three-d-renderer/rigid-skin": "./packages/renderer/rigid-skin.js",
+      // Alias targets are relative to the Next app directory, not root above.
+      "@moritzbrantner/three-d-renderer/rigid-skin": "../packages/renderer/rigid-skin.js",
     },
   },
   images: {
