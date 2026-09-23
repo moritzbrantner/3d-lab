@@ -1,5 +1,6 @@
 "use client";
 
+import {PrecisionRange} from "./PrecisionRange";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -561,18 +562,9 @@ export function ThreeLab() {
 
           {lessonId === "transforms" && (
             <div className="controls-grid" aria-label="Transform controls">
-              <label>
-                Rotate Y <output>{transform.rotateY}°</output>
-                <input type="range" min="-180" max="180" value={transform.rotateY} onChange={(event) => setTransform((current) => ({ ...current, rotateY: Number(event.target.value) }))} />
-              </label>
-              <label>
-                Scale <output>{transform.scale.toFixed(1)}×</output>
-                <input type="range" min="0.3" max="2" step="0.1" value={transform.scale} onChange={(event) => setTransform((current) => ({ ...current, scale: Number(event.target.value) }))} />
-              </label>
-              <label>
-                Lift Y <output>{transform.lift.toFixed(1)}</output>
-                <input type="range" min="-0.8" max="1" step="0.1" value={transform.lift} onChange={(event) => setTransform((current) => ({ ...current, lift: Number(event.target.value) }))} />
-              </label>
+              <PrecisionRange label="Rotate Y" value={transform.rotateY} min={-180} max={180} unit="°" onChange={(rotateY) => setTransform((current) => ({ ...current, rotateY }))} />
+              <PrecisionRange label="Scale" value={transform.scale} min={0.3} max={2} step={0.1} unit="×" onChange={(scale) => setTransform((current) => ({ ...current, scale }))} />
+              <PrecisionRange label="Lift Y" value={transform.lift} min={-0.8} max={1} step={0.1} onChange={(lift) => setTransform((current) => ({ ...current, lift }))} />
               <button type="button" className="secondary-button" onClick={() => setTransform(DEFAULT_TRANSFORM)}>Reset transform</button>
             </div>
           )}
@@ -599,10 +591,7 @@ export function ThreeLab() {
 
           {lessonId === "procedural" && (
             <div className="controls-grid procedural-controls" aria-label="Subdivision controls">
-              <label>
-                Segments <output>{subdivisions}</output>
-                <input type="range" min="1" max="16" value={subdivisions} onChange={(event) => setSubdivisions(Number(event.target.value))} />
-              </label>
+              <PrecisionRange label="Segments" integer value={subdivisions} min={1} max={16} onChange={setSubdivisions} />
               <div className="mesh-readout">
                 <strong>{(subdivisions + 1) ** 2}</strong> vertices · <strong>{2 * subdivisions ** 2}</strong> triangles
               </div>
@@ -611,30 +600,21 @@ export function ThreeLab() {
 
           {lessonId === "matrix-composition" && (
             <div className="controls-grid" aria-label="Matrix composition controls">
-              <label>
-                Rotation Y <output>{advancedState.matrixAngle}°</output>
-                <input type="range" min="-180" max="180" value={advancedState.matrixAngle} onChange={(event) => updateAdvanced({ matrixAngle: Number(event.target.value) })} />
-              </label>
+              <PrecisionRange label="Rotation Y" value={advancedState.matrixAngle} min={-180} max={180} unit="°" onChange={(matrixAngle) => updateAdvanced({ matrixAngle })} />
               <div className="mesh-readout"><strong>T × R × S</strong> explicit model matrix</div>
             </div>
           )}
 
           {lessonId === "hierarchy" && (
             <div className="controls-grid" aria-label="Hierarchy controls">
-              <label>
-                Parent angle <output>{advancedState.hierarchyAngle}°</output>
-                <input type="range" min="-110" max="110" value={advancedState.hierarchyAngle} onChange={(event) => updateAdvanced({ hierarchyAngle: Number(event.target.value) })} />
-              </label>
+              <PrecisionRange label="Parent angle" value={advancedState.hierarchyAngle} min={-110} max={110} unit="°" onChange={(hierarchyAngle) => updateAdvanced({ hierarchyAngle })} />
               <div className="mesh-readout"><strong>parent world × child local</strong></div>
             </div>
           )}
 
           {lessonId === "keyframes" && (
             <div className="controls-grid" aria-label="Keyframe controls">
-              <label>
-                Time <output>{advancedState.keyframeTime.toFixed(2)} s</output>
-                <input type="range" min="0" max="2" step="0.01" value={advancedState.keyframeTime} disabled={advancedState.keyframePlaying} onChange={(event) => updateAdvanced({ keyframeTime: Number(event.target.value) })} />
-              </label>
+              <PrecisionRange label="Time" value={advancedState.keyframeTime} min={0} max={2} step={0.01} unit="s" disabled={advancedState.keyframePlaying} onChange={(keyframeTime) => updateAdvanced({ keyframeTime })} />
               <div className="segmented" aria-label="Keyframe interpolation">
                 <button type="button" className={advancedState.keyframeInterpolation === "linear" ? "active" : ""} onClick={() => updateAdvanced({ keyframeInterpolation: "linear" })}>Linear</button>
                 <button type="button" className={advancedState.keyframeInterpolation === "smooth" ? "active" : ""} onClick={() => updateAdvanced({ keyframeInterpolation: "smooth" })}>Smooth</button>
@@ -647,20 +627,14 @@ export function ThreeLab() {
 
           {lessonId === "quaternions" && (
             <div className="controls-grid" aria-label="Rotation interpolation controls">
-              <label>
-                Endpoint interpolation <output>{Math.round(advancedState.rotationT * 100)}%</output>
-                <input type="range" min="0" max="1" step="0.01" value={advancedState.rotationT} onChange={(event) => updateAdvanced({ rotationT: Number(event.target.value) })} />
-              </label>
+              <PrecisionRange label="Endpoint interpolation" value={advancedState.rotationT * 100} min={0} max={100} step={1} unit="%" onChange={(percent) => updateAdvanced({ rotationT: percent / 100 })} />
               <div className="mesh-readout"><strong>Euler XYZ</strong> left · <strong>SLERP</strong> right</div>
             </div>
           )}
 
           {lessonId === "skinning" && (
             <div className="controls-grid" aria-label="Skeleton controls">
-              <label>
-                Middle joint bend <output>{advancedState.skeletonBend}°</output>
-                <input type="range" min="-80" max="80" value={advancedState.skeletonBend} onChange={(event) => updateAdvanced({ skeletonBend: Number(event.target.value) })} />
-              </label>
+              <PrecisionRange label="Middle joint bend" value={advancedState.skeletonBend} min={-80} max={80} unit="°" onChange={(skeletonBend) => updateAdvanced({ skeletonBend })} />
               <div className="mesh-readout"><strong>3 joints</strong> with blended vertex weights</div>
             </div>
           )}
