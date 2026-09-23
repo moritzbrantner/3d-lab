@@ -19,16 +19,19 @@ export type PrecisionRangeProps = {
   integer?: boolean;
   disabled?: boolean;
   className?: string;
+  coarseCommit?: "live" | "release";
   onChange: (value: number) => void;
 };
 
 export function PrecisionRange({
   label, value, min, max, step = 1, unit = "", integer = false,
-  disabled = false, className = "control range-control", onChange,
+  disabled = false, className = "control range-control", coarseCommit = "live", onChange,
 }: PrecisionRangeProps) {
   const id = useId();
   const [draft, setDraft] = useState<NumericDraft | null>(null);
   const pending = useRef<NumericDraft | null>(null);
+  const [coarseDraft, setCoarseDraft] = useState<number | null>(null);
+  const coarsePending = useRef<number | null>(null);
   const [invalid, setInvalid] = useState(false);
   const bounds = { min, max, integer };
   const coarseStep = integer
@@ -36,21 +39,32 @@ export function PrecisionRange({
     : Number.isFinite(step) && step > 0 ? step : 1;
   const fineStep = integer ? 1 : Math.min(coarseStep, 1) / 10;
   const visibleDraft = draft && Object.is(draft.baseline, value) ? draft.text : String(value);
+  const visibleCoarse = coarseDraft ?? value;
 
-  const clear = () => {
+  const clearText = () => {
     pending.current = null;
     setDraft(null);
     setInvalid(false);
   };
+  const clearCoarse = () => {
+    coarsePending.current = null;
+    setCoarseDraft(null);
+  };
+  const clear = () => {
+    clearText();
+    clearCoarse();
+  };
 
   useEffect(() => {
     pending.current = null;
+    coarsePending.current = null;
     setDraft(null);
+    setCoarseDraft(null);
     setInvalid(false);
   }, [value, min, max, integer, disabled]);
 
-  const commit = (reportInvalid: boolean) => {
-    if (disabled) return clear();
+  const commitText = (reportInvalid: boolean) => {
+    if (disabled) return clearText();
     const result = finishNumericDraft(pending.current, value, bounds);
     if (result.kind === "invalid" && reportInvalid) {
       setInvalid(true);
@@ -63,6 +77,20 @@ export function PrecisionRange({
   const publish = (next: number) => {
     clear();
     if (!disabled && !Object.is(next, value)) onChange(next);
+  };
+
+  const previewCoarse = (next: number) => {
+    clearText();
+    if (coarseCommit === "live") return publish(next);
+    coarsePending.current = next;
+    setCoarseDraft(next);
+  };
+
+  const commitCoarse = () => {
+    if (coarseCommit !== "release") return;
+    const next = coarsePending.current;
+    clearCoarse();
+    if (next !== null && !disabled && !Object.is(next, value)) onChange(next);
   };
 
   return (
@@ -85,14 +113,14 @@ export function PrecisionRange({
           setDraft(next);
           setInvalid(false);
         }}
-        onBlur={() => commit(false)}
+        onBlur={() => commitText(false)}
         onKeyDown={(event) => {
           if (event.nativeEvent.isComposing || !["Enter", "Escape", "ArrowUp", "ArrowDown"].includes(event.key)) return;
           event.preventDefault();
           event.stopPropagation();
           if (disabled) return;
-          if (event.key === "Escape") return clear();
-          if (event.key === "Enter") return commit(true);
+          if (event.key === "Escape") return clearText();
+          if (event.key === "Enter") return commitText(true);
           const current = parseNumericValue(visibleDraft, bounds);
           if (current === null) {
             setInvalid(true);
@@ -102,17 +130,21 @@ export function PrecisionRange({
           publish(nudgeNumericValue(current, delta, bounds));
         }} />
       <input type="range" aria-label={`${label} coarse adjustment${unit ? ` (${unit})` : ""}`}
-        min={min} max={max} step="any" value={value} disabled={disabled}
+        min={min} max={max} step="any" value={visibleCoarse} disabled={disabled}
         style={{ gridColumn: "1 / -1", width: "100%", minWidth: 0 }}
         onKeyDown={(event) => {
           if (!["ArrowLeft", "ArrowDown", "ArrowRight", "ArrowUp"].includes(event.key)) return;
           event.preventDefault();
           const direction = event.key === "ArrowLeft" || event.key === "ArrowDown" ? -1 : 1;
-          publish(nudgeNumericValue(value, coarseStep * direction, bounds));
+          previewCoarse(nudgeNumericValue(visibleCoarse, coarseStep * direction, bounds));
         }}
+        onKeyUp={commitCoarse}
+        onPointerUp={commitCoarse}
+        onTouchEnd={commitCoarse}
+        onBlur={commitCoarse}
         onChange={(event) => {
           const raw = Number(event.currentTarget.value);
-          if (Number.isFinite(raw)) publish(quantizeCoarseValue(raw, coarseStep, bounds));
+          if (Number.isFinite(raw)) previewCoarse(quantizeCoarseValue(raw, coarseStep, bounds));
         }} />
       {invalid && <span id={`${id}-error`} role="status" style={{ gridColumn: "1 / -1" }}>
         Enter a finite {integer ? "whole " : ""}number from {min} to {max}.
