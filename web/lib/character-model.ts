@@ -45,7 +45,12 @@ export function buildCharacterModel() {
   // started the lower torso at Spine, leaving Hips -> Spine uncovered.
   hips.add(segment(skinMaterial, 0.72, 0.25, 1), joint(jointMaterial, 0.13));
   spine.add(segment(skinMaterial, 0.72, 0.31, 1), joint(jointMaterial));
-  chest.add(segment(accentMaterial, 0.48, 0.1, 1), joint(jointMaterial));
+  // A broad upper torso reaches the shoulder joints; a narrow vertical
+  // neck capsule left both arms visually floating away from the body.
+  const upperTorso = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), skinMaterial);
+  upperTorso.scale.set(0.58, 0.27, 0.23);
+  upperTorso.position.y = 0.2;
+  chest.add(upperTorso, joint(jointMaterial));
   neck.add(segment(skinMaterial, 0.3, 0.1, 1), joint(jointMaterial, 0.08));
   const skull = new THREE.Mesh(new THREE.SphereGeometry(0.29, 24, 18), skinMaterial);
   skull.position.y = 0.24;

@@ -47,6 +47,26 @@ describe("batched teaching character", () => {
     expect(minimum).toBeCloseTo(0, 5);
   });
 
+  test("upper torso reaches both shoulder joint regions", () => {
+    const character = buildCharacterModel();
+    character.model.updateMatrixWorld(true);
+    character.skeleton.update();
+    const chestIndex = character.skeleton.bones.indexOf(character.bones.chest);
+    const indices = character.mesh.geometry.getAttribute("skinIndex");
+    const shoulderY = character.bones.leftUpperArm.getWorldPosition(new THREE.Vector3()).y;
+    const point = new THREE.Vector3();
+    let left = Infinity, right = -Infinity;
+    for (let vertex = 0; vertex < indices.count; vertex += 1) {
+      if (indices.getX(vertex) !== chestIndex) continue;
+      character.mesh.getVertexPosition(vertex, point).applyMatrix4(character.mesh.matrixWorld);
+      if (Math.abs(point.y - shoulderY) > 0.06) continue;
+      left = Math.min(left, point.x);
+      right = Math.max(right, point.x);
+    }
+    expect(left).toBeLessThan(-0.51);
+    expect(right).toBeGreaterThan(0.51);
+  });
+
   test("poses reuse topology and the joint palette instead of rebuilding meshes", () => {
     const character = buildCharacterModel();
     const geometry = character.mesh.geometry;

@@ -38,7 +38,8 @@ const DEFAULT_STATE: RigState = {
 };
 
 /** Keep an editing draft so empty/partial decimals survive keystrokes. */
-function ExactNumberInput({ value, min, max, step, onCommit, onEditBegin }: {
+function ExactNumberInput({ id, value, min, max, step, onCommit, onEditBegin }: {
+  id: string;
   value: number;
   min: number;
   max: number;
@@ -48,7 +49,7 @@ function ExactNumberInput({ value, min, max, step, onCommit, onEditBegin }: {
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   const cancelRef = useRef(false);
-  return <input type="number" min={min} max={max} step={step}
+  return <input id={id} type="number" min={min} max={max} step={step}
     value={draft ?? String(value)}
     onFocus={() => { setDraft(String(value)); onEditBegin?.(); }}
     onChange={(event) => setDraft(event.target.value)}
@@ -122,7 +123,8 @@ export function CharacterRigLab() {
     camera.position.set(4.8, 3.4, 6.4);
     const controls = new OrbitControls(camera, canvas);
     controls.enableDamping = true;
-    controls.target.set(0, 1.6, 0);
+    // Frame the full 4.65-unit character, not only its hips.
+    controls.target.set(0, 2.3, 0);
     controls.update();
     scene.add(new THREE.HemisphereLight(0xe6efff, 0x263044, 2.3));
     const key = new THREE.DirectionalLight(0xffffff, 3.4);
@@ -206,14 +208,14 @@ export function CharacterRigLab() {
             ))}
           </div>
         </div>
-        <label className={styles.rangeControl}>
+        <label className={styles.rangeControl} htmlFor="character-timeline">
           <span>Timeline <output>{(state.phase * CHARACTER_CYCLE_SECONDS).toFixed(3)} s</output></span>
-          <input type="range" min="0" max="1" step="0.001" value={state.phase}
+          <input id="character-timeline" type="range" min="0" max="1" step="0.001" value={state.phase}
             onChange={(event) => patchState({ phase: Number(event.target.value), playing: false, bindPose: false })} />
         </label>
-        <label className={styles.rangeControl}>
+        <label className={styles.rangeControl} htmlFor="character-time">
           <span>Exact time (seconds)</span>
-          <ExactNumberInput min={0} max={CHARACTER_CYCLE_SECONDS} step="any"
+          <ExactNumberInput id="character-time" min={0} max={CHARACTER_CYCLE_SECONDS} step="any"
             value={Number((state.phase * CHARACTER_CYCLE_SECONDS).toFixed(6))}
             onEditBegin={() => patchState({ playing: false })}
             onCommit={(value) => patchState({ phase: value / CHARACTER_CYCLE_SECONDS, playing: false, bindPose: false })} />
@@ -226,9 +228,9 @@ export function CharacterRigLab() {
             phase: stepCharacterPhase(stateRef.current.phase, 1), playing: false, bindPose: false,
           })}>Next frame</button>
         </div>
-        <label className={styles.rangeControl}>
+        <label className={styles.rangeControl} htmlFor="character-speed">
           <span>Playback speed <output>{state.speed.toFixed(2)}×</output></span>
-          <ExactNumberInput min={0.25} max={2} step="0.05" value={state.speed}
+          <ExactNumberInput id="character-speed" min={0.25} max={2} step="0.05" value={state.speed}
             onCommit={(value) => patchState({ speed: value })} />
         </label>
         <button type="button" className={styles.primaryButton}
