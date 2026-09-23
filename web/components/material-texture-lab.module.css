@@ -51,7 +51,7 @@
 
 .shapePicker {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 8px;
   margin-top: 14px;
 }
@@ -77,6 +77,48 @@
   display: flex;
   flex-direction: column;
   gap: 18px;
+}
+
+.controlGroup {
+  display: grid;
+  gap: 14px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.groupTitle {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.inlineGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.mappingReadout {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.mappingReadout strong {
+  color: var(--text);
+}
+
+.helperText {
+  margin: -4px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
 }
 
 .rangeControl,
@@ -232,6 +274,19 @@
   .teaser {
     display: grid;
     grid-template-columns: 1fr;
+  }
+
+  .inlineGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .mappingReadout {
+    display: grid;
+    gap: 4px;
+  }
+
+  .shapePicker {
+    grid-template-columns: repeat(2, 1fr);
   }
 
   .headingRow > p {

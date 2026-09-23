@@ -68,6 +68,15 @@
 - [ ] Generalize proven constraint primitives to hand grips, look-at/aim constraints, quadruped limbs, and longer chains only after the two-bone/contact contracts are stable.
 - [ ] Add an interactive uneven-ground/stair acceptance lab plus deterministic pose/constraint fixtures so render adapters can share the same semantics.
 
+### Texture authoring foundation
+
+- [x] Preserve renderer-independent texture offset/scale/rotation intent on material texture bindings without moving renderer APIs into `three-d-assets`.
+- [x] Add deterministic procedural texture synthesis and layer blending to the browser teaching surface.
+- [x] Make stretching visible with independent U/V repeat, rotation/offset controls, object-axis stretch, and a deliberately narrow plane texel-density compensation example.
+- [ ] Import and export glTF `KHR_texture_transform` explicitly once extension round-tripping is covered by fixtures.
+- [ ] Route procedural recipe baking through `asset-tooling` with content-derived provenance/cache keys instead of keeping recipes inside renderer state.
+- [ ] Compare authored UVs with box/triplanar projection on representative consumer assets before deciding whether runtime projection belongs in the reusable renderer.
+
 ### Cross-cutting performance foundation
 
 - [x] Record deterministic scene-normalization work facts such as source/materialized vertices, visited indices, and materialized attribute values.

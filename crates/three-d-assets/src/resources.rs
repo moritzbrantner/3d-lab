@@ -139,15 +139,79 @@ impl Texture {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TextureTransform {
+    offset: [f32; 2],
+    scale: [f32; 2],
+    rotation_radians: f32,
+}
+
+impl TextureTransform {
+    pub const IDENTITY: Self = Self {
+        offset: [0.0, 0.0],
+        scale: [1.0, 1.0],
+        rotation_radians: 0.0,
+    };
+
+    pub fn new(
+        offset: [f32; 2],
+        scale: [f32; 2],
+        rotation_radians: f32,
+    ) -> Result<Self, AssetError> {
+        if !offset
+            .into_iter()
+            .chain(scale)
+            .chain([rotation_radians])
+            .all(f32::is_finite)
+        {
+            return Err(AssetError::InvalidTextureTransform);
+        }
+
+        Ok(Self {
+            offset,
+            scale,
+            rotation_radians,
+        })
+    }
+
+    pub const fn offset(&self) -> [f32; 2] {
+        self.offset
+    }
+
+    pub const fn scale(&self) -> [f32; 2] {
+        self.scale
+    }
+
+    pub const fn rotation_radians(&self) -> f32 {
+        self.rotation_radians
+    }
+}
+
+impl Default for TextureTransform {
+    fn default() -> Self {
+        Self::IDENTITY
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MaterialTextureBinding {
     texture: usize,
     tex_coord: u32,
+    transform: TextureTransform,
 }
 
 impl MaterialTextureBinding {
     pub const fn new(texture: usize, tex_coord: u32) -> Self {
-        Self { texture, tex_coord }
+        Self {
+            texture,
+            tex_coord,
+            transform: TextureTransform::IDENTITY,
+        }
+    }
+
+    pub const fn with_transform(mut self, transform: TextureTransform) -> Self {
+        self.transform = transform;
+        self
     }
 
     pub const fn texture(&self) -> usize {
@@ -157,6 +221,10 @@ impl MaterialTextureBinding {
     pub const fn tex_coord(&self) -> u32 {
         self.tex_coord
     }
+
+    pub const fn transform(&self) -> TextureTransform {
+        self.transform
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -164,6 +232,7 @@ pub struct NormalTextureBinding {
     texture: usize,
     tex_coord: u32,
     scale: f32,
+    transform: TextureTransform,
 }
 
 impl NormalTextureBinding {
@@ -175,7 +244,13 @@ impl NormalTextureBinding {
             texture,
             tex_coord,
             scale,
+            transform: TextureTransform::IDENTITY,
         })
+    }
+
+    pub const fn with_transform(mut self, transform: TextureTransform) -> Self {
+        self.transform = transform;
+        self
     }
 
     pub const fn texture(&self) -> usize {
@@ -188,6 +263,10 @@ impl NormalTextureBinding {
 
     pub const fn scale(&self) -> f32 {
         self.scale
+    }
+
+    pub const fn transform(&self) -> TextureTransform {
+        self.transform
     }
 }
 

@@ -3,10 +3,15 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import {
+  generateProceduralRgba,
+  type ProceduralPattern,
+  type TextureBlendMode,
+} from "@/lib/procedural-texture";
 import styles from "./material-texture-lab.module.css";
 
-type Shape = "sphere" | "cube" | "torus";
-type Pattern = "none" | "checker" | "stripes" | "dots";
+type Shape = "plane" | "sphere" | "cube" | "torus";
+type Pattern = "none" | ProceduralPattern;
 type WrapMode = "repeat" | "mirror" | "clamp";
 
 type MaterialState = {
@@ -15,8 +20,19 @@ type MaterialState = {
   metallic: number;
   roughness: number;
   pattern: Pattern;
-  repeat: number;
+  secondaryPattern: Pattern;
+  primaryFrequency: number;
+  secondaryFrequency: number;
+  blendMode: TextureBlendMode;
+  blendAmount: number;
+  repeatU: number;
+  repeatV: number;
+  rotationDegrees: number;
+  offsetU: number;
+  offsetV: number;
   wrap: WrapMode;
+  stretchX: number;
+  compensateStretch: boolean;
   doubleSided: boolean;
 };
 
@@ -36,38 +52,52 @@ const DEFAULT_STATE: MaterialState = {
   metallic: 0.15,
   roughness: 0.48,
   pattern: "checker",
-  repeat: 3,
+  secondaryPattern: "dots",
+  primaryFrequency: 8,
+  secondaryFrequency: 10,
+  blendMode: "multiply",
+  blendAmount: 0.35,
+  repeatU: 2,
+  repeatV: 2,
+  rotationDegrees: 0,
+  offsetU: 0,
+  offsetV: 0,
   wrap: "repeat",
+  stretchX: 1,
+  compensateStretch: false,
   doubleSided: false,
 };
 
+const PATTERNS: Pattern[] = ["none", "checker", "stripes", "dots", "rings", "noise"];
+
 function geometryForShape(shape: Shape): THREE.BufferGeometry {
+  if (shape === "plane") return new THREE.PlaneGeometry(2.1, 2.1, 12, 12);
   if (shape === "cube") return new THREE.BoxGeometry(1.7, 1.7, 1.7, 4, 4, 4);
   if (shape === "torus") return new THREE.TorusKnotGeometry(0.78, 0.26, 140, 22);
   return new THREE.SphereGeometry(1.05, 48, 32);
 }
 
-function patternTexture(pattern: Exclude<Pattern, "none">): THREE.DataTexture {
-  const size = 64;
-  const data = new Uint8Array(size * size * 4);
-  for (let y = 0; y < size; y += 1) {
-    for (let x = 0; x < size; x += 1) {
-      const offset = (y * size + x) * 4;
-      let value = 255;
-      if (pattern === "checker") value = ((Math.floor(x / 8) + Math.floor(y / 8)) % 2 === 0) ? 245 : 82;
-      if (pattern === "stripes") value = Math.floor(x / 7) % 2 === 0 ? 245 : 94;
-      if (pattern === "dots") {
-        const dx = (x % 16) - 8;
-        const dy = (y % 16) - 8;
-        value = dx * dx + dy * dy < 18 ? 78 : 238;
-      }
-      data[offset] = value;
-      data[offset + 1] = value;
-      data[offset + 2] = value;
-      data[offset + 3] = 255;
-    }
-  }
-  const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+function proceduralTexture(state: MaterialState): THREE.DataTexture | null {
+  if (state.pattern === "none") return null;
+
+  const pixels = generateProceduralRgba({
+    size: 128,
+    primary: {
+      pattern: state.pattern,
+      frequency: state.primaryFrequency,
+      seed: 17,
+    },
+    secondary: state.secondaryPattern === "none"
+      ? undefined
+      : {
+          pattern: state.secondaryPattern,
+          frequency: state.secondaryFrequency,
+          seed: 53,
+        },
+    blendMode: state.blendMode,
+    blendAmount: state.blendAmount,
+  });
+  const texture = new THREE.DataTexture(pixels, 128, 128, THREE.RGBAFormat);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.magFilter = THREE.NearestFilter;
   texture.minFilter = THREE.LinearMipmapLinearFilter;
@@ -82,16 +112,29 @@ function wrapping(mode: WrapMode): THREE.Wrapping {
   return THREE.RepeatWrapping;
 }
 
+function effectiveRepeatU(state: MaterialState): number {
+  if (state.shape === "plane" && state.compensateStretch) {
+    return state.repeatU * state.stretchX;
+  }
+  return state.repeatU;
+}
+
+function applyTextureMapping(runtime: Runtime, state: MaterialState) {
+  if (!runtime.texture) return;
+  const wrap = wrapping(state.wrap);
+  runtime.texture.wrapS = wrap;
+  runtime.texture.wrapT = wrap;
+  runtime.texture.repeat.set(effectiveRepeatU(state), state.repeatV);
+  runtime.texture.center.set(0.5, 0.5);
+  runtime.texture.rotation = THREE.MathUtils.degToRad(state.rotationDegrees);
+  runtime.texture.offset.set(state.offsetU, state.offsetV);
+  runtime.texture.needsUpdate = true;
+}
+
 function installTexture(runtime: Runtime, state: MaterialState) {
   runtime.texture?.dispose();
-  runtime.texture = state.pattern === "none" ? null : patternTexture(state.pattern);
-  if (runtime.texture) {
-    const wrap = wrapping(state.wrap);
-    runtime.texture.wrapS = wrap;
-    runtime.texture.wrapT = wrap;
-    runtime.texture.repeat.set(state.repeat, state.repeat);
-    runtime.texture.needsUpdate = true;
-  }
+  runtime.texture = proceduralTexture(state);
+  applyTextureMapping(runtime, state);
   runtime.mesh.material.map = runtime.texture;
   runtime.mesh.material.needsUpdate = true;
 }
@@ -121,7 +164,36 @@ export function MaterialTextureLab() {
     const runtime = runtimeRef.current;
     if (!runtime) return;
     installTexture(runtime, state);
-  }, [state.pattern, state.repeat, state.wrap]);
+  }, [
+    state.blendAmount,
+    state.blendMode,
+    state.pattern,
+    state.primaryFrequency,
+    state.secondaryFrequency,
+    state.secondaryPattern,
+  ]);
+
+  useEffect(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime) return;
+    applyTextureMapping(runtime, state);
+  }, [
+    state.compensateStretch,
+    state.offsetU,
+    state.offsetV,
+    state.repeatU,
+    state.repeatV,
+    state.rotationDegrees,
+    state.shape,
+    state.stretchX,
+    state.wrap,
+  ]);
+
+  useEffect(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime) return;
+    runtime.mesh.scale.set(state.stretchX, 1, 1);
+  }, [state.stretchX]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
@@ -159,6 +231,7 @@ export function MaterialTextureLab() {
 
     const material = new THREE.MeshStandardMaterial();
     const mesh = new THREE.Mesh(geometryForShape(state.shape), material);
+    mesh.scale.set(state.stretchX, 1, 1);
     scene.add(mesh);
 
     const floor = new THREE.Mesh(
@@ -217,19 +290,30 @@ export function MaterialTextureLab() {
     };
   }, []);
 
+  const hasTexture = state.pattern !== "none";
+  const hasSecondLayer = hasTexture && state.secondaryPattern !== "none";
+  const compensated = state.shape === "plane" && state.compensateStretch;
+
   return (
     <section className={styles.lab} aria-labelledby="material-lab-heading">
       <div className={styles.viewportPanel}>
         <div className={styles.headingRow}>
           <div>
-            <p className="eyebrow">PBR material playground</p>
-            <h2 id="material-lab-heading">Change the surface, not the geometry.</h2>
+            <p className="eyebrow">Texture authoring playground</p>
+            <h2 id="material-lab-heading">Separate synthesis, mapping and sampling.</h2>
           </div>
-          <p>Orbit the object while material factors, UV repetition and sampler wrapping update immediately.</p>
+          <p>Compose deterministic procedural pixels, then change how UVs map and how the sampler wraps them.</p>
         </div>
         <canvas ref={canvasRef} className={styles.canvas} aria-label="Interactive material and texture preview" />
+        <div className={styles.mappingReadout} aria-live="polite">
+          <strong>{hasTexture ? "Procedural texture active" : "Factor-only material"}</strong>
+          <span>
+            UV repeat {effectiveRepeatU(state).toFixed(1)} × {state.repeatV.toFixed(1)}
+            {compensated ? " · U compensated for plane stretch" : ""}
+          </span>
+        </div>
         <div className={styles.shapePicker} aria-label="Preview geometry">
-          {(["sphere", "cube", "torus"] as const).map((shape) => (
+          {(["plane", "sphere", "cube", "torus"] as const).map((shape) => (
             <button
               key={shape}
               type="button"
@@ -237,63 +321,135 @@ export function MaterialTextureLab() {
               onClick={() => patchState({ shape })}
               aria-pressed={state.shape === shape}
             >
-              {shape === "torus" ? "Torus knot" : shape[0].toUpperCase() + shape.slice(1)}
+              {shape === "plane" ? "UV plane" : shape === "torus" ? "Torus knot" : shape[0].toUpperCase() + shape.slice(1)}
             </button>
           ))}
         </div>
       </div>
 
       <aside className={styles.controlsPanel}>
-        <label className={styles.colorControl}>
-          <span>Base color</span>
-          <input type="color" value={state.baseColor} onChange={(event) => patchState({ baseColor: event.target.value })} />
-          <code>{state.baseColor}</code>
-        </label>
+        <div className={styles.controlGroup}>
+          <p className={styles.groupTitle}>PBR surface</p>
+          <label className={styles.colorControl}>
+            <span>Base color</span>
+            <input type="color" value={state.baseColor} onChange={(event) => patchState({ baseColor: event.target.value })} />
+            <code>{state.baseColor}</code>
+          </label>
+          <label className={styles.rangeControl}>
+            <span>Metallic <output>{state.metallic.toFixed(2)}</output></span>
+            <input type="range" min="0" max="1" step="0.01" value={state.metallic} onChange={(event) => patchState({ metallic: Number(event.target.value) })} />
+          </label>
+          <label className={styles.rangeControl}>
+            <span>Roughness <output>{state.roughness.toFixed(2)}</output></span>
+            <input type="range" min="0" max="1" step="0.01" value={state.roughness} onChange={(event) => patchState({ roughness: Number(event.target.value) })} />
+          </label>
+        </div>
 
-        <label className={styles.rangeControl}>
-          <span>Metallic <output>{state.metallic.toFixed(2)}</output></span>
-          <input type="range" min="0" max="1" step="0.01" value={state.metallic} onChange={(event) => patchState({ metallic: Number(event.target.value) })} />
-        </label>
-        <label className={styles.rangeControl}>
-          <span>Roughness <output>{state.roughness.toFixed(2)}</output></span>
-          <input type="range" min="0" max="1" step="0.01" value={state.roughness} onChange={(event) => patchState({ roughness: Number(event.target.value) })} />
-        </label>
+        <div className={styles.controlGroup}>
+          <p className={styles.groupTitle}>Procedural recipe</p>
+          <label className={styles.selectControl}>
+            <span>Layer A</span>
+            <select value={state.pattern} onChange={(event) => patchState({ pattern: event.target.value as Pattern })}>
+              {PATTERNS.map((pattern) => <option key={pattern} value={pattern}>{pattern}</option>)}
+            </select>
+          </label>
+          <label className={styles.rangeControl}>
+            <span>Layer A frequency <output>{state.primaryFrequency.toFixed(0)}</output></span>
+            <input type="range" min="2" max="20" step="1" value={state.primaryFrequency} disabled={!hasTexture} onChange={(event) => patchState({ primaryFrequency: Number(event.target.value) })} />
+          </label>
+          <label className={styles.selectControl}>
+            <span>Layer B</span>
+            <select value={state.secondaryPattern} disabled={!hasTexture} onChange={(event) => patchState({ secondaryPattern: event.target.value as Pattern })}>
+              {PATTERNS.map((pattern) => <option key={pattern} value={pattern}>{pattern}</option>)}
+            </select>
+          </label>
+          <label className={styles.rangeControl}>
+            <span>Layer B frequency <output>{state.secondaryFrequency.toFixed(0)}</output></span>
+            <input type="range" min="2" max="20" step="1" value={state.secondaryFrequency} disabled={!hasSecondLayer} onChange={(event) => patchState({ secondaryFrequency: Number(event.target.value) })} />
+          </label>
+          <div className={styles.inlineGrid}>
+            <label className={styles.selectControl}>
+              <span>Blend</span>
+              <select value={state.blendMode} disabled={!hasSecondLayer} onChange={(event) => patchState({ blendMode: event.target.value as TextureBlendMode })}>
+                <option value="mix">Mix</option>
+                <option value="multiply">Multiply</option>
+                <option value="screen">Screen</option>
+                <option value="difference">Difference</option>
+              </select>
+            </label>
+            <label className={styles.rangeControl}>
+              <span>Amount <output>{state.blendAmount.toFixed(2)}</output></span>
+              <input type="range" min="0" max="1" step="0.05" value={state.blendAmount} disabled={!hasSecondLayer} onChange={(event) => patchState({ blendAmount: Number(event.target.value) })} />
+            </label>
+          </div>
+        </div>
 
-        <label className={styles.selectControl}>
-          <span>Texture pattern</span>
-          <select value={state.pattern} onChange={(event) => patchState({ pattern: event.target.value as Pattern })}>
-            <option value="none">None</option>
-            <option value="checker">Checker</option>
-            <option value="stripes">Stripes</option>
-            <option value="dots">Dots</option>
-          </select>
-        </label>
+        <div className={styles.controlGroup}>
+          <p className={styles.groupTitle}>UV mapping & stretching</p>
+          <div className={styles.inlineGrid}>
+            <label className={styles.rangeControl}>
+              <span>Repeat U <output>{state.repeatU.toFixed(1)}×</output></span>
+              <input type="range" min="0.5" max="8" step="0.5" value={state.repeatU} disabled={!hasTexture} onChange={(event) => patchState({ repeatU: Number(event.target.value) })} />
+            </label>
+            <label className={styles.rangeControl}>
+              <span>Repeat V <output>{state.repeatV.toFixed(1)}×</output></span>
+              <input type="range" min="0.5" max="8" step="0.5" value={state.repeatV} disabled={!hasTexture} onChange={(event) => patchState({ repeatV: Number(event.target.value) })} />
+            </label>
+          </div>
+          <label className={styles.rangeControl}>
+            <span>UV rotation <output>{state.rotationDegrees.toFixed(0)}°</output></span>
+            <input type="range" min="-180" max="180" step="5" value={state.rotationDegrees} disabled={!hasTexture} onChange={(event) => patchState({ rotationDegrees: Number(event.target.value) })} />
+          </label>
+          <div className={styles.inlineGrid}>
+            <label className={styles.rangeControl}>
+              <span>Offset U <output>{state.offsetU.toFixed(2)}</output></span>
+              <input type="range" min="-1" max="1" step="0.05" value={state.offsetU} disabled={!hasTexture} onChange={(event) => patchState({ offsetU: Number(event.target.value) })} />
+            </label>
+            <label className={styles.rangeControl}>
+              <span>Offset V <output>{state.offsetV.toFixed(2)}</output></span>
+              <input type="range" min="-1" max="1" step="0.05" value={state.offsetV} disabled={!hasTexture} onChange={(event) => patchState({ offsetV: Number(event.target.value) })} />
+            </label>
+          </div>
+          <label className={styles.rangeControl}>
+            <span>Object X stretch <output>{state.stretchX.toFixed(2)}×</output></span>
+            <input type="range" min="0.5" max="3" step="0.1" value={state.stretchX} onChange={(event) => patchState({ stretchX: Number(event.target.value) })} />
+          </label>
+          <label className={styles.toggle}>
+            <input
+              type="checkbox"
+              checked={state.compensateStretch}
+              disabled={!hasTexture || state.shape !== "plane"}
+              onChange={(event) => patchState({ compensateStretch: event.target.checked })}
+            />
+            Compensate U repeat for UV-plane X stretch
+          </label>
+          <p className={styles.helperText}>
+            The compensation is exact only for the teaching plane. Arbitrary meshes need deliberate UV unwrapping/texel density or a projection method such as triplanar mapping.
+          </p>
+        </div>
 
-        <label className={styles.rangeControl}>
-          <span>UV repeat <output>{state.repeat.toFixed(1)}×</output></span>
-          <input type="range" min="0.5" max="8" step="0.5" value={state.repeat} disabled={state.pattern === "none"} onChange={(event) => patchState({ repeat: Number(event.target.value) })} />
-        </label>
+        <div className={styles.controlGroup}>
+          <p className={styles.groupTitle}>Sampler</p>
+          <label className={styles.selectControl}>
+            <span>Texture wrap</span>
+            <select value={state.wrap} disabled={!hasTexture} onChange={(event) => patchState({ wrap: event.target.value as WrapMode })}>
+              <option value="repeat">Repeat</option>
+              <option value="mirror">Mirrored repeat</option>
+              <option value="clamp">Clamp to edge</option>
+            </select>
+          </label>
+          <label className={styles.toggle}>
+            <input type="checkbox" checked={state.doubleSided} onChange={(event) => patchState({ doubleSided: event.target.checked })} />
+            Double-sided material
+          </label>
+        </div>
 
-        <label className={styles.selectControl}>
-          <span>Texture wrap</span>
-          <select value={state.wrap} disabled={state.pattern === "none"} onChange={(event) => patchState({ wrap: event.target.value as WrapMode })}>
-            <option value="repeat">Repeat</option>
-            <option value="mirror">Mirrored repeat</option>
-            <option value="clamp">Clamp to edge</option>
-          </select>
-        </label>
-
-        <label className={styles.toggle}>
-          <input type="checkbox" checked={state.doubleSided} onChange={(event) => patchState({ doubleSided: event.target.checked })} />
-          Double-sided material
-        </label>
-
-        <button type="button" className={styles.resetButton} onClick={() => setState(DEFAULT_STATE)}>Reset material</button>
+        <button type="button" className={styles.resetButton} onClick={() => setState(DEFAULT_STATE)}>Reset texture lab</button>
 
         <div className={styles.boundary}>
-          <strong>Durable model → renderer adapter</strong>
+          <strong>Authoring recipe → baked pixels → durable asset</strong>
           <p>
-            These controls mirror <code>three-d-assets</code>: base color factor, metallic factor, roughness factor, double-sided state and sampler wrapping. The generated teaching texture is browser-only; Three.js maps the model to GPU material state.
+            Layering and procedural synthesis stay authoring-side. The portable asset keeps image/texture/sampler references plus UV-set and finite offset/scale/rotation intent; renderers only materialize that result.
           </p>
         </div>
       </aside>

@@ -13,7 +13,8 @@ The crate models:
 - an encoded image as MIME-typed bytes without imposing a pixel decoder;
 - a sampler as renderer-independent filtering and wrapping semantics;
 - a texture as an image reference plus an optional sampler reference;
-- a normal-texture binding as a texture reference, UV-set index, and finite normal scale;
+- renderer-independent texture-coordinate transforms (finite offset, scale, and rotation) attached to material texture bindings;
+- a normal-texture binding as a texture reference, UV-set index, finite normal scale, and texture-coordinate transform;
 - referential integrity from primitives to materials, textures to images/samplers, and materials to textures.
 
 The geometry inside every primitive remains owned by `three-d-core`; `three-d-assets` composes that geometry into an asset rather than duplicating mesh validation. Tangent vectors are geometry attributes and therefore flow through primitives automatically once present on the core mesh. Encoded image bytes are preserved as asset data, while pixel decoding and renderer resource creation remain downstream.
@@ -56,3 +57,16 @@ The reusable `@moritzbrantner/three-d-renderer` package accepts validated indexe
 The `resourceKey` is identity, not a filename. Downstream consumers should use a content-derived identity such as the SHA-256 already carried by `asset-tooling` outputs and must change the key whenever geometry bytes/semantics change. The renderer does not infer provenance, decode glTF/OBJ, normalize coordinates, or own asset-processing policy; those responsibilities remain with `three-d-formats`, `three-d-scene`, and `asset-tooling`.
 
 This boundary is intentionally geometry-first. Texture/material transport remains a separate follow-up so applications do not grow local glTF loaders or ad-hoc renderer-specific asset semantics while waiting for full authored-model support.
+
+
+## Texture authoring and stretching boundary
+
+`three-d-assets` keeps portable mapping intent separate from authoring recipes. Texture synthesis, texture-coordinate mapping, and sampling are different concerns.
+
+The asset model owns the selected texture, UV set, and a finite 2D offset/scale/rotation transform. Identity is the default, so existing importers and callers keep their current behavior. Format adapters may map source-format transform extensions into this type when support is explicit; they must not silently approximate unsupported projection semantics.
+
+Procedural patterns, layer graphs, masks, and blend recipes are authoring inputs rather than portable runtime assets. An authoring tool should evaluate those recipes deterministically, bake the result to pixels, and attach the resulting image/texture/sampler resources to the asset. This keeps cache keys and provenance tractable and prevents renderer-specific shader graphs from becoming asset authority.
+
+Texture stretching is primarily a mapping/texel-density problem, not a sampler-wrap problem. Offset/scale/rotation can correct known 2D mapping transforms, but arbitrary non-uniformly scaled or curved meshes generally need an appropriate UV unwrap and consistent texel density. Projection techniques such as box or triplanar mapping belong in an explicit authoring or renderer feature when runtime projection is actually required; they should not be hidden inside the sampler contract.
+
+The browser materials-and-textures lab mirrors this split: it deterministically synthesizes and blends procedural grayscale layers, then applies UV transforms and sampler wrapping separately. Its plane-only stretch compensation is intentionally narrow so the teaching surface does not imply that one global UV scale can repair arbitrary topology.

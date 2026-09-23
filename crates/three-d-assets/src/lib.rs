@@ -11,7 +11,7 @@ use three_d_core::Mesh;
 
 pub use resources::{
     EncodedImage, MagnificationFilter, MaterialTextureBinding, MinificationFilter,
-    NormalTextureBinding, Texture, TextureSampler, TextureWrap,
+    NormalTextureBinding, Texture, TextureSampler, TextureTransform, TextureWrap,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -255,6 +255,7 @@ pub enum AssetError {
     InvalidImageMimeType,
     EmptyEncodedImage,
     InvalidNormalTextureScale,
+    InvalidTextureTransform,
     EmptyAssetMesh,
     TextureImageIndexOutOfBounds {
         texture_index: usize,
@@ -296,6 +297,9 @@ impl fmt::Display for AssetError {
             Self::EmptyEncodedImage => formatter.write_str("encoded image data must not be empty"),
             Self::InvalidNormalTextureScale => {
                 formatter.write_str("normal texture scale must be finite")
+            }
+            Self::InvalidTextureTransform => {
+                formatter.write_str("texture transform offset, scale, and rotation must be finite")
             }
             Self::EmptyAssetMesh => {
                 formatter.write_str("an asset mesh must contain at least one primitive")

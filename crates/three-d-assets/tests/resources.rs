@@ -1,7 +1,7 @@
 use three_d_assets::{
     Asset, AssetError, BaseColorFactor, EncodedImage, MagnificationFilter, Material,
     MaterialTextureBinding, MinificationFilter, NormalTextureBinding, Texture, TextureSampler,
-    TextureWrap,
+    TextureTransform, TextureWrap,
 };
 
 fn material() -> Material {
@@ -153,5 +153,38 @@ fn resource_values_reject_invalid_encoded_data_and_scale() {
     assert_eq!(
         NormalTextureBinding::new(0, 0, f32::NAN),
         Err(AssetError::InvalidNormalTextureScale)
+    );
+}
+
+
+#[test]
+fn texture_bindings_preserve_renderer_independent_uv_transforms() {
+    let transform = TextureTransform::new([0.25, -0.125], [2.0, 0.5], 0.75)
+        .expect("finite transform is valid");
+    let base_color = MaterialTextureBinding::new(0, 1).with_transform(transform);
+    let normal = NormalTextureBinding::new(0, 1, 0.8)
+        .expect("normal binding is valid")
+        .with_transform(transform);
+
+    assert_eq!(base_color.transform(), transform);
+    assert_eq!(normal.transform(), transform);
+    assert_eq!(base_color.transform().offset(), [0.25, -0.125]);
+    assert_eq!(base_color.transform().scale(), [2.0, 0.5]);
+    assert_eq!(base_color.transform().rotation_radians(), 0.75);
+}
+
+#[test]
+fn texture_transform_rejects_non_finite_components() {
+    assert_eq!(
+        TextureTransform::new([f32::NAN, 0.0], [1.0, 1.0], 0.0),
+        Err(AssetError::InvalidTextureTransform)
+    );
+    assert_eq!(
+        TextureTransform::new([0.0, 0.0], [f32::INFINITY, 1.0], 0.0),
+        Err(AssetError::InvalidTextureTransform)
+    );
+    assert_eq!(
+        TextureTransform::new([0.0, 0.0], [1.0, 1.0], f32::NEG_INFINITY),
+        Err(AssetError::InvalidTextureTransform)
     );
 }
