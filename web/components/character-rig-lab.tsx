@@ -1,5 +1,6 @@
 "use client";
 
+import {PrecisionRange} from "./PrecisionRange";
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -359,29 +360,9 @@ export function CharacterRigLab() {
           </div>
         </div>
 
-        <label className={styles.rangeControl}>
-          <span>Timeline <output>{Math.round(state.phase * 100)}%</output></span>
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.001"
-            value={state.phase}
-            onChange={(event) => patchState({ phase: Number(event.target.value), playing: false })}
-          />
-        </label>
+        <PrecisionRange className={styles.rangeControl} label="Timeline" value={state.phase * 100} min={0} max={100} step={0.1} unit="%" onChange={(percent) => patchState({ phase: percent / 100, playing: false })} />
 
-        <label className={styles.rangeControl}>
-          <span>Playback speed <output>{state.speed.toFixed(1)}×</output></span>
-          <input
-            type="range"
-            min="0.25"
-            max="2"
-            step="0.05"
-            value={state.speed}
-            onChange={(event) => patchState({ speed: Number(event.target.value) })}
-          />
-        </label>
+        <PrecisionRange className={styles.rangeControl} label="Playback speed" value={state.speed} min={0.25} max={2} step={0.05} unit="×" onChange={(speed) => patchState({ speed })} />
 
         <button type="button" className={styles.primaryButton} onClick={() => patchState({ playing: !state.playing })}>
           {state.playing ? "Pause motion" : "Play motion"}
