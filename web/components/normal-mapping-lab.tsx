@@ -1,5 +1,6 @@
 "use client";
 
+import {PrecisionRange} from "./PrecisionRange";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { deriveTangents, uvQuadMesh } from "@/lib/mesh";
@@ -164,18 +165,7 @@ export function NormalMappingLab() {
         </div>
         <canvas ref={canvasRef} className={styles.canvas} aria-label="Flat quad shaded with a procedural tangent-space normal map" />
         <div className={styles.controls}>
-          <label>
-            Normal strength
-            <output>{strength.toFixed(2)}</output>
-            <input
-              type="range"
-              min="0"
-              max="2"
-              step="0.05"
-              value={strength}
-              onChange={(event) => setStrength(Number(event.target.value))}
-            />
-          </label>
+          <PrecisionRange label="Normal strength" value={strength} min={0} max={2} step={0.05} onChange={setStrength} />
           <label className={styles.toggle}>
             <input
               type="checkbox"
