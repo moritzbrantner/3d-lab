@@ -1,5 +1,6 @@
 "use client";
 
+import {PrecisionRange} from "./PrecisionRange";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -423,27 +424,15 @@ export function SkeletalAnimationLab() {
 
           {(topicId === "skeleton" || topicId === "bind-pose" || topicId === "weights") && (
             <div className={styles.controls} aria-label="Joint pose controls">
-              <label>
-                Shoulder <output>{state.shoulder}°</output>
-                <input type="range" min="-70" max="70" value={state.shoulder} onChange={(event) => patchState({ shoulder: Number(event.target.value) })} />
-              </label>
-              <label>
-                Elbow <output>{state.elbow}°</output>
-                <input type="range" min="-90" max="90" value={state.elbow} onChange={(event) => patchState({ elbow: Number(event.target.value) })} />
-              </label>
-              <label>
-                Wrist <output>{state.wrist}°</output>
-                <input type="range" min="-90" max="90" value={state.wrist} onChange={(event) => patchState({ wrist: Number(event.target.value) })} />
-              </label>
+              <PrecisionRange label="Shoulder" value={state.shoulder} min={-70} max={70} unit="°" onChange={(shoulder) => patchState({ shoulder })} />
+              <PrecisionRange label="Elbow" value={state.elbow} min={-90} max={90} unit="°" onChange={(elbow) => patchState({ elbow })} />
+              <PrecisionRange label="Wrist" value={state.wrist} min={-90} max={90} unit="°" onChange={(wrist) => patchState({ wrist })} />
             </div>
           )}
 
           {topicId === "weights" && (
             <div className={styles.weightControl}>
-              <label>
-                Selected vertex: middle-joint weight <output>{Math.round(state.middleWeight * 100)}%</output>
-                <input type="range" min="0" max="1" step="0.01" value={state.middleWeight} onChange={(event) => patchState({ middleWeight: Number(event.target.value) })} />
-              </label>
+              <PrecisionRange label="Selected vertex: middle-joint weight" value={state.middleWeight * 100} min={0} max={100} step={1} unit="%" onChange={(percent) => patchState({ middleWeight: percent / 100 })} />
               <div className={styles.legend} aria-label="Skinning contribution markers">
                 <span><i className={styles.rootDot} /> root-only result</span>
                 <span><i className={styles.middleDot} /> middle-only result</span>
@@ -455,10 +444,7 @@ export function SkeletalAnimationLab() {
           {topicId === "pipeline" && (
             <>
               <div className={styles.playbackControls}>
-                <label>
-                  Clip time <output>{state.time.toFixed(2)} s</output>
-                  <input type="range" min="0" max={TEACHING_CLIP_DURATION} step="0.01" value={state.time} disabled={state.playing} onChange={(event) => patchState({ time: Number(event.target.value) })} />
-                </label>
+                <PrecisionRange label="Clip time" value={state.time} min={0} max={TEACHING_CLIP_DURATION} step={0.01} unit="s" disabled={state.playing} onChange={(time) => patchState({ time })} />
                 <button type="button" onClick={() => patchState({ playing: !state.playing })}>
                   {state.playing ? "Pause clip" : "Play clip"}
                 </button>
@@ -490,10 +476,7 @@ export function SkeletalAnimationLab() {
               </div>
               {state.assembly === "clip" && (
                 <div className={styles.playbackControls}>
-                  <label>
-                    Animation time <output>{state.time.toFixed(2)} s</output>
-                    <input type="range" min="0" max={TEACHING_CLIP_DURATION} step="0.01" value={state.time} disabled={state.playing} onChange={(event) => patchState({ time: Number(event.target.value) })} />
-                  </label>
+                  <PrecisionRange label="Animation time" value={state.time} min={0} max={TEACHING_CLIP_DURATION} step={0.01} unit="s" disabled={state.playing} onChange={(time) => patchState({ time })} />
                   <button type="button" onClick={() => patchState({ playing: !state.playing })}>
                     {state.playing ? "Pause" : "Play"}
                   </button>
