@@ -1,0 +1,50 @@
+{
+  "schema": "character-pose-evidence/v1",
+  "runtime": "v22.16.0",
+  "baselineRevision": "7889a0066df928b101d42fb16f32353bd26c0696",
+  "correctness": {
+    "samples": 6003,
+    "outputIdentity": "pass",
+    "historicalUnchangedChannels": "pass",
+    "motionSwitchReset": "pass",
+    "loopSeamVelocity": "pass",
+    "invalidPhaseAtomicity": "pass",
+    "exactFrameStep": "pass"
+  },
+  "work": {
+    "samplesPerRound": 240000,
+    "baselinePoseObjects": 240000,
+    "reusedPoseObjects": 1
+  },
+  "timing": {
+    "unit": "ms",
+    "rounds": 9,
+    "baselineMedian": 62.35514400000005,
+    "reusedMedian": 11.872702000000004,
+    "ratio": 5.251975834986849,
+    "baseline": [
+      63.96364300000002,
+      61.29873499999999,
+      60.649887999999976,
+      62.35514400000005,
+      61.792978000000005,
+      60.985071999999946,
+      65.63943500000005,
+      64.75571500000001,
+      64.45165800000007
+    ],
+    "reused": [
+      12.055928999999992,
+      11.786503000000039,
+      11.992803000000038,
+      11.872702000000004,
+      11.770027999999968,
+      11.799822999999947,
+      11.745280999999977,
+      12.268898000000036,
+      12.005461999999966
+    ],
+    "gating": false
+  },
+  "limitations": "CPU pose microbenchmark only; no GPU/frame-time or heap-byte claim. Timing is not a CI threshold."
+}
