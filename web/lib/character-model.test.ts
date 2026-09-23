@@ -1,12 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import { buildCharacterModel } from "./character-model";
+import { disposeRenderableResources } from "./three-resources";
 
 describe("batched teaching character", () => {
   test("ratchets 31 rigid parts into one mesh and three color-pass groups", () => {
     const character = buildCharacterModel();
     let meshCount = 0;
-    character.model.traverse((object) => { if (object instanceof THREE.Mesh) meshCount += 1; });
+    character.model.traverse((object) => { if ((object as THREE.Mesh).isMesh) meshCount += 1; });
     expect(meshCount).toBe(1);
     expect(character.sourceDraws).toBe(31);
     expect(character.materialDraws).toBe(3);
@@ -62,4 +63,23 @@ describe("batched teaching character", () => {
       expect(character.skeleton.boneMatrices).toBe(palette);
     }
   });
+
+  test("disposes renderer-package geometry and shared materials exactly once", () => {
+    const character = buildCharacterModel();
+    const scene = new THREE.Scene();
+    scene.add(character.model, character.skeletonHelper);
+    const counts = new Map<THREE.BufferGeometry | THREE.Material, number>();
+    const helperMaterials = Array.isArray(character.skeletonHelper.material)
+      ? character.skeletonHelper.material : [character.skeletonHelper.material];
+    const resources = [character.mesh.geometry, character.skeletonHelper.geometry,
+      ...character.materials, ...helperMaterials];
+    for (const resource of resources) {
+      counts.set(resource, 0);
+      resource.addEventListener("dispose", () => counts.set(resource, counts.get(resource)! + 1));
+    }
+    disposeRenderableResources(scene);
+    for (const resource of resources) expect(counts.get(resource)).toBe(1);
+    character.skeleton.dispose();
+  });
+
 });

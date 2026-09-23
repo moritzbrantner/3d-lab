@@ -53,14 +53,20 @@ gate CI. Deterministic output identity, topology reuse, group count and parity d
 Renderer tests compare every vertex of the batch against original rigid meshes
 through 17 poses, including non-identity bind/root transforms and parent motion.
 They check material identity/group ranges, index rebasing, borrowed resource
-ownership, and explicit rejection of partial draw ranges, pre-skinned/morphed
+ownership, and explicit rejection of partial draw ranges, pre-skinned
 inputs, invalid joint indices, singular transforms and baked reflections.
-Model tests enforce 13 joints, 31-to-3 grouping, helper alignment, floor contact,
-and stable geometry/index/palette buffers across 120 poses.
+The first CI run exposed a package-boundary identity bug: an `instanceof Mesh`
+check missed a mesh from the renderer package's separate Three.js module. Both
+resource cleanup and inspection now use Three's structural type flags, with an
+exactly-once resource disposal regression. Model tests enforce 13 joints,
+31-to-3 grouping, helper alignment, floor contact, and stable geometry/index/
+palette buffers across 120 poses.
 
 The showcase provides exact time entry in seconds, exact numeric playback speed,
 1/60-second forward/backward stepping (clamped at boundaries), a bind-pose toggle,
-and skeleton/x-ray inspection. The coarse timeline slider remains an adjunct.
+and skeleton/x-ray inspection. Numeric fields preserve partial/empty editing
+drafts, commit on Enter/blur, and cancel on Escape. The coarse timeline slider
+remains an adjunct.
 
 ## Limits and verification status
 

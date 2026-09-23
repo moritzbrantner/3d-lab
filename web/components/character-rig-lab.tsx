@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { buildCharacterModel } from "@/lib/character-model";
+import { disposeRenderableResources } from "@/lib/three-resources";
 import {
   CHARACTER_CYCLE_SECONDS, createCharacterPose, sampleCharacterPoseInto,
   stepCharacterPhase, type CharacterMotion, type CharacterPose,
@@ -36,17 +37,34 @@ const DEFAULT_STATE: RigState = {
   showSkeleton: true, transparentSkin: false, bindPose: false,
 };
 
-function disposeObject(root: THREE.Object3D) {
-  const geometries = new Set<THREE.BufferGeometry>();
-  const materials = new Set<THREE.Material>();
-  root.traverse((object) => {
-    if (!(object instanceof THREE.Mesh || object instanceof THREE.Line || object instanceof THREE.Points)) return;
-    geometries.add(object.geometry);
-    const objectMaterials = Array.isArray(object.material) ? object.material : [object.material];
-    objectMaterials.forEach((material) => materials.add(material));
-  });
-  geometries.forEach((geometry) => geometry.dispose());
-  materials.forEach((material) => material.dispose());
+/** Keep an editing draft so empty/partial decimals survive keystrokes. */
+function ExactNumberInput({ value, min, max, step, onCommit, onEditBegin }: {
+  value: number;
+  min: number;
+  max: number;
+  step: string;
+  onCommit: (value: number) => void;
+  onEditBegin?: () => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const cancelRef = useRef(false);
+  return <input type="number" min={min} max={max} step={step}
+    value={draft ?? String(value)}
+    onFocus={() => { setDraft(String(value)); onEditBegin?.(); }}
+    onChange={(event) => setDraft(event.target.value)}
+    onBlur={(event) => {
+      const parsed = event.target.valueAsNumber;
+      if (!cancelRef.current && Number.isFinite(parsed)) onCommit(Math.min(max, Math.max(min, parsed)));
+      cancelRef.current = false;
+      setDraft(null);
+    }}
+    onKeyDown={(event) => {
+      if (event.key === "Escape") cancelRef.current = true;
+      if (event.key === "Enter" || event.key === "Escape") {
+        event.preventDefault();
+        event.currentTarget.blur();
+      }
+    }} />;
 }
 
 function applyPose(runtime: Runtime, state: RigState) {
@@ -158,7 +176,7 @@ export function CharacterRigLab() {
       resizeObserver.disconnect();
       controls.dispose();
       character.skeleton.dispose();
-      disposeObject(scene);
+      disposeRenderableResources(scene);
       renderer.dispose();
       runtimeRef.current = null;
     };
@@ -195,12 +213,10 @@ export function CharacterRigLab() {
         </label>
         <label className={styles.rangeControl}>
           <span>Exact time (seconds)</span>
-          <input type="number" min="0" max={CHARACTER_CYCLE_SECONDS} step="any"
+          <ExactNumberInput min={0} max={CHARACTER_CYCLE_SECONDS} step="any"
             value={Number((state.phase * CHARACTER_CYCLE_SECONDS).toFixed(6))}
-            onChange={(event) => {
-              const value = event.target.valueAsNumber;
-              if (Number.isFinite(value)) patchState({ phase: Math.min(1, Math.max(0, value / CHARACTER_CYCLE_SECONDS)), playing: false, bindPose: false });
-            }} />
+            onEditBegin={() => patchState({ playing: false })}
+            onCommit={(value) => patchState({ phase: value / CHARACTER_CYCLE_SECONDS, playing: false, bindPose: false })} />
         </label>
         <div className={`${styles.segmented} ${styles.frameControls}`}>
           <button type="button" aria-label="Previous frame (1/60 second)" onClick={() => patchState({
@@ -212,11 +228,8 @@ export function CharacterRigLab() {
         </div>
         <label className={styles.rangeControl}>
           <span>Playback speed <output>{state.speed.toFixed(2)}×</output></span>
-          <input type="number" min="0.25" max="2" step="0.05" value={state.speed}
-            onChange={(event) => {
-              const value = event.target.valueAsNumber;
-              if (Number.isFinite(value)) patchState({ speed: Math.min(2, Math.max(0.25, value)) });
-            }} />
+          <ExactNumberInput min={0.25} max={2} step="0.05" value={state.speed}
+            onCommit={(value) => patchState({ speed: value })} />
         </label>
         <button type="button" className={styles.primaryButton}
           onClick={() => patchState({ playing: !state.playing, bindPose: false })}>
