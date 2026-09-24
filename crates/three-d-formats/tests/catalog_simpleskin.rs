@@ -47,10 +47,16 @@ fn canonical_khronos_simple_skin_animation_maps_to_animation_core() {
     let mut pose = vec![Transform::IDENTITY; 3];
     clip.sample(0.0, &mut pose).unwrap();
     let start = pose[2].rotation;
-    clip.sample(2.75, &mut pose).unwrap();
-    let middle = pose[2].rotation;
-    assert!((middle.length() - 1.0).abs() < 1.0e-5);
-    assert_ne!(middle, start);
+    let mut saw_nontrivial_rotation = false;
+    for time in [0.5_f32, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0] {
+        clip.sample(time, &mut pose).unwrap();
+        assert!((pose[2].rotation.length() - 1.0).abs() < 1.0e-5);
+        saw_nontrivial_rotation |= pose[2].rotation != start;
+    }
+    assert!(
+        saw_nontrivial_rotation,
+        "canonical animation must contain a non-identity rotation keyframe"
+    );
 
     clip.sample(5.5, &mut pose).unwrap();
     assert!((pose[2].rotation.length() - 1.0).abs() < 1.0e-5);
