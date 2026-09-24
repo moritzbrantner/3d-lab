@@ -21,6 +21,7 @@ describe("editor scene snapshots", () => {
     scene = updateMeshVertex(scene, "body", 0, [-0.875, -0.5, -0.5]);
 
     const encoded = serializeEditorSceneSnapshot(scene);
+    expect(encoded).not.toContain("\n  ");
     expect(JSON.parse(encoded).schema).toBe(EDITOR_SCENE_SNAPSHOT_SCHEMA);
     const decoded = parseEditorSceneSnapshot(encoded);
     expect(decoded).toEqual(scene);
@@ -141,6 +142,13 @@ describe("editor scene snapshots", () => {
     expect(() => validateEditorSceneSnapshotFileSize(MAX_EDITOR_SCENE_SNAPSHOT_FILE_BYTES)).not.toThrow();
     expect(() => validateEditorSceneSnapshotFileSize(MAX_EDITOR_SCENE_SNAPSHOT_FILE_BYTES + 1))
       .toThrow("file size");
+  });
+
+  test("serializer never returns a snapshot larger than the import limit", () => {
+    const scene = createEditorScene();
+    const nodes = [...scene.nodes];
+    nodes[0] = { ...nodes[0], name: "x".repeat(MAX_EDITOR_SCENE_SNAPSHOT_FILE_BYTES) };
+    expect(() => serializeEditorSceneSnapshot({ nodes })).toThrow("file size");
   });
 
   test("rejects empty scenes, malformed tuples, and invalid JSON explicitly", () => {
