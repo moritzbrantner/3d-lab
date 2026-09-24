@@ -3,10 +3,15 @@ import { createEditorScene, updateMeshVertex, updateNodeTransform, type EditorSc
 import {
   EDITOR_SCENE_SNAPSHOT_SCHEMA,
   MAX_EDITOR_SCENE_SNAPSHOT_DEPTH,
+  MAX_EDITOR_SCENE_SNAPSHOT_FILE_BYTES,
+  MAX_EDITOR_SCENE_SNAPSHOT_INDICES_PER_MESH,
   MAX_EDITOR_SCENE_SNAPSHOT_NODES,
+  MAX_EDITOR_SCENE_SNAPSHOT_TOTAL_VERTICES,
+  MAX_EDITOR_SCENE_SNAPSHOT_VERTICES_PER_MESH,
   decodeEditorSceneSnapshot,
   parseEditorSceneSnapshot,
   serializeEditorSceneSnapshot,
+  validateEditorSceneSnapshotFileSize,
 } from "./scene-editor-snapshot";
 
 describe("editor scene snapshots", () => {
@@ -82,13 +87,60 @@ describe("editor scene snapshots", () => {
       nodes: tooDeep,
     })).toThrow("hierarchy depth limit");
 
-    const tooMany = Array.from({ length: MAX_EDITOR_SCENE_SNAPSHOT_NODES + 1 }, (_, index) =>
-      node(index, null),
+    const tooMany: unknown[] = Array.from(
+      { length: MAX_EDITOR_SCENE_SNAPSHOT_NODES + 1 },
+      (_, index) => node(index, null),
     );
+    tooMany[0] = {};
     expect(() => decodeEditorSceneSnapshot({
       schema: EDITOR_SCENE_SNAPSHOT_SCHEMA,
       nodes: tooMany,
     })).toThrow("node count");
+  });
+
+  test("bounds mesh and aggregate geometry before copying payload arrays", () => {
+    const meshNode = (id: string, vertices: unknown[], indices: unknown[]) => ({
+      id,
+      name: id,
+      parent: null,
+      transform: { translation: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+      mesh: { vertices, indices },
+    });
+
+    expect(() => decodeEditorSceneSnapshot({
+      schema: EDITOR_SCENE_SNAPSHOT_SCHEMA,
+      nodes: [meshNode(
+        "too-many-vertices",
+        Array(MAX_EDITOR_SCENE_SNAPSHOT_VERTICES_PER_MESH + 1).fill([0, 0, 0]),
+        [0, 0, 0],
+      )],
+    })).toThrow("vertices count");
+
+    expect(() => decodeEditorSceneSnapshot({
+      schema: EDITOR_SCENE_SNAPSHOT_SCHEMA,
+      nodes: [meshNode(
+        "too-many-indices",
+        [[0, 0, 0]],
+        Array(MAX_EDITOR_SCENE_SNAPSHOT_INDICES_PER_MESH + 1).fill(0),
+      )],
+    })).toThrow("indices count");
+
+    const firstCount = Math.floor(MAX_EDITOR_SCENE_SNAPSHOT_TOTAL_VERTICES / 2);
+    const secondCount = MAX_EDITOR_SCENE_SNAPSHOT_TOTAL_VERTICES - firstCount;
+    expect(() => decodeEditorSceneSnapshot({
+      schema: EDITOR_SCENE_SNAPSHOT_SCHEMA,
+      nodes: [
+        meshNode("aggregate-a", Array(firstCount).fill([0, 0, 0]), [0, 0, 0]),
+        meshNode("aggregate-b", Array(secondCount).fill([0, 0, 0]), [0, 0, 0]),
+        meshNode("aggregate-overflow", [[0, 0, 0]], [0, 0, 0]),
+      ],
+    })).toThrow("total vertex limit");
+  });
+
+  test("rejects oversized file metadata before the UI reads it", () => {
+    expect(() => validateEditorSceneSnapshotFileSize(MAX_EDITOR_SCENE_SNAPSHOT_FILE_BYTES)).not.toThrow();
+    expect(() => validateEditorSceneSnapshotFileSize(MAX_EDITOR_SCENE_SNAPSHOT_FILE_BYTES + 1))
+      .toThrow("file size");
   });
 
   test("rejects empty scenes, malformed tuples, and invalid JSON explicitly", () => {
