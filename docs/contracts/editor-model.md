@@ -27,6 +27,14 @@ Node and vertex selection are editor state, not scene semantics. Selecting a mes
 
 Ray-cast hits are translated back to node ids and indexed vertex ids. Three.js object identity is never persisted as the source of truth.
 
+## Scene snapshot boundary
+
+The editor's portable snapshot format is versioned as `3d-lab/editor-scene-snapshot/v1`. It serializes the ordered node hierarchy, local transforms, indexed mesh data, and format-neutral vertex attributes only.
+
+Snapshot export is deterministic and compact for the same editor scene: parent-before-child node order is preserved and persistent topology state is materialized only at this explicit compatibility boundary. Serialization applies the same 16 MiB byte limit as import before returning data, so the editor never downloads a snapshot that this version would reject solely for size. Selection, gizmo mode, camera state, undo/redo commands, topology caches, Three.js objects, and GPU resources are not serialized.
+
+Snapshot import is a trust boundary. The decoder rejects unknown schema versions and unsupported fields, validates tuple shapes and finite numeric data, then runs the authoritative scene/mesh validation before replacing editor state. The v1 boundary rejects files above 16 MiB before reading them, accepts at most 1024 nodes and hierarchy depth 64, and bounds geometry to 65,536 vertices / 393,216 indices per mesh plus 131,072 vertices / 786,432 indices per snapshot. Raw array cardinalities are checked before tuple parsing or copying, so over-limit input fails before expensive materialization. A successful import starts a fresh semantic command log; malformed input leaves the current scene unchanged.
+
 ## Next boundary
 
-Future drag gizmos should emit the same model edits as numeric controls. Undo/redo should store deterministic edit commands over model ids and values, not snapshots of Three.js objects or GPU buffers.
+glTF authoring round-trips should be adapters over this format-neutral scene boundary. File-format accessors, buffer views, node indices, and renderer objects must not become the editor's durable source of truth.

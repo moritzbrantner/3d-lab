@@ -11,9 +11,13 @@ on:
       - "web/app/skeletal-animation/**"
       - "web/components/character-rig-lab*"
       - "web/components/imported-skin-lab*"
+      - "web/app/editor/**"
+      - "web/components/scene-editor-lab*"
+      - "web/lib/scene-editor-snapshot*"
       - "web/lib/character-*"
       - "web/lib/imported-skin*"
       - "scripts/character-browser-smoke.mjs"
+      - "scripts/editor-snapshot-browser-smoke.mjs"
       - "scripts/sync-web-animation-fixtures.mjs"
       - "fixtures/catalog/khronos-simpleskin-embedded.*"
       - "profiles/runtime-profiler/renderer-browser.json"
@@ -138,6 +142,9 @@ jobs:
             bun scripts/character-browser-smoke.mjs \
               http://127.0.0.1:4173/skeletal-animation/ \
               "$RUNNER_TEMP/character-browser-smoke"
+            bun scripts/editor-snapshot-browser-smoke.mjs \
+              http://127.0.0.1:4173/editor/ \
+              "$RUNNER_TEMP/editor-snapshot-browser-smoke"
             runtime-profiler capture \
               --scenario profiles/runtime-profiler/renderer-browser.json \
               --output "$RUNNER_TEMP/candidate-renderer-browser"
@@ -175,6 +182,7 @@ jobs:
             ${{ runner.temp }}/candidate-renderer-browser
             ${{ runner.temp }}/renderer-browser-comparison.json
             ${{ runner.temp }}/character-browser-smoke
+            ${{ runner.temp }}/editor-snapshot-browser-smoke
             ${{ runner.temp }}/reference-renderer-server.log
             ${{ runner.temp }}/candidate-renderer-server.log
           if-no-files-found: warn

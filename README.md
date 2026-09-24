@@ -50,6 +50,7 @@ The GitHub Pages curriculum currently covers:
 24. OBJ and glTF decoding into one renderer-independent asset model
 25. Tangent derivation, handedness, and tangent-space normal-map shading
 26. Scene hierarchy inspection, mesh picking, vertex selection, and direct vertex/transform authoring
+27. Versioned format-neutral scene snapshot import/export with strict trust-boundary validation
 
 Every topic combines a concise explanation with an interactive scene and a small data inspector. The Rust side mirrors the durable, renderer-independent concepts rather than wrapping Three.js APIs or asset-file structures.
 

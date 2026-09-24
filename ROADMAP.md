@@ -56,7 +56,7 @@
 - [x] Add drag gizmos for node transforms and selected vertices with explicit local/world coordinate modes and one semantic command per completed drag.
 - [x] Add face and edge selection plus bounded split, inset, and extrude operations backed by deterministic topology deltas.
 - [x] Add undo/redo as a deterministic semantic edit-command log instead of renderer or scene snapshots.
-- [ ] Add format-neutral scene snapshot import/export before teaching glTF authoring round-trips.
+- [x] Add format-neutral scene snapshot import/export before teaching glTF authoring round-trips.
 
 ### Slice 7 — procedural character animation
 
