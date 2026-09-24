@@ -7,6 +7,8 @@ import {
 import { validateMesh, type IndexedMesh, type Vec2, type Vec3, type Vec4 } from "./mesh";
 
 export const EDITOR_SCENE_SNAPSHOT_SCHEMA = "3d-lab/editor-scene-snapshot/v1" as const;
+export const MAX_EDITOR_SCENE_SNAPSHOT_NODES = 1024;
+export const MAX_EDITOR_SCENE_SNAPSHOT_DEPTH = 64;
 
 export type EditorSceneSnapshot = Readonly<{
   schema: typeof EDITOR_SCENE_SNAPSHOT_SCHEMA;
@@ -129,7 +131,21 @@ function parseNode(value: unknown, index: number): EditorNode {
 
 function requireSnapshotScene(scene: EditorScene): void {
   if (scene.nodes.length === 0) throw new Error("scene snapshot must contain at least one node");
+  if (scene.nodes.length > MAX_EDITOR_SCENE_SNAPSHOT_NODES) {
+    throw new Error(`scene snapshot node count ${scene.nodes.length} exceeds limit ${MAX_EDITOR_SCENE_SNAPSHOT_NODES}`);
+  }
   validateEditorScene(scene);
+
+  const depths = new Map<string, number>();
+  for (const node of scene.nodes) {
+    const depth = node.parent === null ? 1 : (depths.get(node.parent) ?? 0) + 1;
+    if (depth > MAX_EDITOR_SCENE_SNAPSHOT_DEPTH) {
+      throw new Error(
+        `scene snapshot node ${node.id} exceeds hierarchy depth limit ${MAX_EDITOR_SCENE_SNAPSHOT_DEPTH}`,
+      );
+    }
+    depths.set(node.id, depth);
+  }
 }
 
 function cloneTuple2(value: Vec2): Vec2 {
