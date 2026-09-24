@@ -60,14 +60,46 @@ try {
     "snapshot import must establish a fresh semantic-history boundary");
   checks.push("structural import rebuilds the viewport and resets command history");
 
-  const invalid = { ...snapshot, schema: "3d-lab/editor-scene-snapshot/v999" };
+  await page.evaluate(() => {
+    const originalText = File.prototype.text;
+    File.prototype.text = function delayedSnapshotText() {
+      const contents = originalText.call(this);
+      if (!this.name.startsWith("slow-")) return contents;
+      return new Promise((resolve, reject) => {
+        window.setTimeout(() => void contents.then(resolve, reject), 180);
+      });
+    };
+  });
+  const stale = structuredClone(snapshot);
+  stale.nodes.find((node) => node.id === "body").transform.translation[0] = 9;
+  stale.nodes.find((node) => node.id === "imported-group").name = "Stale group";
+  const latest = structuredClone(snapshot);
+  latest.nodes.find((node) => node.id === "body").transform.translation[0] = -1.125;
+  latest.nodes.find((node) => node.id === "imported-group").name = "Latest group";
+  await fileInput.setInputFiles({
+    name: "slow-stale.snapshot.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(stale)),
+  });
+  await fileInput.setInputFiles({
+    name: "latest.snapshot.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(latest)),
+  });
+  await editor.getByRole("button", { name: /Latest group/ }).waitFor();
+  await page.waitForTimeout(250);
+  assert.equal(await editor.getByRole("button", { name: /Stale group/ }).count(), 0);
+  assert.equal(Number(await translationX.inputValue()), -1.125);
+  checks.push("most recently selected snapshot wins overlapping asynchronous file reads");
+
+  const invalid = { ...latest, schema: "3d-lab/editor-scene-snapshot/v999" };
   await fileInput.setInputFiles({
     name: "invalid.snapshot.json",
     mimeType: "application/json",
     buffer: Buffer.from(JSON.stringify(invalid)),
   });
   await editor.getByRole("status").filter({ hasText: "Import failed" }).waitFor();
-  assert.equal(Number(await translationX.inputValue()), -0.625,
+  assert.equal(Number(await translationX.inputValue()), -1.125,
     "invalid snapshot must leave the accepted scene unchanged");
   checks.push("invalid schema fails closed without replacing scene state");
 

@@ -191,6 +191,7 @@ export function SceneEditorLab() {
   const runtimeRef = useRef<Runtime | null>(null);
   const initialSceneRef = useRef<EditorScene | null>(null);
   const snapshotInputRef = useRef<HTMLInputElement>(null);
+  const importRequestRef = useRef(0);
   const gizmoTargetRef = useRef<GizmoTarget | null>(null);
   const suppressPickRef = useRef(false);
   const cancelledDragRef = useRef(false);
@@ -601,8 +602,12 @@ export function SceneEditorLab() {
 
   const importSceneSnapshot = async (file: File | null) => {
     if (!file) return;
+    const requestId = importRequestRef.current + 1;
+    importRequestRef.current = requestId;
     try {
-      const scene = parseEditorSceneSnapshot(await file.text());
+      const source = await file.text();
+      if (requestId !== importRequestRef.current) return;
+      const scene = parseEditorSceneSnapshot(source);
       const selected = scene.nodes.find((node) => node.mesh) ?? scene.nodes[0];
       initialSceneRef.current = scene;
       setHistory(createEditorCommandLog(scene));
@@ -611,14 +616,18 @@ export function SceneEditorLab() {
       setRuntimeRevision((revision) => revision + 1);
       setSnapshotStatus(`Imported ${scene.nodes.length} nodes; undo history reset.`);
     } catch (error) {
+      if (requestId !== importRequestRef.current) return;
       const message = error instanceof Error ? error.message : String(error);
       setSnapshotStatus(`Import failed: ${message}`);
     } finally {
-      if (snapshotInputRef.current) snapshotInputRef.current.value = "";
+      if (requestId === importRequestRef.current && snapshotInputRef.current) {
+        snapshotInputRef.current.value = "";
+      }
     }
   };
 
   const resetScene = () => {
+    importRequestRef.current += 1;
     const scene = createEditorScene();
     initialSceneRef.current = scene;
     setHistory(createEditorCommandLog(scene));
