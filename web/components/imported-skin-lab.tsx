@@ -37,7 +37,13 @@ function ExactTimeInput({ value, max, onCommit }: { value: number; max: number; 
     onFocus={() => setDraft(String(value))}
     onChange={(event) => setDraft(event.target.value)}
     onKeyDown={(event) => {
-      if (event.key === "Escape") cancelRef.current = true;
+      if (event.key === "Enter") {
+        const next = event.currentTarget.valueAsNumber;
+        if (Number.isFinite(next)) onCommit(THREE.MathUtils.clamp(next, 0, max));
+        cancelRef.current = true;
+      } else if (event.key === "Escape") {
+        cancelRef.current = true;
+      }
       if (event.key === "Escape" || event.key === "Enter") {
         event.preventDefault();
         event.currentTarget.blur();
