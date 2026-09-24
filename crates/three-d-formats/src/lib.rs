@@ -10,7 +10,11 @@ use std::fmt;
 use std::io::Cursor;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use gltf::animation::{Interpolation as GltfInterpolation, Property as AnimationProperty};
 use gltf::mesh::{Mode, Semantic};
+use three_d_animation::{
+    AnimationClip, AnimationTrack, Interpolation, Keyframe, KeyframeTrack, Quat,
+};
 use three_d_assets::{Asset, AssetError, AssetMesh, BaseColorFactor, Material, MeshPrimitive};
 use three_d_core::{Color3, Mesh, MeshError, Tangent4, Vec2, Vec3, VertexAttributes};
 
@@ -53,6 +57,21 @@ pub enum FormatError {
     UnsupportedMorphTargets {
         mesh_index: usize,
         primitive_index: usize,
+    },
+    InvalidGltfAnimation {
+        animation_index: usize,
+        channel_index: usize,
+        reason: String,
+    },
+    UnsupportedGltfAnimationInterpolation {
+        animation_index: usize,
+        channel_index: usize,
+        interpolation: String,
+    },
+    UnsupportedGltfAnimationTarget {
+        animation_index: usize,
+        channel_index: usize,
+        property: String,
     },
     UnsupportedMaterialFeature {
         material_index: usize,
@@ -141,6 +160,30 @@ impl fmt::Display for FormatError {
                 formatter,
                 "glTF mesh {mesh_index} primitive {primitive_index} uses morph targets, which are not yet represented by three-d-assets"
             ),
+            Self::InvalidGltfAnimation {
+                animation_index,
+                channel_index,
+                reason,
+            } => write!(
+                formatter,
+                "glTF animation {animation_index} channel {channel_index} is invalid: {reason}"
+            ),
+            Self::UnsupportedGltfAnimationInterpolation {
+                animation_index,
+                channel_index,
+                interpolation,
+            } => write!(
+                formatter,
+                "glTF animation {animation_index} channel {channel_index} uses unsupported interpolation {interpolation}"
+            ),
+            Self::UnsupportedGltfAnimationTarget {
+                animation_index,
+                channel_index,
+                property,
+            } => write!(
+                formatter,
+                "glTF animation {animation_index} channel {channel_index} targets unsupported property {property}"
+            ),
             Self::UnsupportedMaterialFeature { material_index } => write!(
                 formatter,
                 "glTF material {material_index} uses occlusion, emissive, or alpha semantics that three-d-assets does not yet preserve"
@@ -205,6 +248,163 @@ pub fn load_gltf(bytes: &[u8]) -> Result<Asset, FormatError> {
     }
 
     Asset::with_resources(meshes, materials, images, samplers, textures).map_err(Into::into)
+}
+
+fn animation_error(
+    animation_index: usize,
+    channel_index: usize,
+    reason: impl Into<String>,
+) -> FormatError {
+    FormatError::InvalidGltfAnimation {
+        animation_index,
+        channel_index,
+        reason: reason.into(),
+    }
+}
+
+fn gltf_interpolation(
+    animation_index: usize,
+    channel_index: usize,
+    interpolation: GltfInterpolation,
+) -> Result<Interpolation, FormatError> {
+    match interpolation {
+        GltfInterpolation::Linear => Ok(Interpolation::Linear),
+        GltfInterpolation::Step => Ok(Interpolation::Step),
+        other => Err(FormatError::UnsupportedGltfAnimationInterpolation {
+            animation_index,
+            channel_index,
+            interpolation: format!("{other:?}"),
+        }),
+    }
+}
+
+fn aligned_keyframes<T: Copy>(
+    animation_index: usize,
+    channel_index: usize,
+    times: &[f32],
+    values: Vec<T>,
+) -> Result<Vec<Keyframe<T>>, FormatError> {
+    if times.len() != values.len() {
+        return Err(animation_error(
+            animation_index,
+            channel_index,
+            format!(
+                "sampler input/output count mismatch: {} times vs {} values",
+                times.len(),
+                values.len()
+            ),
+        ));
+    }
+    Ok(times
+        .iter()
+        .copied()
+        .zip(values)
+        .map(|(time, value)| Keyframe { time, value })
+        .collect())
+}
+
+/// Decode glTF animation channels into the renderer-independent animation crate.
+/// Mesh/skin conversion remains separate, so animation clips can be consumed even
+/// when the generic asset loader correctly rejects unrepresented skin attributes.
+pub fn load_gltf_animation_clips(bytes: &[u8]) -> Result<Vec<AnimationClip>, FormatError> {
+    let gltf = gltf::Gltf::from_slice(bytes)
+        .map_err(|error| FormatError::InvalidGltf(error.to_string()))?;
+    let buffers = load_gltf_buffers(&gltf)?;
+
+    gltf.animations()
+        .enumerate()
+        .map(|(animation_index, animation)| {
+            let mut tracks = Vec::new();
+            for (channel_index, channel) in animation.channels().enumerate() {
+                let interpolation = gltf_interpolation(
+                    animation_index,
+                    channel_index,
+                    channel.sampler().interpolation(),
+                )?;
+                let reader =
+                    channel.reader(|buffer| buffers.get(buffer.index()).map(Vec::as_slice));
+                let times = reader
+                    .read_inputs()
+                    .ok_or_else(|| {
+                        animation_error(animation_index, channel_index, "missing sampler input")
+                    })?
+                    .collect::<Vec<_>>();
+                let outputs = reader.read_outputs().ok_or_else(|| {
+                    animation_error(animation_index, channel_index, "missing sampler output")
+                })?;
+                let node = channel.target().node().index();
+
+                let track = match (channel.target().property(), outputs) {
+                    (
+                        AnimationProperty::Translation,
+                        gltf::animation::util::ReadOutputs::Translations(values),
+                    ) => {
+                        let values = values.map(|[x, y, z]| Vec3::new(x, y, z)).collect();
+                        AnimationTrack::Translation {
+                            node,
+                            track: KeyframeTrack::new(
+                                aligned_keyframes(animation_index, channel_index, &times, values)?,
+                                interpolation,
+                            )
+                            .map_err(|error| {
+                                animation_error(animation_index, channel_index, error.to_string())
+                            })?,
+                        }
+                    }
+                    (
+                        AnimationProperty::Rotation,
+                        gltf::animation::util::ReadOutputs::Rotations(values),
+                    ) => {
+                        let values = values
+                            .into_f32()
+                            .map(|[x, y, z, w]| Quat::new(x, y, z, w))
+                            .collect();
+                        AnimationTrack::Rotation {
+                            node,
+                            track: KeyframeTrack::new(
+                                aligned_keyframes(animation_index, channel_index, &times, values)?,
+                                interpolation,
+                            )
+                            .map_err(|error| {
+                                animation_error(animation_index, channel_index, error.to_string())
+                            })?,
+                        }
+                    }
+                    (
+                        AnimationProperty::Scale,
+                        gltf::animation::util::ReadOutputs::Scales(values),
+                    ) => {
+                        let values = values.map(|[x, y, z]| Vec3::new(x, y, z)).collect();
+                        AnimationTrack::Scale {
+                            node,
+                            track: KeyframeTrack::new(
+                                aligned_keyframes(animation_index, channel_index, &times, values)?,
+                                interpolation,
+                            )
+                            .map_err(|error| {
+                                animation_error(animation_index, channel_index, error.to_string())
+                            })?,
+                        }
+                    }
+                    (property, _) => {
+                        return Err(FormatError::UnsupportedGltfAnimationTarget {
+                            animation_index,
+                            channel_index,
+                            property: format!("{property:?}"),
+                        });
+                    }
+                };
+                tracks.push(track);
+            }
+
+            let name = animation
+                .name()
+                .map(str::to_owned)
+                .unwrap_or_else(|| format!("animation_{animation_index}"));
+            AnimationClip::new(name, tracks)
+                .map_err(|error| animation_error(animation_index, 0, error.to_string()))
+        })
+        .collect()
 }
 
 pub fn load_obj(bytes: &[u8]) -> Result<Asset, FormatError> {
