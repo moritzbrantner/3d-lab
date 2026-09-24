@@ -5,6 +5,7 @@ import {
   finishNumericDraft,
   formatNumericValue,
   nudgeNumericValue,
+  numericDraftNudgeValue,
   parseNumericValue,
   quantizeCoarseValue,
   rebaseNumericDraft,
@@ -157,7 +158,7 @@ export function PrecisionRange({
           if (disabled) return;
           if (event.key === "Escape") return endTextEdit();
           if (event.key === "Enter") return commitText(true);
-          const current = parseNumericValue(visibleDraft, bounds);
+          const current = numericDraftNudgeValue(draft, value, bounds);
           if (current === null) {
             setInvalid(true);
             return;
