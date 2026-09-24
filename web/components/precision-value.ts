@@ -28,6 +28,16 @@ export function rebaseNumericDraft(draft: NumericDraft | null, current: number):
   return draft ? { ...draft, baseline: current } : null;
 }
 
+/** Use the latest publication for untouched focus drafts, otherwise the user's text. */
+export function numericDraftNudgeValue(
+  draft: NumericDraft | null,
+  current: number,
+  bounds: NumericBounds,
+): number | null {
+  const text = draft && draft.dirty !== false ? draft.text : formatNumericValue(current);
+  return parseNumericValue(text, bounds);
+}
+
 /**
  * Produce a human-facing decimal without exposing the tiny binary error often
  * introduced by unit conversions such as modelFraction * 100.
