@@ -365,7 +365,9 @@ pub fn load_gltf_animation_clips(bytes: &[u8]) -> Result<Vec<AnimationClip>, For
                                 aligned_keyframes(animation_index, channel_index, &times, values)?,
                                 interpolation,
                             )
-                            .map_err(|error| animation_error(animation_index, channel_index, error.to_string()))?,
+                            .map_err(|error| {
+                                animation_error(animation_index, channel_index, error.to_string())
+                            })?,
                         }
                     }
                     (
@@ -379,7 +381,9 @@ pub fn load_gltf_animation_clips(bytes: &[u8]) -> Result<Vec<AnimationClip>, For
                                 aligned_keyframes(animation_index, channel_index, &times, values)?,
                                 interpolation,
                             )
-                            .map_err(|error| animation_error(animation_index, channel_index, error.to_string()))?,
+                            .map_err(|error| {
+                                animation_error(animation_index, channel_index, error.to_string())
+                            })?,
                         }
                     }
                     (property, _) => {
