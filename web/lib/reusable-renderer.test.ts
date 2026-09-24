@@ -2,6 +2,7 @@ import {describe, expect, test} from "bun:test"
 import {
   ThreeRendererContractError,
   projectWorldPoint,
+  validateRenderCamera,
   validateRenderFrame,
   type RendererFrame,
 } from "@moritzbrantner/three-d-renderer"
@@ -34,6 +35,13 @@ describe("reusable Three renderer contract", () => {
   test("accepts matrix-owned scene frames", () => {
     const value = frame()
     expect(validateRenderFrame(value)).toBe(value)
+  })
+
+  test("validates camera-only updates without requiring scene nodes", () => {
+    const camera = frame().camera
+    expect(validateRenderCamera(camera)).toBe(camera)
+    camera.projectionMatrix[0] = Number.NaN
+    expect(() => validateRenderCamera(camera)).toThrow("must contain exactly 16 finite numbers")
   })
 
   test("accepts renderer-owned transform adaptation", () => {

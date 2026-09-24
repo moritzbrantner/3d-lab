@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { CharacterRigLab } from "@/components/character-rig-lab";
+import { ImportedSkinLab } from "@/components/imported-skin-lab";
 import { SkeletalAnimationLab } from "@/components/skeletal-animation-lab";
 import styles from "@/components/skeletal-animation-lab.module.css";
 
@@ -22,6 +23,7 @@ export default function SkeletalAnimationPage() {
         <Link href="/" className={styles.backLink}>← Back to 3D fundamentals</Link>
       </header>
       <CharacterRigLab />
+      <ImportedSkinLab />
       <SkeletalAnimationLab />
     </main>
   );

@@ -21,6 +21,19 @@ function requireFiniteMatrix(name, value) {
   }
 }
 
+function validateCamera(camera) {
+  if (!camera || typeof camera !== "object") {
+    throw new ThreeRendererContractError("render frame camera is required")
+  }
+  requireFiniteMatrix("camera view matrix", camera.viewMatrix)
+  requireFiniteMatrix("camera projection matrix", camera.projectionMatrix)
+}
+
+export function validateRenderCamera(camera) {
+  validateCamera(camera)
+  return camera
+}
+
 function requireFiniteTuple(name, value, length, {positive = false} = {}) {
   if (!Array.isArray(value) || value.length !== length || value.some((entry) => !Number.isFinite(entry))) {
     throw new ThreeRendererContractError(`${name} must contain exactly ${length} finite numbers`)
@@ -136,11 +149,7 @@ export function validateRenderFrame(frame) {
   if (!frame || typeof frame !== "object") {
     throw new ThreeRendererContractError("render frame is required")
   }
-  if (!frame.camera || typeof frame.camera !== "object") {
-    throw new ThreeRendererContractError("render frame camera is required")
-  }
-  requireFiniteMatrix("camera view matrix", frame.camera.viewMatrix)
-  requireFiniteMatrix("camera projection matrix", frame.camera.projectionMatrix)
+  validateRenderCamera(frame.camera)
   if (!Array.isArray(frame.nodes)) {
     throw new ThreeRendererContractError("render frame nodes must be an array")
   }
@@ -359,6 +368,22 @@ export function createThreeSceneRenderer(canvas, options = {}) {
       configuredWidth = width
       configuredHeight = height
       configuredPixelRatio = pixelRatio
+    },
+
+    /**
+     * Draw the already-submitted scene with a new camera without revisiting scene nodes.
+     * The caller opts into this method only when object/geometry/material/transform state is unchanged.
+     */
+    renderCamera(frameCamera) {
+      validateRenderCamera(frameCamera)
+      applyCamera(frameCamera)
+
+      const observations = createWorkObservations(0)
+      observations.liveObjectCount = objects.size
+      observations.liveGeometryCount = geometries.size
+      observations.liveMaterialCount = materials.size
+      renderer.render(scene, camera)
+      return observations
     },
 
     render(frame) {
