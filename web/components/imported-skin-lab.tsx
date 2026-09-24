@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { PrecisionRange } from "./PrecisionRange";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import {
@@ -23,42 +24,6 @@ type Runtime = ImportedSkinnedModel & {
   time: number;
   playing: boolean;
 };
-
-function ExactTimeInput({ value, max, onCommit }: { value: number; max: number; onCommit: (value: number) => void }) {
-  const [draft, setDraft] = useState<string | null>(null);
-  const cancelRef = useRef(false);
-  return <input
-    aria-label="Imported animation time (seconds)"
-    type="number"
-    min={0}
-    max={max}
-    step="any"
-    value={draft ?? String(Number(value.toFixed(6)))}
-    onFocus={() => setDraft(String(value))}
-    onChange={(event) => setDraft(event.target.value)}
-    onKeyDown={(event) => {
-      if (event.key === "Enter") {
-        const next = event.currentTarget.valueAsNumber;
-        if (Number.isFinite(next)) {
-          const committed = THREE.MathUtils.clamp(next, 0, max);
-          onCommit(committed);
-          setDraft(String(committed));
-        }
-        event.preventDefault();
-      } else if (event.key === "Escape") {
-        cancelRef.current = true;
-        event.preventDefault();
-        event.currentTarget.blur();
-      }
-    }}
-    onBlur={(event) => {
-      const next = event.target.valueAsNumber;
-      if (!cancelRef.current && Number.isFinite(next)) onCommit(THREE.MathUtils.clamp(next, 0, max));
-      cancelRef.current = false;
-      setDraft(null);
-    }}
-  />;
-}
 
 export function ImportedSkinLab() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -220,10 +185,14 @@ export function ImportedSkinLab() {
           <input type="range" min={0} max={duration} step="0.001" value={Math.min(time, duration)}
             onChange={(event) => seek(Number(event.target.value))} disabled={!ready} />
         </label>
-        <label className={styles.rangeControl}>
-          <span>Exact time (seconds)</span>
-          <ExactTimeInput value={time} max={duration} onCommit={seek} />
-        </label>
+        <PrecisionRange className={styles.rangeControl} label="Imported animation time"
+          value={time} min={0} max={duration} step={0.001} unit="seconds"
+          onEditStart={() => {
+            const runtime = runtimeRef.current;
+            if (runtime) runtime.playing = false;
+            setPlaying(false);
+          }}
+          onChange={seek} />
         <button type="button" className={styles.primaryButton} onClick={togglePlaying} disabled={!ready}>
           {playing ? "Pause imported animation" : "Play imported animation"}
         </button>
