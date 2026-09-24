@@ -126,6 +126,8 @@ export type ThreeSceneRenderer = {
 
 export class ThreeRendererContractError extends Error {}
 
+export function validateRenderCamera(camera: RendererCamera): RendererCamera
+
 export function validateRenderFrame(frame: RendererFrame): RendererFrame
 
 export function projectWorldPoint(
