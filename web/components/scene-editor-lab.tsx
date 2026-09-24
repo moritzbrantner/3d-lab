@@ -628,6 +628,7 @@ export function SceneEditorLab() {
 
   const resetScene = () => {
     importRequestRef.current += 1;
+    if (snapshotInputRef.current) snapshotInputRef.current.value = "";
     const scene = createEditorScene();
     initialSceneRef.current = scene;
     setHistory(createEditorCommandLog(scene));
