@@ -1,6 +1,6 @@
 "use client";
 
-import {PrecisionRange} from "./PrecisionRange";
+import { PrecisionRange } from "./PrecisionRange";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -562,9 +562,12 @@ export function ThreeLab() {
 
           {lessonId === "transforms" && (
             <div className="controls-grid" aria-label="Transform controls">
-              <PrecisionRange label="Rotate Y" value={transform.rotateY} min={-180} max={180} unit="°" onChange={(rotateY) => setTransform((current) => ({ ...current, rotateY }))} />
-              <PrecisionRange label="Scale" value={transform.scale} min={0.3} max={2} step={0.1} unit="×" onChange={(scale) => setTransform((current) => ({ ...current, scale }))} />
-              <PrecisionRange label="Lift Y" value={transform.lift} min={-0.8} max={1} step={0.1} onChange={(lift) => setTransform((current) => ({ ...current, lift }))} />
+              <PrecisionRange label="Rotate Y" value={transform.rotateY} min={-180} max={180} unit="°"
+                onChange={(rotateY) => setTransform((current) => ({ ...current, rotateY }))} />
+              <PrecisionRange label="Scale" value={transform.scale} min={0.3} max={2} step={0.1} unit="×"
+                onChange={(scale) => setTransform((current) => ({ ...current, scale }))} />
+              <PrecisionRange label="Lift Y" value={transform.lift} min={-0.8} max={1} step={0.1}
+                onChange={(lift) => setTransform((current) => ({ ...current, lift }))} />
               <button type="button" className="secondary-button" onClick={() => setTransform(DEFAULT_TRANSFORM)}>Reset transform</button>
             </div>
           )}
@@ -591,7 +594,8 @@ export function ThreeLab() {
 
           {lessonId === "procedural" && (
             <div className="controls-grid procedural-controls" aria-label="Subdivision controls">
-              <PrecisionRange label="Segments" integer value={subdivisions} min={1} max={16} onChange={setSubdivisions} />
+              <PrecisionRange label="Segments" integer value={subdivisions} min={1} max={16}
+                onChange={setSubdivisions} />
               <div className="mesh-readout">
                 <strong>{(subdivisions + 1) ** 2}</strong> vertices · <strong>{2 * subdivisions ** 2}</strong> triangles
               </div>
@@ -600,21 +604,25 @@ export function ThreeLab() {
 
           {lessonId === "matrix-composition" && (
             <div className="controls-grid" aria-label="Matrix composition controls">
-              <PrecisionRange label="Rotation Y" value={advancedState.matrixAngle} min={-180} max={180} unit="°" onChange={(matrixAngle) => updateAdvanced({ matrixAngle })} />
+              <PrecisionRange label="Rotation Y" value={advancedState.matrixAngle} min={-180} max={180} unit="°"
+                onChange={(matrixAngle) => updateAdvanced({ matrixAngle })} />
               <div className="mesh-readout"><strong>T × R × S</strong> explicit model matrix</div>
             </div>
           )}
 
           {lessonId === "hierarchy" && (
             <div className="controls-grid" aria-label="Hierarchy controls">
-              <PrecisionRange label="Parent angle" value={advancedState.hierarchyAngle} min={-110} max={110} unit="°" onChange={(hierarchyAngle) => updateAdvanced({ hierarchyAngle })} />
+              <PrecisionRange label="Parent angle" value={advancedState.hierarchyAngle} min={-110} max={110} unit="°"
+                onChange={(hierarchyAngle) => updateAdvanced({ hierarchyAngle })} />
               <div className="mesh-readout"><strong>parent world × child local</strong></div>
             </div>
           )}
 
           {lessonId === "keyframes" && (
             <div className="controls-grid" aria-label="Keyframe controls">
-              <PrecisionRange label="Time" value={advancedState.keyframeTime} min={0} max={2} step={0.01} unit="s" disabled={advancedState.keyframePlaying} onChange={(keyframeTime) => updateAdvanced({ keyframeTime })} />
+              <PrecisionRange label="Time" value={advancedState.keyframeTime} min={0} max={2}
+                step={0.01} unit="s" disabled={advancedState.keyframePlaying}
+                onChange={(keyframeTime) => updateAdvanced({ keyframeTime })} />
               <div className="segmented" aria-label="Keyframe interpolation">
                 <button type="button" className={advancedState.keyframeInterpolation === "linear" ? "active" : ""} onClick={() => updateAdvanced({ keyframeInterpolation: "linear" })}>Linear</button>
                 <button type="button" className={advancedState.keyframeInterpolation === "smooth" ? "active" : ""} onClick={() => updateAdvanced({ keyframeInterpolation: "smooth" })}>Smooth</button>
@@ -627,14 +635,17 @@ export function ThreeLab() {
 
           {lessonId === "quaternions" && (
             <div className="controls-grid" aria-label="Rotation interpolation controls">
-              <PrecisionRange label="Endpoint interpolation" value={advancedState.rotationT * 100} min={0} max={100} step={1} unit="%" onChange={(percent) => updateAdvanced({ rotationT: percent / 100 })} />
+              <PrecisionRange label="Endpoint interpolation" value={advancedState.rotationT * 100}
+                min={0} max={100} step={1} unit="%"
+                onChange={(percent) => updateAdvanced({ rotationT: percent / 100 })} />
               <div className="mesh-readout"><strong>Euler XYZ</strong> left · <strong>SLERP</strong> right</div>
             </div>
           )}
 
           {lessonId === "skinning" && (
             <div className="controls-grid" aria-label="Skeleton controls">
-              <PrecisionRange label="Middle joint bend" value={advancedState.skeletonBend} min={-80} max={80} unit="°" onChange={(skeletonBend) => updateAdvanced({ skeletonBend })} />
+              <PrecisionRange label="Middle joint bend" value={advancedState.skeletonBend} min={-80} max={80} unit="°"
+                onChange={(skeletonBend) => updateAdvanced({ skeletonBend })} />
               <div className="mesh-readout"><strong>3 joints</strong> with blended vertex weights</div>
             </div>
           )}

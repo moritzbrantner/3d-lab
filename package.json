@@ -10,10 +10,19 @@
     ".": {
       "types": "./packages/renderer/index.d.ts",
       "import": "./packages/renderer/index.js"
+    },
+    "./rigid-skin": {
+      "types": "./packages/renderer/rigid-skin.d.ts",
+      "import": "./packages/renderer/rigid-skin.js"
+    },
+    "./weighted-skin": {
+      "types": "./packages/renderer/weighted-skin.d.ts",
+      "import": "./packages/renderer/weighted-skin.js"
     }
   },
   "scripts": {
-    "test": "bun test packages/renderer"
+    "test": "bun test packages/renderer",
+    "bench:character-pose": "bun scripts/character-pose-evidence.mjs"
   },
   "dependencies": {
     "three": "0.185.1"

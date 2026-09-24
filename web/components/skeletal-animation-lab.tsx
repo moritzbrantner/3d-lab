@@ -1,6 +1,6 @@
 "use client";
 
-import {PrecisionRange} from "./PrecisionRange";
+import { PrecisionRange } from "./PrecisionRange";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -424,15 +424,20 @@ export function SkeletalAnimationLab() {
 
           {(topicId === "skeleton" || topicId === "bind-pose" || topicId === "weights") && (
             <div className={styles.controls} aria-label="Joint pose controls">
-              <PrecisionRange label="Shoulder" value={state.shoulder} min={-70} max={70} unit="°" onChange={(shoulder) => patchState({ shoulder })} />
-              <PrecisionRange label="Elbow" value={state.elbow} min={-90} max={90} unit="°" onChange={(elbow) => patchState({ elbow })} />
-              <PrecisionRange label="Wrist" value={state.wrist} min={-90} max={90} unit="°" onChange={(wrist) => patchState({ wrist })} />
+              <PrecisionRange label="Shoulder" value={state.shoulder} min={-70} max={70} unit="°"
+                onChange={(shoulder) => patchState({ shoulder })} />
+              <PrecisionRange label="Elbow" value={state.elbow} min={-90} max={90} unit="°"
+                onChange={(elbow) => patchState({ elbow })} />
+              <PrecisionRange label="Wrist" value={state.wrist} min={-90} max={90} unit="°"
+                onChange={(wrist) => patchState({ wrist })} />
             </div>
           )}
 
           {topicId === "weights" && (
             <div className={styles.weightControl}>
-              <PrecisionRange label="Selected vertex: middle-joint weight" value={state.middleWeight * 100} min={0} max={100} step={1} unit="%" onChange={(percent) => patchState({ middleWeight: percent / 100 })} />
+              <PrecisionRange label="Selected vertex: middle-joint weight"
+                value={state.middleWeight * 100} min={0} max={100} step={1} unit="%"
+                onChange={(percent) => patchState({ middleWeight: percent / 100 })} />
               <div className={styles.legend} aria-label="Skinning contribution markers">
                 <span><i className={styles.rootDot} /> root-only result</span>
                 <span><i className={styles.middleDot} /> middle-only result</span>
@@ -444,7 +449,9 @@ export function SkeletalAnimationLab() {
           {topicId === "pipeline" && (
             <>
               <div className={styles.playbackControls}>
-                <PrecisionRange label="Clip time" value={state.time} min={0} max={TEACHING_CLIP_DURATION} step={0.01} unit="s" disabled={state.playing} onChange={(time) => patchState({ time })} />
+                <PrecisionRange label="Clip time" value={state.time} min={0}
+                  max={TEACHING_CLIP_DURATION} step={0.01} unit="s" disabled={state.playing}
+                  onChange={(time) => patchState({ time })} />
                 <button type="button" onClick={() => patchState({ playing: !state.playing })}>
                   {state.playing ? "Pause clip" : "Play clip"}
                 </button>
@@ -476,7 +483,9 @@ export function SkeletalAnimationLab() {
               </div>
               {state.assembly === "clip" && (
                 <div className={styles.playbackControls}>
-                  <PrecisionRange label="Animation time" value={state.time} min={0} max={TEACHING_CLIP_DURATION} step={0.01} unit="s" disabled={state.playing} onChange={(time) => patchState({ time })} />
+                  <PrecisionRange label="Animation time" value={state.time} min={0}
+                    max={TEACHING_CLIP_DURATION} step={0.01} unit="s" disabled={state.playing}
+                    onChange={(time) => patchState({ time })} />
                   <button type="button" onClick={() => patchState({ playing: !state.playing })}>
                     {state.playing ? "Pause" : "Play"}
                   </button>

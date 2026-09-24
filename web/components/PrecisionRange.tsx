@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import {
   finishNumericDraft,
+  formatNumericValue,
   nudgeNumericValue,
   parseNumericValue,
   quantizeCoarseValue,
@@ -20,12 +21,14 @@ export type PrecisionRangeProps = {
   disabled?: boolean;
   className?: string;
   coarseCommit?: "live" | "release";
+  onEditStart?: () => void;
   onChange: (value: number) => void;
 };
 
 export function PrecisionRange({
   label, value, min, max, step = 1, unit = "", integer = false,
-  disabled = false, className = "control range-control", coarseCommit = "live", onChange,
+  disabled = false, className = "control range-control", coarseCommit = "live",
+  onEditStart, onChange,
 }: PrecisionRangeProps) {
   const id = useId();
   const [draft, setDraft] = useState<NumericDraft | null>(null);
@@ -38,7 +41,8 @@ export function PrecisionRange({
     ? Math.max(1, Math.round(Number.isFinite(step) && step > 0 ? step : 1))
     : Number.isFinite(step) && step > 0 ? step : 1;
   const fineStep = integer ? 1 : Math.min(coarseStep, 1) / 10;
-  const visibleDraft = draft && Object.is(draft.baseline, value) ? draft.text : String(value);
+  const displayValue = formatNumericValue(value);
+  const visibleDraft = draft && Object.is(draft.baseline, value) ? draft.text : displayValue;
   const visibleCoarse = coarseDraft ?? value;
 
   const clearText = () => {
@@ -101,12 +105,13 @@ export function PrecisionRange({
       </label>
       <input id={id} type="text" role="spinbutton" inputMode={integer ? "numeric" : "decimal"}
         value={visibleDraft} disabled={disabled} aria-valuemin={min} aria-valuemax={max}
-        aria-valuenow={value} aria-valuetext={`${value}${unit}`} aria-invalid={invalid || undefined}
-        aria-describedby={invalid ? `${id}-error` : undefined}
+        aria-valuenow={value} aria-valuetext={unit ? `${displayValue} ${unit}` : displayValue}
+        aria-invalid={invalid || undefined} aria-describedby={invalid ? `${id}-error` : undefined}
         title={`Enter an exact ${integer ? "whole " : ""}number from ${min} to ${max}. Enter applies; Escape cancels. Arrow keys adjust; Shift adjusts faster.`}
         style={{ gridColumn: "2", width: "100%", minWidth: 0, boxSizing: "border-box", minHeight: "2.25rem", padding: "0.35rem",
           color: "inherit", background: "transparent", border: "1px solid currentColor", borderRadius: "0.25rem",
           font: "inherit", fontVariantNumeric: "tabular-nums" }}
+        onFocus={onEditStart}
         onChange={(event) => {
           const next = { baseline: value, text: event.currentTarget.value };
           pending.current = next;

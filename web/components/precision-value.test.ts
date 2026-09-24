@@ -1,6 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { finishNumericDraft, nudgeNumericValue, parseNumericValue, quantizeCoarseValue } from "./precision-value";
+import {
+  finishNumericDraft,
+  formatNumericValue,
+  nudgeNumericValue,
+  parseNumericValue,
+  quantizeCoarseValue,
+} from "./precision-value";
 
 const angles = { min: -180, max: 180 };
 
@@ -33,6 +39,14 @@ test("drafts commit exactly once and stale drafts cannot overwrite external stat
   assert.deepEqual(finishNumericDraft({ baseline: 34, text: "34.125" }, 34, angles), { kind: "commit", value: 34.125 });
   assert.deepEqual(finishNumericDraft(null, 34.125, angles), { kind: "idle" });
   assert.deepEqual(finishNumericDraft({ baseline: 34, text: "-12.75" }, 45, angles), { kind: "stale" });
+});
+
+test("human-facing formatting removes conversion noise without snapping meaningful precision", () => {
+  assert.equal(formatNumericValue(0.141 * 100), "14.1");
+  assert.equal(formatNumericValue(0.1 + 0.2), "0.3");
+  const precise = 14.123456789012344;
+  assert.equal(formatNumericValue(precise), String(precise));
+  assert.equal(formatNumericValue(-0), "0");
 });
 
 test("keyboard nudges retain off-grid fractions and stop at bounds", () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import {PrecisionRange} from "./PrecisionRange";
+import { PrecisionRange } from "./PrecisionRange";
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -251,8 +251,12 @@ export function MaterialTextureLab() {
           <code>{state.baseColor}</code>
         </label>
 
-        <PrecisionRange className={styles.rangeControl} label="Metallic" value={state.metallic} min={0} max={1} step={0.01} onChange={(metallic) => patchState({ metallic })} />
-        <PrecisionRange className={styles.rangeControl} label="Roughness" value={state.roughness} min={0} max={1} step={0.01} onChange={(roughness) => patchState({ roughness })} />
+        <PrecisionRange className={styles.rangeControl} label="Metallic"
+          value={state.metallic} min={0} max={1} step={0.01}
+          onChange={(metallic) => patchState({ metallic })} />
+        <PrecisionRange className={styles.rangeControl} label="Roughness"
+          value={state.roughness} min={0} max={1} step={0.01}
+          onChange={(roughness) => patchState({ roughness })} />
 
         <label className={styles.selectControl}>
           <span>Texture pattern</span>
@@ -264,7 +268,9 @@ export function MaterialTextureLab() {
           </select>
         </label>
 
-        <PrecisionRange className={styles.rangeControl} label="UV repeat" value={state.repeat} min={0.5} max={8} step={0.5} unit="×" disabled={state.pattern === "none"} onChange={(repeat) => patchState({ repeat })} />
+        <PrecisionRange className={styles.rangeControl} label="UV repeat"
+          value={state.repeat} min={0.5} max={8} step={0.5} unit="×"
+          disabled={state.pattern === "none"} onChange={(repeat) => patchState({ repeat })} />
 
         <label className={styles.selectControl}>
           <span>Texture wrap</span>

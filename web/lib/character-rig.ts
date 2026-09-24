@@ -17,66 +17,86 @@ export type CharacterPose = {
 };
 
 const TAU = Math.PI * 2;
+export const CHARACTER_CYCLE_SECONDS = 1 / 0.42;
+export const CHARACTER_PREVIEW_FPS = 60;
 
-export function sampleCharacterPose(motion: CharacterMotion, phase: number): CharacterPose {
+export function createCharacterPose(): CharacterPose {
+  return {
+    rootX: 0, rootY: 0, rootYaw: 0, spineZ: 0,
+    leftShoulderX: 0, rightShoulderX: 0, rightShoulderZ: 0,
+    leftElbowX: 0, rightElbowX: 0, leftHipX: 0, rightHipX: 0,
+    leftKneeX: 0, rightKneeX: 0,
+  };
+}
+
+/** Reusable output; every channel is overwritten, including when clips change. */
+export function sampleCharacterPoseInto(
+  motion: CharacterMotion,
+  phase: number,
+  pose: CharacterPose,
+): CharacterPose {
+  if (!Number.isFinite(phase)) throw new RangeError("character phase must be finite");
   const normalized = ((phase % 1) + 1) % 1;
   const t = normalized * TAU;
+  const sine = Math.sin(t);
 
   if (motion === "walk") {
-    const stride = Math.sin(t);
-    const counterStride = Math.sin(t + Math.PI);
-    const kneeLeft = Math.max(0, -stride) * 0.8;
-    const kneeRight = Math.max(0, -counterStride) * 0.8;
-    return {
-      rootX: Math.sin(t * 0.5) * 0.5,
-      rootY: Math.abs(Math.sin(t)) * 0.08,
-      rootYaw: stride * 0.08,
-      spineZ: counterStride * 0.045,
-      leftShoulderX: counterStride * 0.72,
-      rightShoulderX: stride * 0.72,
-      rightShoulderZ: 0,
-      leftElbowX: -0.15 - Math.max(0, stride) * 0.28,
-      rightElbowX: -0.15 - Math.max(0, counterStride) * 0.28,
-      leftHipX: stride * 0.7,
-      rightHipX: counterStride * 0.7,
-      leftKneeX: kneeLeft,
-      rightKneeX: kneeRight,
-    };
+    const stride = sine;
+    const counterStride = -stride;
+    // Full-cycle signals have matching values AND velocities at the seam.
+    pose.rootX = sine * 0.5;
+    pose.rootY = sine * sine * 0.08;
+    pose.rootYaw = stride * 0.08;
+    pose.spineZ = counterStride * 0.045;
+    pose.leftShoulderX = counterStride * 0.72;
+    pose.rightShoulderX = stride * 0.72;
+    pose.rightShoulderZ = 0;
+    pose.leftElbowX = -0.15 - Math.max(0, stride) * 0.28;
+    pose.rightElbowX = -0.15 - Math.max(0, counterStride) * 0.28;
+    pose.leftHipX = stride * 0.7;
+    pose.rightHipX = counterStride * 0.7;
+    pose.leftKneeX = Math.max(0, -stride) * 0.8;
+    pose.rightKneeX = Math.max(0, -counterStride) * 0.8;
+  } else if (motion === "wave") {
+    pose.rootX = sine * 0.08;
+    pose.rootY = sine * 0.025;
+    pose.rootYaw = -0.12;
+    pose.spineZ = sine * 0.025;
+    pose.leftShoulderX = 0;
+    pose.rightShoulderX = 0;
+    pose.rightShoulderZ = 1.35;
+    pose.leftElbowX = -0.1;
+    pose.rightElbowX = -0.75 + Math.sin(t * 2) * 0.55;
+    pose.leftHipX = 0;
+    pose.rightHipX = 0;
+    pose.leftKneeX = 0.08;
+    pose.rightKneeX = 0.08;
+  } else {
+    pose.rootX = 0;
+    pose.rootY = sine * 0.025;
+    pose.rootYaw = sine * 0.035;
+    pose.spineZ = sine * 0.018;
+    pose.leftShoulderX = 0.08;
+    pose.rightShoulderX = -0.08;
+    pose.rightShoulderZ = 0;
+    pose.leftElbowX = -0.16;
+    pose.rightElbowX = -0.16;
+    pose.leftHipX = 0;
+    pose.rightHipX = 0;
+    pose.leftKneeX = 0.04;
+    pose.rightKneeX = 0.04;
   }
+  return pose;
+}
 
-  if (motion === "wave") {
-    const wave = Math.sin(t * 2);
-    return {
-      rootX: Math.sin(t) * 0.08,
-      rootY: Math.sin(t) * 0.025,
-      rootYaw: -0.12,
-      spineZ: Math.sin(t) * 0.025,
-      leftShoulderX: 0,
-      rightShoulderX: 0,
-      rightShoulderZ: 1.35,
-      leftElbowX: -0.1,
-      rightElbowX: -0.75 + wave * 0.55,
-      leftHipX: 0,
-      rightHipX: 0,
-      leftKneeX: 0.08,
-      rightKneeX: 0.08,
-    };
+/** Convenience snapshot API; the preview uses sampleCharacterPoseInto instead. */
+export function sampleCharacterPose(motion: CharacterMotion, phase: number): CharacterPose {
+  return sampleCharacterPoseInto(motion, phase, createCharacterPose());
+}
+
+export function stepCharacterPhase(phase: number, frames: number): number {
+  if (!Number.isFinite(phase) || !Number.isInteger(frames)) {
+    throw new RangeError("frame stepping requires a finite phase and integer frame count");
   }
-
-  const breath = Math.sin(t);
-  return {
-    rootX: 0,
-    rootY: breath * 0.025,
-    rootYaw: Math.sin(t * 0.5) * 0.035,
-    spineZ: breath * 0.018,
-    leftShoulderX: 0.08,
-    rightShoulderX: -0.08,
-    rightShoulderZ: 0,
-    leftElbowX: -0.16,
-    rightElbowX: -0.16,
-    leftHipX: 0,
-    rightHipX: 0,
-    leftKneeX: 0.04,
-    rightKneeX: 0.04,
-  };
+  return Math.min(1, Math.max(0, phase + frames / (CHARACTER_PREVIEW_FPS * CHARACTER_CYCLE_SECONDS)));
 }

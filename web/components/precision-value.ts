@@ -23,6 +23,26 @@ export function finishNumericDraft(draft: NumericDraft | null, current: number, 
   return Object.is(value, current) ? { kind: "idle" } : { kind: "commit", value };
 }
 
+/**
+ * Produce a human-facing decimal without exposing the tiny binary error often
+ * introduced by unit conversions such as modelFraction * 100.
+ *
+ * Only shorten the value when the shorter decimal is within one scaled
+ * Number.EPSILON of the actual value, so meaningful exact-entry digits remain.
+ */
+export function formatNumericValue(value: number): string {
+  if (!Number.isFinite(value)) return String(value);
+  if (Object.is(value, -0)) return "0";
+  const tolerance = Number.EPSILON * Math.max(1, Math.abs(value));
+  for (let precision = 1; precision <= 15; precision += 1) {
+    const candidate = Number(value.toPrecision(precision));
+    if (Math.abs(candidate - value) <= tolerance) {
+      return Object.is(candidate, -0) ? "0" : String(candidate);
+    }
+  }
+  return String(value);
+}
+
 function decimalPlaces(value: number): number {
   const [coefficient, exponent = "0"] = String(value).toLowerCase().split("e");
   return Math.max(0, (coefficient.split(".")[1]?.length ?? 0) - Number(exponent));

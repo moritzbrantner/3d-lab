@@ -113,6 +113,29 @@
   accent-color: var(--accent);
 }
 
+.rangeControl input[type="number"] {
+  box-sizing: border-box;
+  min-height: 42px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.rangeControl input:focus-visible,
+.segmented button:focus-visible,
+.primaryButton:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.frameControls {
+  grid-template-columns: repeat(2, 1fr);
+}
+
 .primaryButton {
   background: var(--accent-soft);
 }
