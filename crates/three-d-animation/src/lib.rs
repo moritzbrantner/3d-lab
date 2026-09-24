@@ -679,6 +679,12 @@ pub fn blend_poses(
     Ok(())
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct ClipSample<'a> {
+    pub clip: &'a AnimationClip,
+    pub time: f32,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClipBlendWorkspace {
     left: PoseBuffer,
@@ -695,18 +701,16 @@ impl ClipBlendWorkspace {
 
     pub fn sample_crossfade(
         &mut self,
-        left_clip: &AnimationClip,
-        left_time: f32,
-        right_clip: &AnimationClip,
-        right_time: f32,
+        left: ClipSample<'_>,
+        right: ClipSample<'_>,
         weight: f32,
         base_pose: &[Transform],
         output: &mut [Transform],
     ) -> Result<(), BlendError> {
         self.left.reset_from(base_pose)?;
         self.right.reset_from(base_pose)?;
-        left_clip.sample(left_time, self.left.as_mut_slice())?;
-        right_clip.sample(right_time, self.right.as_mut_slice())?;
+        left.clip.sample(left.time, self.left.as_mut_slice())?;
+        right.clip.sample(right.time, self.right.as_mut_slice())?;
         blend_poses(self.left.as_slice(), self.right.as_slice(), weight, output)
     }
 }
@@ -1068,11 +1072,23 @@ mod tests {
         let right_ptr = workspace.right.as_slice().as_ptr();
 
         workspace
-            .sample_crossfade(&idle, 0.5, &walk, 0.5, 0.25, &base, &mut output)
+            .sample_crossfade(
+                ClipSample { clip: &idle, time: 0.5 },
+                ClipSample { clip: &walk, time: 0.5 },
+                0.25,
+                &base,
+                &mut output,
+            )
             .unwrap();
         assert_vec3_close(output[0].translation, Vec3::new(0.5, 0.0, 0.0));
         workspace
-            .sample_crossfade(&idle, 0.8, &walk, 0.8, 0.75, &base, &mut output)
+            .sample_crossfade(
+                ClipSample { clip: &idle, time: 0.8 },
+                ClipSample { clip: &walk, time: 0.8 },
+                0.75,
+                &base,
+                &mut output,
+            )
             .unwrap();
         assert_eq!(workspace.left.as_slice().as_ptr(), left_ptr);
         assert_eq!(workspace.right.as_slice().as_ptr(), right_ptr);
