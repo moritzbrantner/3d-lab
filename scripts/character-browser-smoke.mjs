@@ -98,6 +98,31 @@ try {
   await region.getByRole("checkbox", { name: "See skeleton through model", exact: true }).check();
   await canvas.screenshot({ path: path.join(output, "skeleton-xray.png") });
   checks.push("bind-pose and x-ray inspection with screenshots");
+  const importedRegion = page.locator('section[aria-labelledby="imported-skin-heading"]');
+  const importedCanvas = importedRegion.locator('canvas[aria-label="Imported Khronos SimpleSkin animation"]');
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('canvas[aria-label="Imported Khronos SimpleSkin animation"]');
+    return canvas?.dataset.importedReady === "true" &&
+      canvas.dataset.joints === "2" &&
+      canvas.dataset.clipCount === "1" &&
+      Number(canvas.dataset.duration) === 5.5 &&
+      canvas.dataset.sourceDraws === "1" &&
+      canvas.dataset.materialDraws === "1" &&
+      canvas.dataset.skinIndexBytes === "4";
+  });
+  assert(await importedCanvas.evaluate((element) => {
+    const context = element.getContext("webgl2");
+    return context && !context.isContextLost();
+  }), "imported SimpleSkin WebGL context must be live");
+  const importedTime = importedRegion.getByRole("spinbutton", { name: "Imported animation time (seconds)" });
+  const pauseImported = importedRegion.getByRole("button", { name: "Pause imported animation", exact: true });
+  if (await pauseImported.isVisible()) await pauseImported.click();
+  await importedTime.fill("2.75");
+  await importedTime.press("Enter");
+  close(Number(await importedTime.inputValue()), 2.75);
+  await importedCanvas.screenshot({ path: path.join(output, "imported-simpleskin.png") });
+  checks.push("canonical imported SimpleSkin, weighted-renderer normalization and exact clip seek");
+
   assert.deepEqual(errors, [], "page and shader console errors must be absent");
   result = { schema: "character-browser-smoke/v1", status: "pass", browser: browser.version(), checks,
     limitations: "Functional Chromium/SwiftShader check, not hardware GPU performance or pixel-reference comparison." };

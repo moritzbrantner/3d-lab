@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "predev": "bun ../scripts/sync-web-animation-fixtures.mjs",
+    "prebuild": "bun ../scripts/sync-web-animation-fixtures.mjs"
   },
   "dependencies": {
     "@moritzbrantner/three-d-renderer": "file:..",
