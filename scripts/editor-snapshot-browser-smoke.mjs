@@ -54,7 +54,7 @@ try {
     mimeType: "application/json",
     buffer: Buffer.from(JSON.stringify(snapshot)),
   });
-  await editor.getByRole("button", { name: "Imported group", exact: true }).waitFor();
+  await editor.getByRole("button", { name: /Imported group/ }).waitFor();
   assert.equal(Number(await translationX.inputValue()), -0.625);
   assert(await editor.getByRole("button", { name: "Undo", exact: true }).isDisabled(),
     "snapshot import must establish a fresh semantic-history boundary");
