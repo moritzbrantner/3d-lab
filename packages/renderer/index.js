@@ -29,6 +29,11 @@ function validateCamera(camera) {
   requireFiniteMatrix("camera projection matrix", camera.projectionMatrix)
 }
 
+export function validateRenderCamera(camera) {
+  validateCamera(camera)
+  return camera
+}
+
 function requireFiniteTuple(name, value, length, {positive = false} = {}) {
   if (!Array.isArray(value) || value.length !== length || value.some((entry) => !Number.isFinite(entry))) {
     throw new ThreeRendererContractError(`${name} must contain exactly ${length} finite numbers`)
@@ -144,7 +149,7 @@ export function validateRenderFrame(frame) {
   if (!frame || typeof frame !== "object") {
     throw new ThreeRendererContractError("render frame is required")
   }
-  validateCamera(frame.camera)
+  validateRenderCamera(frame.camera)
   if (!Array.isArray(frame.nodes)) {
     throw new ThreeRendererContractError("render frame nodes must be an array")
   }
@@ -370,7 +375,7 @@ export function createThreeSceneRenderer(canvas, options = {}) {
      * The caller opts into this method only when object/geometry/material/transform state is unchanged.
      */
     renderCamera(frameCamera) {
-      validateCamera(frameCamera)
+      validateRenderCamera(frameCamera)
       applyCamera(frameCamera)
 
       const observations = createWorkObservations(0)
