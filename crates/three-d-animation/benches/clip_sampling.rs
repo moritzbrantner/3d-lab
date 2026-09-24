@@ -2,8 +2,8 @@ use std::hint::black_box;
 use std::time::Instant;
 
 use three_d_animation::{
-    AnimationClip, AnimationTrack, ClipBlendWorkspace, Interpolation, Keyframe, KeyframeTrack,
-    LoopMode, PoseBuffer, Quat, Transform,
+    AnimationClip, AnimationTrack, ClipBlendWorkspace, ClipSample, Interpolation, Keyframe,
+    KeyframeTrack, LoopMode, PoseBuffer, Quat, Transform,
 };
 use three_d_core::Vec3;
 
@@ -84,7 +84,16 @@ fn main() {
         let time = sample as f32 * 0.00037;
         let weight = (sample % 101) as f32 / 100.0;
         workspace
-            .sample_crossfade(&left, time, &right, time * 1.07, weight, &base, &mut output)
+            .sample_crossfade(
+                ClipSample { clip: &left, time },
+                ClipSample {
+                    clip: &right,
+                    time: time * 1.07,
+                },
+                weight,
+                &base,
+                &mut output,
+            )
             .unwrap();
         black_box(output[sample % NODE_COUNT]);
     }
