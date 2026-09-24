@@ -39,12 +39,14 @@ function ExactTimeInput({ value, max, onCommit }: { value: number; max: number; 
     onKeyDown={(event) => {
       if (event.key === "Enter") {
         const next = event.currentTarget.valueAsNumber;
-        if (Number.isFinite(next)) onCommit(THREE.MathUtils.clamp(next, 0, max));
-        cancelRef.current = true;
+        if (Number.isFinite(next)) {
+          const committed = THREE.MathUtils.clamp(next, 0, max);
+          onCommit(committed);
+          setDraft(String(committed));
+        }
+        event.preventDefault();
       } else if (event.key === "Escape") {
         cancelRef.current = true;
-      }
-      if (event.key === "Escape" || event.key === "Enter") {
         event.preventDefault();
         event.currentTarget.blur();
       }
