@@ -12,7 +12,9 @@ use std::io::Cursor;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use gltf::animation::{Interpolation as GltfInterpolation, Property as AnimationProperty};
 use gltf::mesh::{Mode, Semantic};
-use three_d_animation::{AnimationClip, AnimationTrack, Interpolation, Keyframe, KeyframeTrack, Quat};
+use three_d_animation::{
+    AnimationClip, AnimationTrack, Interpolation, Keyframe, KeyframeTrack, Quat,
+};
 use three_d_assets::{Asset, AssetError, AssetMesh, BaseColorFactor, Material, MeshPrimitive};
 use three_d_core::{Color3, Mesh, MeshError, Tangent4, Vec2, Vec3, VertexAttributes};
 
@@ -248,7 +250,11 @@ pub fn load_gltf(bytes: &[u8]) -> Result<Asset, FormatError> {
     Asset::with_resources(meshes, materials, images, samplers, textures).map_err(Into::into)
 }
 
-fn animation_error(animation_index: usize, channel_index: usize, reason: impl Into<String>) -> FormatError {
+fn animation_error(
+    animation_index: usize,
+    channel_index: usize,
+    reason: impl Into<String>,
+) -> FormatError {
     FormatError::InvalidGltfAnimation {
         animation_index,
         channel_index,
@@ -315,18 +321,24 @@ pub fn load_gltf_animation_clips(bytes: &[u8]) -> Result<Vec<AnimationClip>, For
                     channel_index,
                     channel.sampler().interpolation(),
                 )?;
-                let reader = channel.reader(|buffer| buffers.get(buffer.index()).map(Vec::as_slice));
+                let reader =
+                    channel.reader(|buffer| buffers.get(buffer.index()).map(Vec::as_slice));
                 let times = reader
                     .read_inputs()
-                    .ok_or_else(|| animation_error(animation_index, channel_index, "missing sampler input"))?
+                    .ok_or_else(|| {
+                        animation_error(animation_index, channel_index, "missing sampler input")
+                    })?
                     .collect::<Vec<_>>();
-                let outputs = reader
-                    .read_outputs()
-                    .ok_or_else(|| animation_error(animation_index, channel_index, "missing sampler output"))?;
+                let outputs = reader.read_outputs().ok_or_else(|| {
+                    animation_error(animation_index, channel_index, "missing sampler output")
+                })?;
                 let node = channel.target().node().index();
 
                 let track = match (channel.target().property(), outputs) {
-                    (AnimationProperty::Translation, gltf::animation::util::ReadOutputs::Translations(values)) => {
+                    (
+                        AnimationProperty::Translation,
+                        gltf::animation::util::ReadOutputs::Translations(values),
+                    ) => {
                         let values = values.map(|[x, y, z]| Vec3::new(x, y, z)).collect();
                         AnimationTrack::Translation {
                             node,
@@ -334,10 +346,15 @@ pub fn load_gltf_animation_clips(bytes: &[u8]) -> Result<Vec<AnimationClip>, For
                                 aligned_keyframes(animation_index, channel_index, &times, values)?,
                                 interpolation,
                             )
-                            .map_err(|error| animation_error(animation_index, channel_index, error.to_string()))?,
+                            .map_err(|error| {
+                                animation_error(animation_index, channel_index, error.to_string())
+                            })?,
                         }
                     }
-                    (AnimationProperty::Rotation, gltf::animation::util::ReadOutputs::Rotations(values)) => {
+                    (
+                        AnimationProperty::Rotation,
+                        gltf::animation::util::ReadOutputs::Rotations(values),
+                    ) => {
                         let values = values
                             .into_f32()
                             .map(|[x, y, z, w]| Quat::new(x, y, z, w))
@@ -351,7 +368,10 @@ pub fn load_gltf_animation_clips(bytes: &[u8]) -> Result<Vec<AnimationClip>, For
                             .map_err(|error| animation_error(animation_index, channel_index, error.to_string()))?,
                         }
                     }
-                    (AnimationProperty::Scale, gltf::animation::util::ReadOutputs::Scales(values)) => {
+                    (
+                        AnimationProperty::Scale,
+                        gltf::animation::util::ReadOutputs::Scales(values),
+                    ) => {
                         let values = values.map(|[x, y, z]| Vec3::new(x, y, z)).collect();
                         AnimationTrack::Scale {
                             node,
