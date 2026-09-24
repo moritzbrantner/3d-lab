@@ -177,38 +177,55 @@ export function validateRenderFrame(frame) {
   return frame
 }
 
-export function projectWorldPoint(camera, point, viewport) {
+function requireProjectionCamera(camera) {
   if (!camera || typeof camera !== "object") {
     throw new ThreeRendererContractError("projection camera is required")
   }
   requireFiniteMatrix("camera view matrix", camera.viewMatrix)
   requireFiniteMatrix("camera projection matrix", camera.projectionMatrix)
-  requireFiniteTuple("world point", point, 3)
+}
+
+function normalizeProjectionViewport(viewport) {
   if (!viewport || typeof viewport !== "object") {
     throw new ThreeRendererContractError("projection viewport is required")
   }
-  const normalizedViewport = {
+  const normalized = {
     x: viewport.x ?? 0,
     y: viewport.y ?? 0,
     width: viewport.width,
     height: viewport.height,
   }
   if (
-    !Number.isFinite(normalizedViewport.x) ||
-    !Number.isFinite(normalizedViewport.y) ||
-    !Number.isFinite(normalizedViewport.width) ||
-    !Number.isFinite(normalizedViewport.height) ||
-    normalizedViewport.width <= 0 ||
-    normalizedViewport.height <= 0
+    !Number.isFinite(normalized.x) ||
+    !Number.isFinite(normalized.y) ||
+    !Number.isFinite(normalized.width) ||
+    !Number.isFinite(normalized.height) ||
+    normalized.width <= 0 ||
+    normalized.height <= 0
   ) {
     throw new ThreeRendererContractError("projection viewport must have finite positive width/height")
   }
+  return normalized
+}
 
-  const projected = projectWorldPointUnchecked(camera, point, normalizedViewport)
+function projectValidatedWorldPoint(camera, point, viewport) {
+  requireFiniteTuple("world point", point, 3)
+  const projected = projectWorldPointUnchecked(camera, point, viewport)
   if (![projected.x, projected.y, projected.depth].every(Number.isFinite)) {
     throw new ThreeRendererContractError("world point projection must remain finite")
   }
   return projected
+}
+
+export function createWorldProjector(camera, viewport) {
+  requireProjectionCamera(camera)
+  const normalizedViewport = normalizeProjectionViewport(viewport)
+  return (point) => projectValidatedWorldPoint(camera, point, normalizedViewport)
+}
+
+export function projectWorldPoint(camera, point, viewport) {
+  requireProjectionCamera(camera)
+  return projectValidatedWorldPoint(camera, point, normalizeProjectionViewport(viewport))
 }
 
 function geometryKey(geometry) {
