@@ -53,6 +53,19 @@ An `AnimationClip` groups one or more typed transform tracks and samples them in
 
 `PoseBuffer` and `ClipBlendWorkspace` own reusable transform storage. Cross-fades sample both clips from the same explicit base pose and blend translation/scale linearly and rotations with shortest-arc SLERP. Callers provide the output slice, so the hot path does not require per-sample pose allocation.
 
+## Retargeting contract
+
+Humanoid retargeting is explicit semantic adaptation, not renderer behavior.
+`HumanoidRig` maps roles such as hips, spine, head, upper/lower limbs and optional
+hands/feet to numeric nodes and retains that rig's local rest pose. Required roles
+fail at construction when absent; optional roles may be missing.
+
+`retarget_pose` transfers rest-relative local transform deltas. Rotation deltas
+are applied on top of the target bind orientation, translation deltas are scaled
+by the explicit reference-height ratio, and scale changes are transferred as
+ratios. No node-name lookup, asset parsing, renderer mutation, or allocation is
+required on the successful hot path.
+
 ## Skinning contract
 
 A `Skeleton` is an ordered joint hierarchy plus inverse bind matrices. Skin matrices are computed as:
