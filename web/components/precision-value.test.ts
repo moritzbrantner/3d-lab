@@ -4,6 +4,7 @@ import {
   finishNumericDraft,
   formatNumericValue,
   nudgeNumericValue,
+  numericDraftNudgeValue,
   parseNumericValue,
   quantizeCoarseValue,
   rebaseNumericDraft,
@@ -50,6 +51,7 @@ test("active edits preserve typed text while rebasing external publications", ()
     kind: "commit",
     value: 14.1,
   });
+  assert.equal(numericDraftNudgeValue(rebased, current, { min: 0, max: 100 }), 14.1);
 });
 
 test("focus-only drafts never roll an external publication back", () => {
@@ -57,6 +59,7 @@ test("focus-only drafts never roll an external publication back", () => {
   const rebased = rebaseNumericDraft({ baseline: 16.9, text: "16.9", dirty: false }, current);
   assert.deepEqual(rebased, { baseline: current, text: "16.9", dirty: false });
   assert.deepEqual(finishNumericDraft(rebased, current, { min: 0, max: 100 }), { kind: "idle" });
+  assert.equal(numericDraftNudgeValue(rebased, current, { min: 0, max: 100 }), current);
 });
 
 test("human-facing formatting removes conversion noise without snapping meaningful precision", () => {
