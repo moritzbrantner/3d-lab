@@ -12,7 +12,7 @@ use std::io::Cursor;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use gltf::animation::{Interpolation as GltfInterpolation, Property as AnimationProperty};
 use gltf::mesh::{Mode, Semantic};
-use three_d_animation::{AnimationClip, AnimationTrack, Interpolation, Keyframe, KeyframeTrack, Quat, Transform};
+use three_d_animation::{AnimationClip, AnimationTrack, Interpolation, Keyframe, KeyframeTrack, Quat};
 use three_d_assets::{Asset, AssetError, AssetMesh, BaseColorFactor, Material, MeshPrimitive};
 use three_d_core::{Color3, Mesh, MeshError, Tangent4, Vec2, Vec3, VertexAttributes};
 
