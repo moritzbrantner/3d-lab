@@ -255,8 +255,14 @@ export function createEditorSceneSnapshot(scene: EditorScene): EditorSceneSnapsh
   };
 }
 
+function snapshotUtf8ByteLength(source: string): number {
+  return new TextEncoder().encode(source).byteLength;
+}
+
 export function serializeEditorSceneSnapshot(scene: EditorScene): string {
-  return JSON.stringify(createEditorSceneSnapshot(scene), null, 2) + "\n";
+  const source = JSON.stringify(createEditorSceneSnapshot(scene)) + "\n";
+  validateEditorSceneSnapshotFileSize(snapshotUtf8ByteLength(source));
+  return source;
 }
 
 export function decodeEditorSceneSnapshot(value: unknown): EditorScene {
@@ -287,9 +293,7 @@ export function validateEditorSceneSnapshotFileSize(size: number): void {
 }
 
 export function parseEditorSceneSnapshot(source: string): EditorScene {
-  if (source.length > MAX_EDITOR_SCENE_SNAPSHOT_FILE_BYTES) {
-    throw new Error(`scene snapshot text length exceeds limit ${MAX_EDITOR_SCENE_SNAPSHOT_FILE_BYTES}`);
-  }
+  validateEditorSceneSnapshotFileSize(snapshotUtf8ByteLength(source));
   let parsed: unknown;
   try {
     parsed = JSON.parse(source);
