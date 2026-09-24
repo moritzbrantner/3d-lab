@@ -588,17 +588,22 @@ export function SceneEditorLab() {
   };
 
   const exportSceneSnapshot = () => {
-    const materialized = materializeEditorCommandLog(history).scene;
-    const source = serializeEditorSceneSnapshot(materialized);
-    const url = URL.createObjectURL(new Blob([source], { type: "application/json" }));
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = "3d-lab-scene.snapshot.json";
-    document.body.append(anchor);
-    anchor.click();
-    anchor.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 0);
-    setSnapshotStatus(`Exported ${materialized.nodes.length} nodes.`);
+    try {
+      const materialized = materializeEditorCommandLog(history).scene;
+      const source = serializeEditorSceneSnapshot(materialized);
+      const url = URL.createObjectURL(new Blob([source], { type: "application/json" }));
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "3d-lab-scene.snapshot.json";
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      setSnapshotStatus(`Exported ${materialized.nodes.length} nodes.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setSnapshotStatus(`Export failed: ${message}`);
+    }
   };
 
   const importSceneSnapshot = async (file: File | null) => {
