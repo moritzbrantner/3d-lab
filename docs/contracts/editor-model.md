@@ -33,7 +33,7 @@ The editor's portable snapshot format is versioned as `3d-lab/editor-scene-snaps
 
 Snapshot export is deterministic for the same editor scene: parent-before-child node order is preserved and persistent topology state is materialized only at this explicit compatibility boundary. Selection, gizmo mode, camera state, undo/redo commands, topology caches, Three.js objects, and GPU resources are not serialized.
 
-Snapshot import is a trust boundary. The decoder rejects unknown schema versions and unsupported fields, validates tuple shapes and finite numeric data, then runs the authoritative scene/mesh validation before replacing editor state. A successful import starts a fresh semantic command log; malformed input leaves the current scene unchanged.
+Snapshot import is a trust boundary. The decoder rejects unknown schema versions and unsupported fields, validates tuple shapes and finite numeric data, then runs the authoritative scene/mesh validation before replacing editor state. The v1 boundary accepts at most 1024 nodes and hierarchy depth 64 so imported data cannot hand an unbounded recursive tree to the editor UI. A successful import starts a fresh semantic command log; malformed input leaves the current scene unchanged.
 
 ## Next boundary
 
