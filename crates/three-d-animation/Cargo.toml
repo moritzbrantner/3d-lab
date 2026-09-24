@@ -19,3 +19,7 @@ harness = false
 [[bench]]
 name = "retargeting"
 harness = false
+
+[[bench]]
+name = "ik_layering"
+harness = false
