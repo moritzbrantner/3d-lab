@@ -1,9 +1,7 @@
 use std::hint::black_box;
 use std::time::Instant;
 
-use three_d_animation::retarget::{
-    HumanoidBinding, HumanoidBone, HumanoidRig, retarget_pose,
-};
+use three_d_animation::retarget::{HumanoidBinding, HumanoidBone, HumanoidRig, retarget_pose};
 use three_d_animation::{Quat, Transform};
 use three_d_core::Vec3;
 
