@@ -242,6 +242,15 @@ impl Transform {
     pub fn matrix(self) -> Mat4 {
         Mat4::trs(self.translation, self.rotation, self.scale)
     }
+
+    pub fn blended(self, rhs: Self, factor: f32) -> Self {
+        let factor = factor.clamp(0.0, 1.0);
+        Self {
+            translation: self.translation.interpolate(rhs.translation, factor),
+            rotation: self.rotation.slerp(rhs.rotation, factor),
+            scale: self.scale.interpolate(rhs.scale, factor),
+        }
+    }
 }
 
 impl Default for Transform {
@@ -295,6 +304,7 @@ pub fn world_matrices(nodes: &[TransformNode]) -> Result<Vec<Mat4>, HierarchyErr
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Interpolation {
+    Step,
     Linear,
     SmoothStep,
 }
@@ -303,6 +313,7 @@ impl Interpolation {
     fn map(self, factor: f32) -> f32 {
         let factor = factor.clamp(0.0, 1.0);
         match self {
+            Self::Step => if factor >= 1.0 { 1.0 } else { 0.0 },
             Self::Linear => factor,
             Self::SmoothStep => factor * factor * (3.0 - 2.0 * factor),
         }
@@ -462,9 +473,16 @@ impl AnimationTrack {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoopMode {
+    Clamp,
+    Repeat,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClipError {
     EmptyTracks,
+    NonFiniteTime,
     NodeOutOfBounds { node: usize, node_count: usize },
 }
 
@@ -474,6 +492,7 @@ impl fmt::Display for ClipError {
             Self::EmptyTracks => {
                 formatter.write_str("an animation clip must contain at least one track")
             }
+            Self::NonFiniteTime => formatter.write_str("animation sample time must be finite"),
             Self::NodeOutOfBounds { node, node_count } => write!(
                 formatter,
                 "animation track targets node {node}, but pose has only {node_count} nodes"
@@ -489,6 +508,7 @@ pub struct AnimationClip {
     name: String,
     duration: f32,
     tracks: Vec<AnimationTrack>,
+    loop_mode: LoopMode,
 }
 
 impl AnimationClip {
@@ -504,7 +524,13 @@ impl AnimationClip {
             name: name.into(),
             duration,
             tracks,
+            loop_mode: LoopMode::Clamp,
         })
+    }
+
+    pub fn with_loop_mode(mut self, loop_mode: LoopMode) -> Self {
+        self.loop_mode = loop_mode;
+        self
     }
 
     pub fn name(&self) -> &str {
@@ -515,16 +541,162 @@ impl AnimationClip {
         self.duration
     }
 
+    pub fn loop_mode(&self) -> LoopMode {
+        self.loop_mode
+    }
+
+    pub fn tracks(&self) -> &[AnimationTrack] {
+        &self.tracks
+    }
+
+    fn sample_time(&self, time: f32) -> Result<f32, ClipError> {
+        if !time.is_finite() {
+            return Err(ClipError::NonFiniteTime);
+        }
+        if self.duration <= EPSILON {
+            return Ok(0.0);
+        }
+        Ok(match self.loop_mode {
+            LoopMode::Clamp => time.clamp(0.0, self.duration),
+            LoopMode::Repeat => time.rem_euclid(self.duration),
+        })
+    }
+
     pub fn sample(&self, time: f32, pose: &mut [Transform]) -> Result<(), ClipError> {
+        let time = self.sample_time(time)?;
         let node_count = pose.len();
         for track in &self.tracks {
             let node = track.node();
             let transform = pose
                 .get_mut(node)
                 .ok_or(ClipError::NodeOutOfBounds { node, node_count })?;
-            track.sample_into(time.clamp(0.0, self.duration), transform);
+            track.sample_into(time, transform);
         }
         Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PoseBuffer {
+    transforms: Vec<Transform>,
+}
+
+impl PoseBuffer {
+    pub fn new(node_count: usize) -> Self {
+        Self {
+            transforms: vec![Transform::IDENTITY; node_count],
+        }
+    }
+
+    pub fn from_pose(pose: &[Transform]) -> Self {
+        Self {
+            transforms: pose.to_vec(),
+        }
+    }
+
+    pub fn as_slice(&self) -> &[Transform] {
+        &self.transforms
+    }
+
+    pub fn as_mut_slice(&mut self) -> &mut [Transform] {
+        &mut self.transforms
+    }
+
+    pub fn reset_from(&mut self, pose: &[Transform]) -> Result<(), BlendError> {
+        if self.transforms.len() != pose.len() {
+            return Err(BlendError::PoseLengthMismatch {
+                expected: self.transforms.len(),
+                actual: pose.len(),
+            });
+        }
+        self.transforms.copy_from_slice(pose);
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum BlendError {
+    InvalidWeight,
+    PoseLengthMismatch { expected: usize, actual: usize },
+    Clip(ClipError),
+}
+
+impl fmt::Display for BlendError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidWeight => formatter.write_str("blend weight must be finite and between 0 and 1"),
+            Self::PoseLengthMismatch { expected, actual } => {
+                write!(formatter, "pose length mismatch: expected {expected}, got {actual}")
+            }
+            Self::Clip(error) => error.fmt(formatter),
+        }
+    }
+}
+
+impl std::error::Error for BlendError {}
+
+impl From<ClipError> for BlendError {
+    fn from(error: ClipError) -> Self {
+        Self::Clip(error)
+    }
+}
+
+pub fn blend_poses(
+    left: &[Transform],
+    right: &[Transform],
+    weight: f32,
+    output: &mut [Transform],
+) -> Result<(), BlendError> {
+    if !weight.is_finite() || !(0.0..=1.0).contains(&weight) {
+        return Err(BlendError::InvalidWeight);
+    }
+    if right.len() != left.len() {
+        return Err(BlendError::PoseLengthMismatch {
+            expected: left.len(),
+            actual: right.len(),
+        });
+    }
+    if output.len() != left.len() {
+        return Err(BlendError::PoseLengthMismatch {
+            expected: left.len(),
+            actual: output.len(),
+        });
+    }
+    for ((output, left), right) in output.iter_mut().zip(left).zip(right) {
+        *output = left.blended(*right, weight);
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClipBlendWorkspace {
+    left: PoseBuffer,
+    right: PoseBuffer,
+}
+
+impl ClipBlendWorkspace {
+    pub fn new(node_count: usize) -> Self {
+        Self {
+            left: PoseBuffer::new(node_count),
+            right: PoseBuffer::new(node_count),
+        }
+    }
+
+    pub fn sample_crossfade(
+        &mut self,
+        left_clip: &AnimationClip,
+        left_time: f32,
+        right_clip: &AnimationClip,
+        right_time: f32,
+        weight: f32,
+        base_pose: &[Transform],
+        output: &mut [Transform],
+    ) -> Result<(), BlendError> {
+        self.left.reset_from(base_pose)?;
+        self.right.reset_from(base_pose)?;
+        left_clip.sample(left_time, self.left.as_mut_slice())?;
+        right_clip.sample(right_time, self.right.as_mut_slice())?;
+        blend_poses(self.left.as_slice(), self.right.as_slice(), weight, output)
     }
 }
 
@@ -801,6 +973,93 @@ mod tests {
         assert_vec3_close(pose[0].translation, Vec3::new(1.0, 0.0, 0.0));
         assert_eq!(clip.name(), "move-and-turn");
         assert_eq!(clip.duration(), 2.0);
+    }
+
+    #[test]
+    fn step_interpolation_holds_until_the_next_keyframe() {
+        let track = KeyframeTrack::new(
+            vec![
+                Keyframe { time: 0.0, value: 2.0_f32 },
+                Keyframe { time: 1.0, value: 9.0_f32 },
+            ],
+            Interpolation::Step,
+        )
+        .unwrap();
+        assert_eq!(track.sample(0.999), 2.0);
+        assert_eq!(track.sample(1.0), 9.0);
+    }
+
+    #[test]
+    fn repeating_clip_wraps_time_and_rejects_non_finite_samples() {
+        let track = KeyframeTrack::new(
+            vec![
+                Keyframe { time: 0.0, value: Vec3::ZERO },
+                Keyframe { time: 2.0, value: Vec3::new(2.0, 0.0, 0.0) },
+            ],
+            Interpolation::Linear,
+        )
+        .unwrap();
+        let clip = AnimationClip::new(
+            "loop",
+            vec![AnimationTrack::Translation { node: 0, track }],
+        )
+        .unwrap()
+        .with_loop_mode(LoopMode::Repeat);
+        let mut pose = [Transform::IDENTITY];
+        clip.sample(2.5, &mut pose).unwrap();
+        assert_vec3_close(pose[0].translation, Vec3::new(0.5, 0.0, 0.0));
+        assert_eq!(clip.sample(f32::NAN, &mut pose), Err(ClipError::NonFiniteTime));
+    }
+
+    #[test]
+    fn reusable_crossfade_workspace_blends_without_reallocating_pose_storage() {
+        let make_clip = |name: &str, x: f32| {
+            AnimationClip::new(
+                name,
+                vec![AnimationTrack::Translation {
+                    node: 0,
+                    track: KeyframeTrack::new(
+                        vec![
+                            Keyframe { time: 0.0, value: Vec3::ZERO },
+                            Keyframe { time: 1.0, value: Vec3::new(x, 0.0, 0.0) },
+                        ],
+                        Interpolation::Linear,
+                    )
+                    .unwrap(),
+                }],
+            )
+            .unwrap()
+        };
+        let idle = make_clip("idle", 0.0);
+        let walk = make_clip("walk", 4.0);
+        let base = [Transform::IDENTITY];
+        let mut output = [Transform::IDENTITY];
+        let mut workspace = ClipBlendWorkspace::new(1);
+        let left_ptr = workspace.left.as_slice().as_ptr();
+        let right_ptr = workspace.right.as_slice().as_ptr();
+
+        workspace
+            .sample_crossfade(&idle, 0.5, &walk, 0.5, 0.25, &base, &mut output)
+            .unwrap();
+        assert_vec3_close(output[0].translation, Vec3::new(0.5, 0.0, 0.0));
+        workspace
+            .sample_crossfade(&idle, 0.8, &walk, 0.8, 0.75, &base, &mut output)
+            .unwrap();
+        assert_eq!(workspace.left.as_slice().as_ptr(), left_ptr);
+        assert_eq!(workspace.right.as_slice().as_ptr(), right_ptr);
+        assert_vec3_close(output[0].translation, Vec3::new(2.4, 0.0, 0.0));
+    }
+
+    #[test]
+    fn pose_blending_rejects_invalid_weights_and_shape_mismatches() {
+        let one = [Transform::IDENTITY];
+        let two = [Transform::IDENTITY, Transform::IDENTITY];
+        let mut output = [Transform::IDENTITY];
+        assert_eq!(blend_poses(&one, &one, -0.1, &mut output), Err(BlendError::InvalidWeight));
+        assert_eq!(
+            blend_poses(&one, &two, 0.5, &mut output),
+            Err(BlendError::PoseLengthMismatch { expected: 1, actual: 2 })
+        );
     }
 
     #[test]
