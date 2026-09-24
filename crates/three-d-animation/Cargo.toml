@@ -15,3 +15,7 @@ serde_json = "1"
 [[bench]]
 name = "clip_sampling"
 harness = false
+
+[[bench]]
+name = "retargeting"
+harness = false
