@@ -130,6 +130,13 @@ export function validateRenderCamera(camera: RendererCamera): RendererCamera
 
 export function validateRenderFrame(frame: RendererFrame): RendererFrame
 
+export type WorldProjector = (point: [number, number, number]) => ProjectedPoint
+
+export function createWorldProjector(
+  camera: RendererCamera,
+  viewport: ProjectionViewport,
+): WorldProjector
+
 export function projectWorldPoint(
   camera: RendererCamera,
   point: [number, number, number],
