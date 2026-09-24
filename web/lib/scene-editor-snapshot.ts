@@ -116,6 +116,21 @@ function reserveGeometryBudget(
   budget.indices += indices;
 }
 
+function reserveBoundedGeometry(
+  budget: SnapshotGeometryBudget,
+  vertices: number,
+  indices: number,
+  label: string,
+): void {
+  if (vertices > MAX_EDITOR_SCENE_SNAPSHOT_VERTICES_PER_MESH) {
+    throw new Error(`${label}.vertices count ${vertices} exceeds limit ${MAX_EDITOR_SCENE_SNAPSHOT_VERTICES_PER_MESH}`);
+  }
+  if (indices > MAX_EDITOR_SCENE_SNAPSHOT_INDICES_PER_MESH) {
+    throw new Error(`${label}.indices count ${indices} exceeds limit ${MAX_EDITOR_SCENE_SNAPSHOT_INDICES_PER_MESH}`);
+  }
+  reserveGeometryBudget(budget, vertices, indices, label);
+}
+
 function parseTransform(value: unknown, label: string): EditableTransform {
   const source = record(value, label);
   exactKeys(source, ["translation", "rotation", "scale"], label);
@@ -139,7 +154,7 @@ function parseMesh(value: unknown, label: string, budget: SnapshotGeometryBudget
     `${label}.indices`,
     MAX_EDITOR_SCENE_SNAPSHOT_INDICES_PER_MESH,
   );
-  reserveGeometryBudget(budget, rawVertices.length, rawIndices.length, label);
+  reserveBoundedGeometry(budget, rawVertices.length, rawIndices.length, label);
 
   const vertices = rawVertices.map((entry, index) => vec3(entry, `${label}.vertices[${index}]`));
   const indices = rawIndices.map((entry, index) => {
@@ -193,6 +208,17 @@ function parseNode(value: unknown, index: number, budget: SnapshotGeometryBudget
 function requireSnapshotScene(scene: EditorScene): void {
   if (scene.nodes.length === 0) throw new Error("scene snapshot must contain at least one node");
   validateEditorScene(scene);
+
+  const geometryBudget: SnapshotGeometryBudget = { vertices: 0, indices: 0 };
+  for (const node of scene.nodes) {
+    if (!node.mesh) continue;
+    reserveBoundedGeometry(
+      geometryBudget,
+      node.mesh.vertices.length,
+      node.mesh.indices.length,
+      `scene snapshot node ${node.id}.mesh`,
+    );
+  }
 
   const depths = new Map<string, number>();
   for (const node of scene.nodes) {
