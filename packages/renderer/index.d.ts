@@ -115,6 +115,11 @@ export type ThreeSceneRendererOptions = {
 
 export type ThreeSceneRenderer = {
   setSize(width: number, height: number, devicePixelRatio?: number): void
+  /**
+   * Re-render the currently submitted scene with a new camera only.
+   * Callers must use full render() whenever node content may have changed.
+   */
+  renderCamera(camera: RendererCamera): RendererWorkObservations
   render(frame: RendererFrame): RendererWorkObservations
   dispose(): void
 }
