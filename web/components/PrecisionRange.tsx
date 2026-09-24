@@ -136,7 +136,7 @@ export function PrecisionRange({
           font: "inherit", fontVariantNumeric: "tabular-nums" }}
         onFocus={() => {
           editingText.current = true;
-          const next = { baseline: value, text: displayValue };
+          const next = { baseline: value, text: displayValue, dirty: false };
           pending.current = next;
           setDraft(next);
           setInvalid(false);
@@ -144,7 +144,7 @@ export function PrecisionRange({
         }}
         onChange={(event) => {
           editingText.current = true;
-          const next = { baseline: value, text: event.currentTarget.value };
+          const next = { baseline: value, text: event.currentTarget.value, dirty: true };
           pending.current = next;
           setDraft(next);
           setInvalid(false);
