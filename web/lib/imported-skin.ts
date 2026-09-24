@@ -106,7 +106,7 @@ export function adaptSingleSkinnedGltf(gltf: GLTF): ImportedSkinnedModel {
 
   const skeletonHelper = new THREE.SkeletonHelper(source.skeleton.bones[0]!);
   parent.add(skeletonHelper);
-  const materials = [...new Set(batch.mesh.material)];
+  const materials: THREE.Material[] = [...new Set(batch.mesh.material as THREE.Material[])];
 
   return {
     root: gltf.scene,
