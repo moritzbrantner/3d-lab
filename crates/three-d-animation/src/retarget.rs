@@ -109,16 +109,24 @@ impl fmt::Display for RetargetError {
                 formatter,
                 "{bone:?} maps to node {node}, but the rest pose has {node_count} nodes"
             ),
-            Self::DuplicateBone(bone) => write!(formatter, "humanoid bone {bone:?} is mapped twice"),
+            Self::DuplicateBone(bone) => {
+                write!(formatter, "humanoid bone {bone:?} is mapped twice")
+            }
             Self::DuplicateNode(node) => write!(formatter, "humanoid node {node} is mapped twice"),
             Self::MissingRequiredBone(bone) => {
                 write!(formatter, "required humanoid bone {bone:?} is not mapped")
             }
             Self::InvalidRestTransform { node } => {
-                write!(formatter, "rest transform for node {node} must be finite and invertible")
+                write!(
+                    formatter,
+                    "rest transform for node {node} must be finite and invertible"
+                )
             }
             Self::InvalidPoseTransform { node } => {
-                write!(formatter, "animated transform for node {node} must be finite")
+                write!(
+                    formatter,
+                    "animated transform for node {node} must be finite"
+                )
             }
             Self::PoseLengthMismatch {
                 role,
@@ -348,7 +356,11 @@ mod tests {
     }
 
     fn assert_quat_equivalent(actual: Quat, expected: Quat) {
-        let dot = actual.normalized().unwrap().dot(expected.normalized().unwrap()).abs();
+        let dot = actual
+            .normalized()
+            .unwrap()
+            .dot(expected.normalized().unwrap())
+            .abs();
         assert!((1.0 - dot).abs() < 1.0e-5, "{actual:?} != {expected:?}");
     }
 
