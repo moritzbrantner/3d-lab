@@ -6,6 +6,7 @@ import {
   nudgeNumericValue,
   parseNumericValue,
   quantizeCoarseValue,
+  rebaseNumericDraft,
 } from "./precision-value";
 
 const angles = { min: -180, max: 180 };
@@ -39,6 +40,16 @@ test("drafts commit exactly once and stale drafts cannot overwrite external stat
   assert.deepEqual(finishNumericDraft({ baseline: 34, text: "34.125" }, 34, angles), { kind: "commit", value: 34.125 });
   assert.deepEqual(finishNumericDraft(null, 34.125, angles), { kind: "idle" });
   assert.deepEqual(finishNumericDraft({ baseline: 34, text: "-12.75" }, 45, angles), { kind: "stale" });
+});
+
+test("active edits preserve typed text while rebasing external publications", () => {
+  const current = 17.25;
+  const rebased = rebaseNumericDraft({ baseline: 16.9, text: "14.1" }, current);
+  assert.deepEqual(rebased, { baseline: current, text: "14.1" });
+  assert.deepEqual(finishNumericDraft(rebased, current, { min: 0, max: 100 }), {
+    kind: "commit",
+    value: 14.1,
+  });
 });
 
 test("human-facing formatting removes conversion noise without snapping meaningful precision", () => {

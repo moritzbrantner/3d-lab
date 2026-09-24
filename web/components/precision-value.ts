@@ -23,6 +23,11 @@ export function finishNumericDraft(draft: NumericDraft | null, current: number, 
   return Object.is(value, current) ? { kind: "idle" } : { kind: "commit", value };
 }
 
+/** Preserve active user text while accepting the latest external value as its commit baseline. */
+export function rebaseNumericDraft(draft: NumericDraft | null, current: number): NumericDraft | null {
+  return draft ? { baseline: current, text: draft.text } : null;
+}
+
 /**
  * Produce a human-facing decimal without exposing the tiny binary error often
  * introduced by unit conversions such as modelFraction * 100.
