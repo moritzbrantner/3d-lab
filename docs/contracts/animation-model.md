@@ -12,7 +12,7 @@ The Three.js lessons and Rust animation crate intentionally share concepts, not 
 - `Quat` as a normalized orientation representation with SLERP;
 - `Transform` as translation + quaternion rotation + scale;
 - ordered `TransformNode` hierarchies and deterministic world-matrix evaluation;
-- typed keyframes, linear/smooth interpolation, and reusable `AnimationClip` tracks;
+- typed keyframes, step/linear/smooth interpolation, reusable `AnimationClip` tracks, explicit loop policy, reusable pose buffers, and deterministic cross-fades;
 - skeleton joints, inverse bind matrices, and normalized four-slot skin influences.
 
 The web application owns interactive presentation, Three.js scene objects, `AnimationMixer`, `Bone`/`SkinnedMesh`, and `GLTFLoader`.
@@ -46,10 +46,12 @@ A `KeyframeTrack<T>`:
 - contains at least one keyframe;
 - requires finite, strictly increasing times;
 - clamps sampling before the first and after the last keyframe;
-- supports linear or smooth-step time remapping;
+- supports step, linear, or smooth-step time remapping;
 - uses linear interpolation for scalars/vectors and SLERP for quaternions.
 
-An `AnimationClip` groups one or more typed transform tracks and samples them into a pose without owning a renderer or clock.
+An `AnimationClip` groups one or more typed transform tracks and samples them into a pose without owning a renderer or clock. Clip time is explicit: `Clamp` holds the endpoints and `Repeat` wraps with `rem_euclid`; non-finite time fails closed.
+
+`PoseBuffer` and `ClipBlendWorkspace` own reusable transform storage. Cross-fades sample both clips from the same explicit base pose and blend translation/scale linearly and rotations with shortest-arc SLERP. Callers provide the output slice, so the hot path does not require per-sample pose allocation.
 
 ## Skinning contract
 
@@ -61,4 +63,4 @@ Each `SkinInfluence` has four joint slots and four non-negative finite weights. 
 
 ## glTF boundary
 
-The browser lesson uses a deliberately tiny embedded glTF 2.0 asset to show how keyframe concepts are serialized into buffers, accessors, samplers, and channels. Parsing glTF is not owned by either Rust core crate yet; a future model-pipeline slice may add an adapter that converts glTF data into the existing mesh and animation contracts.
+`three-d-formats::load_gltf_animation_clips` is the file-format adapter into this contract. It resolves glTF channel targets to numeric node indices and converts LINEAR/STEP translation, rotation, and scale samplers into `AnimationClip` tracks. CUBICSPLINE and morph-weight animation fail explicitly until their semantics are represented. Generic mesh loading remains loss-aware and still rejects JOINTS/WEIGHTS when the `three-d-assets` mesh model cannot preserve them.
