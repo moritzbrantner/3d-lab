@@ -41,6 +41,9 @@ Normalization remains deterministic and idempotent. Re-normalizing an already-no
 
 Creation/reuse counts describe cache acquisitions performed by the renderer. They intentionally do not claim GPU allocation cost or exclusive CPU time. Chromium/runtime timing remains owned by `runtime-profiler`.
 
+`ThreeSceneRenderer.renderCamera` is the explicit unchanged-scene fast path. It validates and applies the new camera, issues the draw, and reports zero scene-node/resource visits while retaining the current live-cache counts. It deliberately does not infer unchanged scene state from object or array identity: callers must choose the method only when node geometry, materials, visibility, and transforms are unchanged. Any scene mutation must go through full `render(frame)`, preserving the existing validation and reconciliation contract.
+
+
 The resource cache helpers expose creation-versus-reuse and eviction counts directly, so the observations are produced by the same code path that owns the actual cache. The performance fixture does not maintain a second shadow cache model.
 
 ## Editor mutation boundary
