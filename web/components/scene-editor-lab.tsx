@@ -14,6 +14,7 @@ import {
 import {
   parseEditorSceneSnapshot,
   serializeEditorSceneSnapshot,
+  validateEditorSceneSnapshotFileSize,
 } from "@/lib/scene-editor-snapshot";
 import {
   effectiveEditorGizmoMode,
@@ -605,6 +606,7 @@ export function SceneEditorLab() {
     const requestId = importRequestRef.current + 1;
     importRequestRef.current = requestId;
     try {
+      validateEditorSceneSnapshotFileSize(file.size);
       const source = await file.text();
       if (requestId !== importRequestRef.current) return;
       const scene = parseEditorSceneSnapshot(source);
