@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "type": "module",
   "private": false,
-  "files": ["packages/renderer"],
+  "files": [
+    "packages/renderer"
+  ],
   "exports": {
     ".": {
       "types": "./packages/renderer/index.d.ts",
@@ -12,12 +14,20 @@
     "./rigid-skin": {
       "types": "./packages/renderer/rigid-skin.d.ts",
       "import": "./packages/renderer/rigid-skin.js"
+    },
+    "./weighted-skin": {
+      "types": "./packages/renderer/weighted-skin.d.ts",
+      "import": "./packages/renderer/weighted-skin.js"
     }
   },
   "scripts": {
     "test": "bun test packages/renderer",
     "bench:character-pose": "bun scripts/character-pose-evidence.mjs"
   },
-  "dependencies": {"three": "0.185.1"},
-  "devDependencies": {"playwright": "1.62.1"}
+  "dependencies": {
+    "three": "0.185.1"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
 }

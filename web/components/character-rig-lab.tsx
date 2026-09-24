@@ -140,6 +140,9 @@ export function CharacterRigLab() {
     scene.add(character.model, character.skeletonHelper);
     canvas.dataset.sourceDraws = String(character.sourceDraws);
     canvas.dataset.materialDraws = String(character.materialDraws);
+    canvas.dataset.skinMode = "weighted";
+    canvas.dataset.blendedVertices = String(character.blendedVertexCount);
+    canvas.dataset.skinIndexBytes = String(character.skinIndexBytesPerVertex);
     const resize = () => {
       const width = Math.max(canvas.clientWidth, 1);
       const height = Math.max(canvas.clientHeight, 1);
@@ -189,7 +192,7 @@ export function CharacterRigLab() {
       <div className={styles.viewportPanel}>
         <div className={styles.headingRow}>
           <div>
-            <p className="eyebrow">GPU-skinned character</p>
+            <p className="eyebrow">Smooth GPU-skinned character</p>
             <h2 id="character-rig-heading">Inspect a complete articulated model, its bind pose and its animation.</h2>
           </div>
           <p>Drag to orbit, step by 1/60 second, enter an exact time, or expose the skeleton through the model.</p>
@@ -254,7 +257,7 @@ export function CharacterRigLab() {
         </label>
         <div className={styles.boundary}>
           <strong>Model and renderer boundaries</strong>
-          <p>Thirteen joints drive one indexed skinned mesh with three material groups. These are rigid, single-joint attachments, not automatically generated smooth skin weights.</p>
+          <p>Thirteen joints drive one indexed skinned mesh with three material groups. The teaching model authors smooth two-joint blends at the spine, neck, elbows and knees; the renderer validates, packs and batches those weights.</p>
           <p>The teaching model owns its shape and motions. The reusable renderer batches attachments; <code>three-d-animation</code> remains the reusable animation authority.</p>
         </div>
       </aside>

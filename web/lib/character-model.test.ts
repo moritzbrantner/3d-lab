@@ -4,7 +4,7 @@ import { buildCharacterModel } from "./character-model";
 import { disposeRenderableResources } from "./three-resources";
 
 describe("batched teaching character", () => {
-  test("ratchets 31 rigid parts into one mesh and three color-pass groups", () => {
+  test("ratchets 31 authored parts into one smoothly weighted mesh and three color-pass groups", () => {
     const character = buildCharacterModel();
     let meshCount = 0;
     character.model.traverse((object) => { if ((object as THREE.Mesh).isMesh) meshCount += 1; });
@@ -13,11 +13,18 @@ describe("batched teaching character", () => {
     expect(character.materialDraws).toBe(3);
     expect(character.mesh.geometry.groups).toHaveLength(3);
     expect(character.skeleton.bones).toHaveLength(13);
+    expect(character.blendedVertexCount).toBeGreaterThan(0);
+    expect(character.skinIndexBytesPerVertex).toBe(4);
+    expect(character.mesh.geometry.getAttribute("skinIndex").array).toBeInstanceOf(Uint8Array);
     const weights = character.mesh.geometry.getAttribute("skinWeight");
+    let smoothVertices = 0;
     for (let vertex = 0; vertex < weights.count; vertex += 1) {
-      expect(weights.getX(vertex)).toBe(1);
-      expect(weights.getY(vertex) + weights.getZ(vertex) + weights.getW(vertex)).toBe(0);
+      const lanes = [weights.getX(vertex), weights.getY(vertex), weights.getZ(vertex), weights.getW(vertex)];
+      expect(lanes.reduce((sum, weight) => sum + weight, 0)).toBeCloseTo(1, 5);
+      expect(lanes.filter((weight) => weight > 0).length).toBeLessThanOrEqual(2);
+      if (lanes.filter((weight) => weight > 0).length > 1) smoothVertices += 1;
     }
+    expect(smoothVertices).toBe(character.blendedVertexCount);
   });
 
   test("helper follows bone world space without applying model transform twice", () => {
@@ -101,5 +108,4 @@ describe("batched teaching character", () => {
     for (const resource of resources) expect(counts.get(resource)).toBe(1);
     character.skeleton.dispose();
   });
-
 });
