@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { createEditorScene, updateMeshVertex, updateNodeTransform, type EditorScene } from "./scene-editor";
 import {
   EDITOR_SCENE_SNAPSHOT_SCHEMA,
+  MAX_EDITOR_SCENE_SNAPSHOT_DEPTH,
+  MAX_EDITOR_SCENE_SNAPSHOT_NODES,
   decodeEditorSceneSnapshot,
   parseEditorSceneSnapshot,
   serializeEditorSceneSnapshot,
@@ -62,6 +64,31 @@ describe("editor scene snapshots", () => {
     const invalidBody = invalidMesh.nodes.find((node: { id: string }) => node.id === "body");
     invalidBody.mesh.indices[0] = 9999;
     expect(() => decodeEditorSceneSnapshot(invalidMesh)).toThrow("outside the vertex buffer");
+  });
+
+  test("bounds imported hierarchy size and depth before it reaches recursive UI rendering", () => {
+    const node = (index: number, parent: string | null) => ({
+      id: `node-${index}`,
+      name: `Node ${index}`,
+      parent,
+      transform: { translation: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    });
+
+    const tooDeep = Array.from({ length: MAX_EDITOR_SCENE_SNAPSHOT_DEPTH + 1 }, (_, index) =>
+      node(index, index === 0 ? null : `node-${index - 1}`),
+    );
+    expect(() => decodeEditorSceneSnapshot({
+      schema: EDITOR_SCENE_SNAPSHOT_SCHEMA,
+      nodes: tooDeep,
+    })).toThrow("hierarchy depth limit");
+
+    const tooMany = Array.from({ length: MAX_EDITOR_SCENE_SNAPSHOT_NODES + 1 }, (_, index) =>
+      node(index, null),
+    );
+    expect(() => decodeEditorSceneSnapshot({
+      schema: EDITOR_SCENE_SNAPSHOT_SCHEMA,
+      nodes: tooMany,
+    })).toThrow("node count");
   });
 
   test("rejects empty scenes, malformed tuples, and invalid JSON explicitly", () => {
