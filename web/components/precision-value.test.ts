@@ -44,12 +44,19 @@ test("drafts commit exactly once and stale drafts cannot overwrite external stat
 
 test("active edits preserve typed text while rebasing external publications", () => {
   const current = 17.25;
-  const rebased = rebaseNumericDraft({ baseline: 16.9, text: "14.1" }, current);
-  assert.deepEqual(rebased, { baseline: current, text: "14.1" });
+  const rebased = rebaseNumericDraft({ baseline: 16.9, text: "14.1", dirty: true }, current);
+  assert.deepEqual(rebased, { baseline: current, text: "14.1", dirty: true });
   assert.deepEqual(finishNumericDraft(rebased, current, { min: 0, max: 100 }), {
     kind: "commit",
     value: 14.1,
   });
+});
+
+test("focus-only drafts never roll an external publication back", () => {
+  const current = 17.25;
+  const rebased = rebaseNumericDraft({ baseline: 16.9, text: "16.9", dirty: false }, current);
+  assert.deepEqual(rebased, { baseline: current, text: "16.9", dirty: false });
+  assert.deepEqual(finishNumericDraft(rebased, current, { min: 0, max: 100 }), { kind: "idle" });
 });
 
 test("human-facing formatting removes conversion noise without snapping meaningful precision", () => {
