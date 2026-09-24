@@ -9,6 +9,11 @@ import { validateMesh, type IndexedMesh, type Vec2, type Vec3, type Vec4 } from 
 export const EDITOR_SCENE_SNAPSHOT_SCHEMA = "3d-lab/editor-scene-snapshot/v1" as const;
 export const MAX_EDITOR_SCENE_SNAPSHOT_NODES = 1024;
 export const MAX_EDITOR_SCENE_SNAPSHOT_DEPTH = 64;
+export const MAX_EDITOR_SCENE_SNAPSHOT_FILE_BYTES = 16 * 1024 * 1024;
+export const MAX_EDITOR_SCENE_SNAPSHOT_VERTICES_PER_MESH = 65_536;
+export const MAX_EDITOR_SCENE_SNAPSHOT_INDICES_PER_MESH = 393_216;
+export const MAX_EDITOR_SCENE_SNAPSHOT_TOTAL_VERTICES = 131_072;
+export const MAX_EDITOR_SCENE_SNAPSHOT_TOTAL_INDICES = 786_432;
 
 export type EditorSceneSnapshot = Readonly<{
   schema: typeof EDITOR_SCENE_SNAPSHOT_SCHEMA;
@@ -67,12 +72,48 @@ function vec4(value: unknown, label: string): Vec4 {
   return [values[0], values[1], values[2], values[3]];
 }
 
-function tupleList<T>(
+function tupleListExact<T>(
   value: unknown,
+  expectedLength: number,
   label: string,
   parse: (entry: unknown, label: string) => T,
 ): readonly T[] {
-  return list(value, label).map((entry, index) => parse(entry, `${label}[${index}]`));
+  const values = list(value, label);
+  if (values.length !== expectedLength) {
+    throw new Error(`${label} must contain exactly ${expectedLength} entries`);
+  }
+  return values.map((entry, index) => parse(entry, `${label}[${index}]`));
+}
+
+type SnapshotGeometryBudget = {
+  vertices: number;
+  indices: number;
+};
+
+function boundedArray(value: unknown, label: string, limit: number): readonly unknown[] {
+  const values = list(value, label);
+  if (values.length > limit) throw new Error(`${label} count ${values.length} exceeds limit ${limit}`);
+  return values;
+}
+
+function reserveGeometryBudget(
+  budget: SnapshotGeometryBudget,
+  vertices: number,
+  indices: number,
+  label: string,
+): void {
+  if (budget.vertices + vertices > MAX_EDITOR_SCENE_SNAPSHOT_TOTAL_VERTICES) {
+    throw new Error(
+      `${label} would exceed total vertex limit ${MAX_EDITOR_SCENE_SNAPSHOT_TOTAL_VERTICES}`,
+    );
+  }
+  if (budget.indices + indices > MAX_EDITOR_SCENE_SNAPSHOT_TOTAL_INDICES) {
+    throw new Error(
+      `${label} would exceed total index limit ${MAX_EDITOR_SCENE_SNAPSHOT_TOTAL_INDICES}`,
+    );
+  }
+  budget.vertices += vertices;
+  budget.indices += indices;
 }
 
 function parseTransform(value: unknown, label: string): EditableTransform {
@@ -85,11 +126,23 @@ function parseTransform(value: unknown, label: string): EditableTransform {
   };
 }
 
-function parseMesh(value: unknown, label: string): IndexedMesh {
+function parseMesh(value: unknown, label: string, budget: SnapshotGeometryBudget): IndexedMesh {
   const source = record(value, label);
   exactKeys(source, ["vertices", "indices", "attributes"], label);
-  const vertices = tupleList(source.vertices, `${label}.vertices`, vec3);
-  const indices = list(source.indices, `${label}.indices`).map((entry, index) => {
+  const rawVertices = boundedArray(
+    source.vertices,
+    `${label}.vertices`,
+    MAX_EDITOR_SCENE_SNAPSHOT_VERTICES_PER_MESH,
+  );
+  const rawIndices = boundedArray(
+    source.indices,
+    `${label}.indices`,
+    MAX_EDITOR_SCENE_SNAPSHOT_INDICES_PER_MESH,
+  );
+  reserveGeometryBudget(budget, rawVertices.length, rawIndices.length, label);
+
+  const vertices = rawVertices.map((entry, index) => vec3(entry, `${label}.vertices[${index}]`));
+  const indices = rawIndices.map((entry, index) => {
     const parsed = finiteNumber(entry, `${label}.indices[${index}]`);
     if (!Number.isSafeInteger(parsed) || parsed < 0) {
       throw new Error(`${label}.indices[${index}] must be a non-negative safe integer`);
@@ -102,10 +155,18 @@ function parseMesh(value: unknown, label: string): IndexedMesh {
     const raw = record(source.attributes, `${label}.attributes`);
     exactKeys(raw, ["normals", "tangents", "uvs", "colors"], `${label}.attributes`);
     attributes = {
-      normals: raw.normals === undefined ? undefined : tupleList(raw.normals, `${label}.attributes.normals`, vec3),
-      tangents: raw.tangents === undefined ? undefined : tupleList(raw.tangents, `${label}.attributes.tangents`, vec4),
-      uvs: raw.uvs === undefined ? undefined : tupleList(raw.uvs, `${label}.attributes.uvs`, vec2),
-      colors: raw.colors === undefined ? undefined : tupleList(raw.colors, `${label}.attributes.colors`, vec3),
+      normals: raw.normals === undefined
+        ? undefined
+        : tupleListExact(raw.normals, rawVertices.length, `${label}.attributes.normals`, vec3),
+      tangents: raw.tangents === undefined
+        ? undefined
+        : tupleListExact(raw.tangents, rawVertices.length, `${label}.attributes.tangents`, vec4),
+      uvs: raw.uvs === undefined
+        ? undefined
+        : tupleListExact(raw.uvs, rawVertices.length, `${label}.attributes.uvs`, vec2),
+      colors: raw.colors === undefined
+        ? undefined
+        : tupleListExact(raw.colors, rawVertices.length, `${label}.attributes.colors`, vec3),
     };
   }
 
@@ -114,7 +175,7 @@ function parseMesh(value: unknown, label: string): IndexedMesh {
   return mesh;
 }
 
-function parseNode(value: unknown, index: number): EditorNode {
+function parseNode(value: unknown, index: number, budget: SnapshotGeometryBudget): EditorNode {
   const label = `scene snapshot node ${index}`;
   const source = record(value, label);
   exactKeys(source, ["id", "name", "parent", "transform", "mesh"], label);
@@ -125,15 +186,12 @@ function parseNode(value: unknown, index: number): EditorNode {
     name: stringValue(source.name, `${label}.name`),
     parent,
     transform: parseTransform(source.transform, `${label}.transform`),
-    ...(source.mesh === undefined ? {} : { mesh: parseMesh(source.mesh, `${label}.mesh`) }),
+    ...(source.mesh === undefined ? {} : { mesh: parseMesh(source.mesh, `${label}.mesh`, budget) }),
   };
 }
 
 function requireSnapshotScene(scene: EditorScene): void {
   if (scene.nodes.length === 0) throw new Error("scene snapshot must contain at least one node");
-  if (scene.nodes.length > MAX_EDITOR_SCENE_SNAPSHOT_NODES) {
-    throw new Error(`scene snapshot node count ${scene.nodes.length} exceeds limit ${MAX_EDITOR_SCENE_SNAPSHOT_NODES}`);
-  }
   validateEditorScene(scene);
 
   const depths = new Map<string, number>();
@@ -208,14 +266,30 @@ export function decodeEditorSceneSnapshot(value: unknown): EditorScene {
   if (schema !== EDITOR_SCENE_SNAPSHOT_SCHEMA) {
     throw new Error(`unsupported scene snapshot schema ${schema}`);
   }
+  const rawNodes = list(source.nodes, "scene snapshot.nodes");
+  if (rawNodes.length === 0) throw new Error("scene snapshot must contain at least one node");
+  if (rawNodes.length > MAX_EDITOR_SCENE_SNAPSHOT_NODES) {
+    throw new Error(`scene snapshot node count ${rawNodes.length} exceeds limit ${MAX_EDITOR_SCENE_SNAPSHOT_NODES}`);
+  }
+  const budget: SnapshotGeometryBudget = { vertices: 0, indices: 0 };
   const scene: EditorScene = {
-    nodes: list(source.nodes, "scene snapshot.nodes").map(parseNode),
+    nodes: rawNodes.map((value, index) => parseNode(value, index, budget)),
   };
   requireSnapshotScene(scene);
   return scene;
 }
 
+export function validateEditorSceneSnapshotFileSize(size: number): void {
+  if (!Number.isSafeInteger(size) || size < 0) throw new Error("scene snapshot file size must be a non-negative safe integer");
+  if (size > MAX_EDITOR_SCENE_SNAPSHOT_FILE_BYTES) {
+    throw new Error(`scene snapshot file size ${size} exceeds limit ${MAX_EDITOR_SCENE_SNAPSHOT_FILE_BYTES}`);
+  }
+}
+
 export function parseEditorSceneSnapshot(source: string): EditorScene {
+  if (source.length > MAX_EDITOR_SCENE_SNAPSHOT_FILE_BYTES) {
+    throw new Error(`scene snapshot text length exceeds limit ${MAX_EDITOR_SCENE_SNAPSHOT_FILE_BYTES}`);
+  }
   let parsed: unknown;
   try {
     parsed = JSON.parse(source);
