@@ -1,6 +1,7 @@
 import {describe, expect, test} from "bun:test"
 import {
   ThreeRendererContractError,
+  createWorldProjector,
   projectWorldPoint,
   validateRenderCamera,
   validateRenderFrame,
@@ -152,6 +153,28 @@ describe("reusable Three renderer contract", () => {
     })
 
     expect(projected).toEqual({x: 110, y: 70, depth: 0, visible: true})
+  })
+
+  test("reuses validated camera and viewport across repeated world projections", () => {
+    const camera = frame().camera
+    const viewport = {x: 10, y: 20, width: 200, height: 100}
+    const project = createWorldProjector(camera, viewport)
+
+    for (const point of [[0, 0, 0], [0.25, -0.5, 0.5], [-0.75, 0.5, 0.25]] as const) {
+      expect(project([...point])).toEqual(projectWorldPoint(camera, [...point], viewport))
+    }
+    expect(() => project([Number.NaN, 0, 0])).toThrow("world point")
+  })
+
+  test("prepared world projection fails before returning a callable projector", () => {
+    const camera = frame().camera
+    camera.viewMatrix[0] = Number.NaN
+    expect(() => createWorldProjector(camera, {width: 100, height: 100})).toThrow(
+      "camera view matrix",
+    )
+    expect(() => createWorldProjector(frame().camera, {width: 0, height: 100})).toThrow(
+      "finite positive width/height",
+    )
   })
 
   test("rejects duplicate stable node ids", () => {
