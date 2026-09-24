@@ -1168,6 +1168,7 @@ mod tests {
     }
 }
 
+pub mod ik;
 pub mod retarget;
 
 mod projective;
