@@ -42,9 +42,19 @@ try {
   const time = region.getByRole("spinbutton", { name: "Exact time (seconds)" });
   const speed = region.getByRole("spinbutton", { name: /Playback speed/ });
   await time.fill("0.73125");
+  assert(await region.getByRole("button", { name: "Play motion", exact: true }).isVisible());
+  const activeDraft = await time.inputValue();
+  await page.evaluate(() => new Promise((resolve) => {
+    let frames = 0;
+    const next = () => { if (++frames === 12) resolve(); else requestAnimationFrame(next); };
+    requestAnimationFrame(next);
+  }));
+  assert.equal(await time.inputValue(), activeDraft,
+    "exact-time draft must survive animation UI publication after editing starts");
   await time.press("Enter");
   close(Number(await time.inputValue()), 0.73125);
-  assert(await region.getByRole("button", { name: "Play motion", exact: true }).isVisible());
+  await region.screenshot({ path: path.join(output, "precision-controls.png") });
+  checks.push("exact-time focus pauses playback before animation publications can replace the draft");
   await region.getByRole("button", { name: "Next frame (1/60 second)", exact: true }).click();
   close(Number(await time.inputValue()), 0.73125 + 1 / 60);
   await region.getByRole("button", { name: "Previous frame (1/60 second)", exact: true }).click();
@@ -56,6 +66,8 @@ try {
   close(Number(await time.inputValue()), 0.73125);
   await time.fill("");
   await time.press("Enter");
+  assert.equal(await time.getAttribute("aria-invalid"), "true");
+  await time.press("Escape");
   close(Number(await time.inputValue()), 0.73125);
   await speed.fill("0.75");
   await speed.press("Enter");
@@ -75,7 +87,7 @@ try {
   await time.press("Enter");
   await region.getByRole("button", { name: "Previous frame (1/60 second)", exact: true }).click();
   close(Number(await time.inputValue()), 0);
-  await time.fill("10");
+  await time.fill(String(1 / 0.42));
   await time.press("Enter");
   await region.getByRole("button", { name: "Next frame (1/60 second)", exact: true }).click();
   close(Number(await time.inputValue()), 1 / 0.42);
@@ -84,7 +96,9 @@ try {
   await region.getByRole("button", { name: "Wave", exact: true }).click();
   await region.getByRole("button", { name: "Play motion", exact: true }).click();
   await page.waitForFunction(() => {
-    const input = document.querySelector('section[aria-labelledby="character-rig-heading"] input[type="number"]');
+    const input = document.querySelector(
+      'section[aria-labelledby="character-rig-heading"] [data-slot="precision-range"] input[role="spinbutton"]',
+    );
     return Number(input?.value) > 0.03;
   });
   await region.getByRole("button", { name: "Pause motion", exact: true }).click();

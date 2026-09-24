@@ -1,5 +1,6 @@
 "use client";
 
+import { PrecisionRange } from "./PrecisionRange";
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -36,37 +37,6 @@ const DEFAULT_STATE: RigState = {
   motion: "walk", playing: true, phase: 0.08, speed: 1,
   showSkeleton: true, transparentSkin: false, bindPose: false,
 };
-
-/** Keep an editing draft so empty/partial decimals survive keystrokes. */
-function ExactNumberInput({ id, value, min, max, step, onCommit, onEditBegin }: {
-  id: string;
-  value: number;
-  min: number;
-  max: number;
-  step: string;
-  onCommit: (value: number) => void;
-  onEditBegin?: () => void;
-}) {
-  const [draft, setDraft] = useState<string | null>(null);
-  const cancelRef = useRef(false);
-  return <input id={id} type="number" min={min} max={max} step={step}
-    value={draft ?? String(value)}
-    onFocus={() => { setDraft(String(value)); onEditBegin?.(); }}
-    onChange={(event) => setDraft(event.target.value)}
-    onBlur={(event) => {
-      const parsed = event.target.valueAsNumber;
-      if (!cancelRef.current && Number.isFinite(parsed)) onCommit(Math.min(max, Math.max(min, parsed)));
-      cancelRef.current = false;
-      setDraft(null);
-    }}
-    onKeyDown={(event) => {
-      if (event.key === "Escape") cancelRef.current = true;
-      if (event.key === "Enter" || event.key === "Escape") {
-        event.preventDefault();
-        event.currentTarget.blur();
-      }
-    }} />;
-}
 
 function applyPose(runtime: Runtime, state: RigState) {
   const pose = state.bindPose ? runtime.bindPose : sampleCharacterPoseInto(state.motion, state.phase, runtime.pose);
@@ -211,18 +181,13 @@ export function CharacterRigLab() {
             ))}
           </div>
         </div>
-        <label className={styles.rangeControl} htmlFor="character-timeline">
-          <span>Timeline <output>{(state.phase * CHARACTER_CYCLE_SECONDS).toFixed(3)} s</output></span>
-          <input id="character-timeline" type="range" min="0" max="1" step="0.001" value={state.phase}
-            onChange={(event) => patchState({ phase: Number(event.target.value), playing: false, bindPose: false })} />
-        </label>
-        <label className={styles.rangeControl} htmlFor="character-time">
-          <span>Exact time (seconds)</span>
-          <ExactNumberInput id="character-time" min={0} max={CHARACTER_CYCLE_SECONDS} step="any"
-            value={Number((state.phase * CHARACTER_CYCLE_SECONDS).toFixed(6))}
-            onEditBegin={() => patchState({ playing: false })}
-            onCommit={(value) => patchState({ phase: value / CHARACTER_CYCLE_SECONDS, playing: false, bindPose: false })} />
-        </label>
+        <PrecisionRange className={styles.rangeControl} label="Exact time"
+          value={Number((state.phase * CHARACTER_CYCLE_SECONDS).toFixed(6))}
+          min={0} max={CHARACTER_CYCLE_SECONDS} step={0.001} unit="seconds"
+          onEditStart={() => patchState({ playing: false })}
+          onChange={(value) => patchState({
+            phase: value / CHARACTER_CYCLE_SECONDS, playing: false, bindPose: false,
+          })} />
         <div className={`${styles.segmented} ${styles.frameControls}`}>
           <button type="button" aria-label="Previous frame (1/60 second)" onClick={() => patchState({
             phase: stepCharacterPhase(stateRef.current.phase, -1), playing: false, bindPose: false,
@@ -231,11 +196,9 @@ export function CharacterRigLab() {
             phase: stepCharacterPhase(stateRef.current.phase, 1), playing: false, bindPose: false,
           })}>Next frame</button>
         </div>
-        <label className={styles.rangeControl} htmlFor="character-speed">
-          <span>Playback speed <output>{state.speed.toFixed(2)}×</output></span>
-          <ExactNumberInput id="character-speed" min={0.25} max={2} step="0.05" value={state.speed}
-            onCommit={(value) => patchState({ speed: value })} />
-        </label>
+        <PrecisionRange className={styles.rangeControl} label="Playback speed"
+          value={state.speed} min={0.25} max={2} step={0.05} unit="×"
+          onChange={(speed) => patchState({ speed })} />
         <button type="button" className={styles.primaryButton}
           onClick={() => patchState({ playing: !state.playing, bindPose: false })}>
           {state.playing ? "Pause motion" : "Play motion"}

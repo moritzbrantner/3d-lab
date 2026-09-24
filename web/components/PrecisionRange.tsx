@@ -5,8 +5,10 @@ import {
   finishNumericDraft,
   formatNumericValue,
   nudgeNumericValue,
+  numericDraftNudgeValue,
   parseNumericValue,
   quantizeCoarseValue,
+  rebaseNumericDraft,
   type NumericDraft,
 } from "./precision-value";
 
@@ -33,6 +35,7 @@ export function PrecisionRange({
   const id = useId();
   const [draft, setDraft] = useState<NumericDraft | null>(null);
   const pending = useRef<NumericDraft | null>(null);
+  const editingText = useRef(false);
   const [coarseDraft, setCoarseDraft] = useState<number | null>(null);
   const coarsePending = useRef<number | null>(null);
   const [invalid, setInvalid] = useState(false);
@@ -42,7 +45,7 @@ export function PrecisionRange({
     : Number.isFinite(step) && step > 0 ? step : 1;
   const fineStep = integer ? 1 : Math.min(coarseStep, 1) / 10;
   const displayValue = formatNumericValue(value);
-  const visibleDraft = draft && Object.is(draft.baseline, value) ? draft.text : displayValue;
+  const visibleDraft = draft?.text ?? displayValue;
   const visibleCoarse = coarseDraft ?? value;
 
   const clearText = () => {
@@ -60,20 +63,41 @@ export function PrecisionRange({
   };
 
   useEffect(() => {
+    coarsePending.current = null;
+    setCoarseDraft(null);
+    if (!editingText.current) {
+      pending.current = null;
+      setDraft(null);
+      setInvalid(false);
+      return;
+    }
+    const rebased = rebaseNumericDraft(pending.current, value);
+    pending.current = rebased;
+    setDraft(rebased);
+  }, [value]);
+
+  useEffect(() => {
+    editingText.current = false;
     pending.current = null;
     coarsePending.current = null;
     setDraft(null);
     setCoarseDraft(null);
     setInvalid(false);
-  }, [value, min, max, integer, disabled]);
+  }, [min, max, integer, disabled]);
+
+  const endTextEdit = () => {
+    editingText.current = false;
+    clearText();
+  };
 
   const commitText = (reportInvalid: boolean) => {
-    if (disabled) return clearText();
+    if (disabled) return endTextEdit();
     const result = finishNumericDraft(pending.current, value, bounds);
     if (result.kind === "invalid" && reportInvalid) {
       setInvalid(true);
       return;
     }
+    editingText.current = false;
     clear();
     if (result.kind === "commit") onChange(result.value);
   };
@@ -111,9 +135,17 @@ export function PrecisionRange({
         style={{ gridColumn: "2", width: "100%", minWidth: 0, boxSizing: "border-box", minHeight: "2.25rem", padding: "0.35rem",
           color: "inherit", background: "transparent", border: "1px solid currentColor", borderRadius: "0.25rem",
           font: "inherit", fontVariantNumeric: "tabular-nums" }}
-        onFocus={onEditStart}
+        onFocus={() => {
+          editingText.current = true;
+          const next = { baseline: value, text: displayValue, dirty: false };
+          pending.current = next;
+          setDraft(next);
+          setInvalid(false);
+          onEditStart?.();
+        }}
         onChange={(event) => {
-          const next = { baseline: value, text: event.currentTarget.value };
+          editingText.current = true;
+          const next = { baseline: value, text: event.currentTarget.value, dirty: true };
           pending.current = next;
           setDraft(next);
           setInvalid(false);
@@ -124,9 +156,9 @@ export function PrecisionRange({
           event.preventDefault();
           event.stopPropagation();
           if (disabled) return;
-          if (event.key === "Escape") return clearText();
+          if (event.key === "Escape") return endTextEdit();
           if (event.key === "Enter") return commitText(true);
-          const current = parseNumericValue(visibleDraft, bounds);
+          const current = numericDraftNudgeValue(draft, value, bounds);
           if (current === null) {
             setInvalid(true);
             return;

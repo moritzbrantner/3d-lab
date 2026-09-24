@@ -1,5 +1,6 @@
 "use client";
 
+import { PrecisionRange } from "./PrecisionRange";
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -250,14 +251,12 @@ export function MaterialTextureLab() {
           <code>{state.baseColor}</code>
         </label>
 
-        <label className={styles.rangeControl}>
-          <span>Metallic <output>{state.metallic.toFixed(2)}</output></span>
-          <input type="range" min="0" max="1" step="0.01" value={state.metallic} onChange={(event) => patchState({ metallic: Number(event.target.value) })} />
-        </label>
-        <label className={styles.rangeControl}>
-          <span>Roughness <output>{state.roughness.toFixed(2)}</output></span>
-          <input type="range" min="0" max="1" step="0.01" value={state.roughness} onChange={(event) => patchState({ roughness: Number(event.target.value) })} />
-        </label>
+        <PrecisionRange className={styles.rangeControl} label="Metallic"
+          value={state.metallic} min={0} max={1} step={0.01}
+          onChange={(metallic) => patchState({ metallic })} />
+        <PrecisionRange className={styles.rangeControl} label="Roughness"
+          value={state.roughness} min={0} max={1} step={0.01}
+          onChange={(roughness) => patchState({ roughness })} />
 
         <label className={styles.selectControl}>
           <span>Texture pattern</span>
@@ -269,10 +268,9 @@ export function MaterialTextureLab() {
           </select>
         </label>
 
-        <label className={styles.rangeControl}>
-          <span>UV repeat <output>{state.repeat.toFixed(1)}×</output></span>
-          <input type="range" min="0.5" max="8" step="0.5" value={state.repeat} disabled={state.pattern === "none"} onChange={(event) => patchState({ repeat: Number(event.target.value) })} />
-        </label>
+        <PrecisionRange className={styles.rangeControl} label="UV repeat"
+          value={state.repeat} min={0.5} max={8} step={0.5} unit="×"
+          disabled={state.pattern === "none"} onChange={(repeat) => patchState({ repeat })} />
 
         <label className={styles.selectControl}>
           <span>Texture wrap</span>

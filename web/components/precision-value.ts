@@ -1,5 +1,5 @@
 export type NumericBounds = { min: number; max: number; integer?: boolean };
-export type NumericDraft = { baseline: number; text: string };
+export type NumericDraft = { baseline: number; text: string; dirty?: boolean };
 export type DraftResult =
   | { kind: "idle" | "stale" | "invalid" }
   | { kind: "commit"; value: number };
@@ -16,11 +16,26 @@ export function parseNumericValue(raw: string, { min, max, integer = false }: Nu
 }
 
 export function finishNumericDraft(draft: NumericDraft | null, current: number, bounds: NumericBounds): DraftResult {
-  if (!draft) return { kind: "idle" };
+  if (!draft || draft.dirty === false) return { kind: "idle" };
   if (!Object.is(draft.baseline, current)) return { kind: "stale" };
   const value = parseNumericValue(draft.text, bounds);
   if (value === null) return { kind: "invalid" };
   return Object.is(value, current) ? { kind: "idle" } : { kind: "commit", value };
+}
+
+/** Preserve active user text while accepting the latest external value as its commit baseline. */
+export function rebaseNumericDraft(draft: NumericDraft | null, current: number): NumericDraft | null {
+  return draft ? { ...draft, baseline: current } : null;
+}
+
+/** Use the latest publication for untouched focus drafts, otherwise the user's text. */
+export function numericDraftNudgeValue(
+  draft: NumericDraft | null,
+  current: number,
+  bounds: NumericBounds,
+): number | null {
+  const text = draft && draft.dirty !== false ? draft.text : formatNumericValue(current);
+  return parseNumericValue(text, bounds);
 }
 
 /**
