@@ -1073,8 +1073,14 @@ mod tests {
 
         workspace
             .sample_crossfade(
-                ClipSample { clip: &idle, time: 0.5 },
-                ClipSample { clip: &walk, time: 0.5 },
+                ClipSample {
+                    clip: &idle,
+                    time: 0.5,
+                },
+                ClipSample {
+                    clip: &walk,
+                    time: 0.5,
+                },
                 0.25,
                 &base,
                 &mut output,
@@ -1083,8 +1089,14 @@ mod tests {
         assert_vec3_close(output[0].translation, Vec3::new(0.5, 0.0, 0.0));
         workspace
             .sample_crossfade(
-                ClipSample { clip: &idle, time: 0.8 },
-                ClipSample { clip: &walk, time: 0.8 },
+                ClipSample {
+                    clip: &idle,
+                    time: 0.8,
+                },
+                ClipSample {
+                    clip: &walk,
+                    time: 0.8,
+                },
                 0.75,
                 &base,
                 &mut output,
