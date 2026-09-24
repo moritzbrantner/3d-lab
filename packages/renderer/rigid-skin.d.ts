@@ -15,6 +15,10 @@ export type RigidSkinBatch = {
   /** Opaque color-pass material groups, not a measured GPU frame time. */
   materialDraws: number;
   vertexCount: number;
+  /** Always zero for rigid one-joint attachments. */
+  multiJointVertices: number;
+  /** Four uint8 lanes for <=256 joints, otherwise four uint16 lanes. */
+  skinIndexBytesPerVertex: 4 | 8;
 };
 
 /**

@@ -27,13 +27,17 @@ try {
   const canvas = region.locator("canvas");
   await page.waitForFunction(() => {
     const canvas = document.querySelector('canvas[aria-label="Interactive animated humanoid rig"]');
-    return canvas?.dataset.sourceDraws === "31" && canvas.dataset.materialDraws === "3";
+    return canvas?.dataset.sourceDraws === "31" &&
+      canvas.dataset.materialDraws === "3" &&
+      canvas.dataset.skinMode === "weighted" &&
+      Number(canvas.dataset.blendedVertices) > 0 &&
+      canvas.dataset.skinIndexBytes === "4";
   });
   assert(await canvas.evaluate((element) => {
     const context = element.getContext("webgl2");
     return context && !context.isContextLost();
   }), "character WebGL context must be live");
-  checks.push("WebGL initialization and authored-part/material budget");
+  checks.push("WebGL initialization, weighted-skin contract and authored-part/material budget");
 
   const time = region.getByRole("spinbutton", { name: "Exact time (seconds)" });
   const speed = region.getByRole("spinbutton", { name: /Playback speed/ });

@@ -15,6 +15,7 @@ const nextConfig: NextConfig = {
     resolveAlias: {
       // Alias targets are relative to the Next app directory, not root above.
       "@moritzbrantner/three-d-renderer/rigid-skin": "../packages/renderer/rigid-skin.js",
+      "@moritzbrantner/three-d-renderer/weighted-skin": "../packages/renderer/weighted-skin.js",
     },
   },
   images: {

@@ -42,6 +42,9 @@ describe("rigid GPU skin batching", () => {
     const result = batchRigidSkin(f.skeleton, f.parts, f.root.matrixWorld);
     expect(result.sourceDraws).toBe(3);
     expect(result.materialDraws).toBe(2);
+    expect(result.multiJointVertices).toBe(0);
+    expect(result.skinIndexBytesPerVertex).toBe(4);
+    expect(result.mesh.geometry.getAttribute("skinIndex").array).toBeInstanceOf(Uint8Array);
     expect(result.mesh.geometry.groups).toEqual([
       { start: 0, count: 72, materialIndex: 0 },
       { start: 72, count: 36, materialIndex: 1 },
@@ -126,4 +129,25 @@ describe("rigid GPU skin batching", () => {
     expect(() => batchRigidSkin(f.skeleton, [], f.root.matrixWorld)).toThrow("at least one");
     expect(() => batchRigidSkin(f.skeleton, f.parts, new THREE.Matrix4().makeScale(0, 1, 1))).toThrow("bind matrix");
   });
+
+  test("retains uint16 joint indices when the palette exceeds 256 joints", () => {
+    const bones = Array.from({ length: 257 }, () => new THREE.Bone());
+    const root = new THREE.Group();
+    bones.forEach((bone) => root.add(bone));
+    root.updateMatrixWorld(true);
+    const skeleton = new THREE.Skeleton(bones);
+    const geometry = new THREE.BoxGeometry(0.2, 0.2, 0.2);
+    const material = new THREE.MeshBasicMaterial();
+    const result = batchRigidSkin(skeleton, [{
+      geometry, material, joint: 256, matrix: new THREE.Matrix4(),
+    }], root.matrixWorld);
+    expect(result.skinIndexBytesPerVertex).toBe(8);
+    expect(result.mesh.geometry.getAttribute("skinIndex").array).toBeInstanceOf(Uint16Array);
+    expect(result.mesh.geometry.getAttribute("skinIndex").getX(0)).toBe(256);
+    result.mesh.geometry.dispose();
+    geometry.dispose();
+    material.dispose();
+    skeleton.dispose();
+  });
+
 });
