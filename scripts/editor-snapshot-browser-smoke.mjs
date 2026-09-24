@@ -92,14 +92,34 @@ try {
   assert.equal(Number(await translationX.inputValue()), -1.125);
   checks.push("most recently selected snapshot wins overlapping asynchronous file reads");
 
-  const invalid = { ...latest, schema: "3d-lab/editor-scene-snapshot/v999" };
+  const retry = structuredClone(latest);
+  retry.nodes.find((node) => node.id === "body").transform.translation[0] = 2.25;
+  retry.nodes.find((node) => node.id === "imported-group").name = "Retry group";
+  const retryFile = {
+    name: "slow-retry.snapshot.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(retry)),
+  };
+  await fileInput.setInputFiles(retryFile);
+  await editor.getByRole("button", { name: "Reset scene", exact: true }).click();
+  assert.equal(await fileInput.inputValue(), "", "reset must clear the invalidated native file selection");
+  await page.waitForTimeout(250);
+  assert.equal(Number(await translationX.inputValue()), 0,
+    "a reset scene must not be overwritten by the invalidated slow import");
+  await fileInput.setInputFiles(retryFile);
+  await editor.getByRole("button", { name: /Retry group/ }).waitFor();
+  assert.equal(Number(await translationX.inputValue()), 2.25,
+    "the same file must be selectable again after reset");
+  checks.push("reset invalidates pending imports and permits same-file retry");
+
+  const invalid = { ...retry, schema: "3d-lab/editor-scene-snapshot/v999" };
   await fileInput.setInputFiles({
     name: "invalid.snapshot.json",
     mimeType: "application/json",
     buffer: Buffer.from(JSON.stringify(invalid)),
   });
   await editor.getByRole("status").filter({ hasText: "Import failed" }).waitFor();
-  assert.equal(Number(await translationX.inputValue()), -1.125,
+  assert.equal(Number(await translationX.inputValue()), 2.25,
     "invalid snapshot must leave the accepted scene unchanged");
   checks.push("invalid schema fails closed without replacing scene state");
 
