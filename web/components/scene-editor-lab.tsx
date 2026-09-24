@@ -12,6 +12,10 @@ import {
   type EditorScene,
 } from "@/lib/scene-editor";
 import {
+  parseEditorSceneSnapshot,
+  serializeEditorSceneSnapshot,
+} from "@/lib/scene-editor-snapshot";
+import {
   effectiveEditorGizmoMode,
   effectiveEditorGizmoSpace,
   type EditorGizmoMode,
@@ -23,6 +27,7 @@ import {
   commitMeshVertex,
   commitNodeTransform,
   createEditorCommandLog,
+  materializeEditorCommandLog,
   redoEditorCommand,
   undoEditorCommand,
   type EditorCommandLog,
@@ -185,6 +190,7 @@ export function SceneEditorLab() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const runtimeRef = useRef<Runtime | null>(null);
   const initialSceneRef = useRef<EditorScene | null>(null);
+  const snapshotInputRef = useRef<HTMLInputElement>(null);
   const gizmoTargetRef = useRef<GizmoTarget | null>(null);
   const suppressPickRef = useRef(false);
   const cancelledDragRef = useRef(false);
@@ -201,6 +207,8 @@ export function SceneEditorLab() {
   const [gizmoMode, setGizmoMode] = useState<EditorGizmoMode>("translate");
   const [gizmoSpace, setGizmoSpace] = useState<EditorGizmoSpace>("local");
   const [gizmoDragging, setGizmoDragging] = useState(false);
+  const [runtimeRevision, setRuntimeRevision] = useState(0);
+  const [snapshotStatus, setSnapshotStatus] = useState<string | null>(null);
 
   const selectedNode = useMemo(
     () => editorScene.nodes.find((node) => node.id === selectedNodeId) ?? editorScene.nodes[0],
@@ -402,7 +410,7 @@ export function SceneEditorLab() {
       renderer.dispose();
       runtimeRef.current = null;
     };
-  }, []);
+  }, [runtimeRevision]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
@@ -577,11 +585,47 @@ export function SceneEditorLab() {
     runtime.controls.update();
   };
 
+  const exportSceneSnapshot = () => {
+    const materialized = materializeEditorCommandLog(history).scene;
+    const source = serializeEditorSceneSnapshot(materialized);
+    const url = URL.createObjectURL(new Blob([source], { type: "application/json" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "3d-lab-scene.snapshot.json";
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    setSnapshotStatus(`Exported ${materialized.nodes.length} nodes.`);
+  };
+
+  const importSceneSnapshot = async (file: File | null) => {
+    if (!file) return;
+    try {
+      const scene = parseEditorSceneSnapshot(await file.text());
+      const selected = scene.nodes.find((node) => node.mesh) ?? scene.nodes[0];
+      initialSceneRef.current = scene;
+      setHistory(createEditorCommandLog(scene));
+      setSelectedNodeId(selected.id);
+      setSelectedVertexIndex(null);
+      setRuntimeRevision((revision) => revision + 1);
+      setSnapshotStatus(`Imported ${scene.nodes.length} nodes; undo history reset.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setSnapshotStatus(`Import failed: ${message}`);
+    } finally {
+      if (snapshotInputRef.current) snapshotInputRef.current.value = "";
+    }
+  };
+
   const resetScene = () => {
     const scene = createEditorScene();
+    initialSceneRef.current = scene;
     setHistory(createEditorCommandLog(scene));
     setSelectedNodeId("body");
     setSelectedVertexIndex(null);
+    setRuntimeRevision((revision) => revision + 1);
+    setSnapshotStatus(null);
   };
 
   const rotationDegrees: Vec3 = [
@@ -678,6 +722,26 @@ export function SceneEditorLab() {
             >
               Wireframe
             </button>
+            <button type="button" className={styles.toolButton} onClick={exportSceneSnapshot} disabled={gizmoDragging}>
+              Export JSON
+            </button>
+            <button
+              type="button"
+              className={styles.toolButton}
+              onClick={() => snapshotInputRef.current?.click()}
+              disabled={gizmoDragging}
+            >
+              Import JSON
+            </button>
+            <input
+              ref={snapshotInputRef}
+              className={styles.snapshotInput}
+              type="file"
+              accept="application/json,.json"
+              aria-label="Import scene snapshot"
+              onChange={(event) => void importSceneSnapshot(event.currentTarget.files?.[0] ?? null)}
+            />
+            {snapshotStatus && <span className={styles.snapshotStatus} role="status">{snapshotStatus}</span>}
           </div>
         </div>
         <canvas
@@ -743,7 +807,7 @@ export function SceneEditorLab() {
         <section className={styles.boundary}>
           <strong>Ownership boundary</strong>
           <p>
-            The editor owns selection, local/world gizmo semantics, semantic edit commands, and undo/redo. Mesh validity stays aligned with <code>three-d-core</code>; hierarchy ordering stays aligned with <code>three-d-animation</code>. Three.js supplies the temporary drag preview and ray picking only; renderer snapshots and pointer-move samples never enter history.
+            The editor owns selection, local/world gizmo semantics, semantic edit commands, undo/redo, and the versioned scene-snapshot boundary. Snapshot JSON contains only format-neutral hierarchy, transforms, meshes, and vertex attributes; selection, history, topology caches, camera state, and Three.js objects stay transient.
           </p>
         </section>
 

@@ -126,6 +126,17 @@
   gap: 7px;
 }
 
+.snapshotInput {
+  display: none;
+}
+
+.snapshotStatus {
+  flex-basis: 100%;
+  text-align: right;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
 .toolButton,
 .clearButton,
 .resetButton {
@@ -327,6 +338,10 @@
 
   .toolbarActions {
     justify-content: flex-start;
+  }
+
+  .snapshotStatus {
+    text-align: left;
   }
 
   .inspectorPanel {

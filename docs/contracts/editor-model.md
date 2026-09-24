@@ -27,6 +27,14 @@ Node and vertex selection are editor state, not scene semantics. Selecting a mes
 
 Ray-cast hits are translated back to node ids and indexed vertex ids. Three.js object identity is never persisted as the source of truth.
 
+## Scene snapshot boundary
+
+The editor's portable snapshot format is versioned as `3d-lab/editor-scene-snapshot/v1`. It serializes the ordered node hierarchy, local transforms, indexed mesh data, and format-neutral vertex attributes only.
+
+Snapshot export is deterministic for the same editor scene: parent-before-child node order is preserved and persistent topology state is materialized only at this explicit compatibility boundary. Selection, gizmo mode, camera state, undo/redo commands, topology caches, Three.js objects, and GPU resources are not serialized.
+
+Snapshot import is a trust boundary. The decoder rejects unknown schema versions and unsupported fields, validates tuple shapes and finite numeric data, then runs the authoritative scene/mesh validation before replacing editor state. A successful import starts a fresh semantic command log; malformed input leaves the current scene unchanged.
+
 ## Next boundary
 
-Future drag gizmos should emit the same model edits as numeric controls. Undo/redo should store deterministic edit commands over model ids and values, not snapshots of Three.js objects or GPU buffers.
+glTF authoring round-trips should be adapters over this format-neutral scene boundary. File-format accessors, buffer views, node indices, and renderer objects must not become the editor's durable source of truth.
