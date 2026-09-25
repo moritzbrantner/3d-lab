@@ -684,7 +684,9 @@ fn convert_gltf_primitive(
 
     let primitive = MeshPrimitive::new(mesh, primitive.material().index());
     match skin_influences {
-        Some(influences) => primitive.with_skin_influences(influences).map_err(Into::into),
+        Some(influences) => primitive
+            .with_skin_influences(influences)
+            .map_err(Into::into),
         None => Ok(primitive),
     }
 }
