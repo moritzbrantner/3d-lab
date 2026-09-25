@@ -24,8 +24,7 @@ targets the core does not represent.
 
 The pinned Khronos SimpleSkin fixture is the integration ratchet: its 5.5-second
 rotation channel targets glTF node 2 and is sampled directly into a three-node
-`Transform` pose. This animation extraction is intentionally separate from the
-generic asset loader, which still refuses to discard JOINTS_0/WEIGHTS_0.
+`Transform` pose. Animation extraction remains separate from mesh-asset loading. The generic asset loader now preserves paired JOINTS_0/WEIGHTS_0 as validated per-vertex influences while scene-node skin binding remains a separate boundary.
 
 ## Native benchmark
 
