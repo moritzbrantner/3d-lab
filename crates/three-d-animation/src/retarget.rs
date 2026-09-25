@@ -44,6 +44,30 @@ pub enum HumanoidBone {
 
 impl HumanoidBone {
     pub const COUNT: usize = 22;
+    pub const ALL: [Self; Self::COUNT] = [
+        Self::Hips,
+        Self::Spine,
+        Self::Chest,
+        Self::Neck,
+        Self::Head,
+        Self::LeftUpperArm,
+        Self::LeftLowerArm,
+        Self::LeftHand,
+        Self::RightUpperArm,
+        Self::RightLowerArm,
+        Self::RightHand,
+        Self::LeftUpperLeg,
+        Self::LeftLowerLeg,
+        Self::LeftFoot,
+        Self::RightUpperLeg,
+        Self::RightLowerLeg,
+        Self::RightFoot,
+        Self::Root,
+        Self::LeftShoulder,
+        Self::RightShoulder,
+        Self::LeftToes,
+        Self::RightToes,
+    ];
 
     const REQUIRED: [Self; 11] = [
         Self::Hips,
