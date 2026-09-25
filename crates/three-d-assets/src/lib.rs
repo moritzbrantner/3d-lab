@@ -417,8 +417,7 @@ mod tests {
 
     #[test]
     fn primitive_skin_influences_must_align_with_mesh_vertices() {
-        let influence =
-            SkinInfluence::new([0, 1, 0, 0], [0.75, 0.25, 0.0, 0.0]).unwrap();
+        let influence = SkinInfluence::new([0, 1, 0, 0], [0.75, 0.25, 0.0, 0.0]).unwrap();
         let primitive = MeshPrimitive::new(triangle(), None)
             .with_skin_influences(vec![influence; 3])
             .unwrap();
