@@ -8,7 +8,7 @@ The crate models:
 
 - an asset as a collection of named mesh groups, materials, encoded images, samplers, and textures;
 - a mesh group as one or more primitives;
-- a primitive as validated `three-d-core::Mesh` geometry plus an optional material reference;
+- a primitive as validated `three-d-core::Mesh` geometry plus an optional material reference and optional vertex-aligned `three-d-animation::SkinInfluence` data;
 - a small metallic-roughness PBR material record with base-color, metallic, roughness, double-sided factors, and an optional normal-texture binding;
 - an encoded image as MIME-typed bytes without imposing a pixel decoder;
 - a sampler as renderer-independent filtering and wrapping semantics;
@@ -16,13 +16,13 @@ The crate models:
 - a normal-texture binding as a texture reference, UV-set index, and finite normal scale;
 - referential integrity from primitives to materials, textures to images/samplers, and materials to textures.
 
-The geometry inside every primitive remains owned by `three-d-core`; `three-d-assets` composes that geometry into an asset rather than duplicating mesh validation. Tangent vectors are geometry attributes and therefore flow through primitives automatically once present on the core mesh. Encoded image bytes are preserved as asset data, while pixel decoding and renderer resource creation remain downstream.
+The geometry inside every primitive remains owned by `three-d-core`; `three-d-assets` composes that geometry into an asset rather than duplicating mesh validation. Tangent vectors are geometry attributes and therefore flow through primitives automatically once present on the core mesh. Skin-weight semantics remain owned by `three-d-animation::SkinInfluence`; `three-d-assets` only preserves one influence record per mesh vertex and validates alignment. Encoded image bytes are preserved as asset data, while pixel decoding and renderer resource creation remain downstream.
 
 ## Format adapter boundary
 
 `three-d-formats` is the downstream decoding layer. It uses dedicated OBJ and glTF parsers, normalizes accepted geometry into `three-d-core::Mesh`, and terminates in `three-d-assets::Asset`.
 
-The adapter is deliberately loss-aware. It rejects source semantics that cannot currently be represented faithfully rather than silently deleting them. The current glTF path accepts triangle primitives with positions plus optional normals, tangents, UV0, and color0; embedded/GLB buffer data; factor-only metallic-roughness materials; encoded images from data URIs or buffer views; texture/sampler records; and normal-texture material bindings. Extra attribute sets, skinning attributes, morph targets, base-color/metallic-roughness/occlusion/emissive textures, emissive/alpha material behavior, external buffer URIs, and external image URIs remain explicit unsupported boundaries. The current in-memory OBJ path triangulates and single-indexes geometry, but rejects MTL-backed material references until an explicit MTL-to-material policy exists.
+The adapter is deliberately loss-aware. It rejects source semantics that cannot currently be represented faithfully rather than silently deleting them. The current glTF mesh-asset path accepts triangle primitives with positions plus optional normals, tangents, UV0, color0, and paired `JOINTS_0`/`WEIGHTS_0`; embedded/GLB buffer data; factor-only metallic-roughness materials; encoded images from data URIs or buffer views; texture/sampler records; and normal-texture material bindings. Additional joint/weight sets, morph targets, base-color/metallic-roughness/occlusion/emissive textures, emissive/alpha material behavior, external buffer URIs, and external image URIs remain explicit unsupported boundaries. The mesh-asset loader preserves vertex skin influences but does not claim to assemble the glTF node-to-skin relationship; renderer-neutral scene/skin binding remains a separate scene-layer follow-up. The current in-memory OBJ path triangulates and single-indexes geometry, but rejects MTL-backed material references until an explicit MTL-to-material policy exists.
 
 This separation means support can grow format-by-format without importing parser vocabulary into the semantic crates.
 
