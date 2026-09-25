@@ -143,7 +143,11 @@ fn vec3(values: [f32; 3], location: &str) -> Result<Vec3, String> {
 }
 
 fn transform(value: TransformDocument, location: &str) -> Result<Transform, String> {
-    if value.rotation.iter().any(|component| !component.is_finite()) {
+    if value
+        .rotation
+        .iter()
+        .any(|component| !component.is_finite())
+    {
         return Err(format!("{location}.rotation must contain finite values"));
     }
     Ok(Transform {
@@ -269,16 +273,15 @@ fn validate_and_normalize(
 
 fn read_document(input_path: &str) -> Result<HumanoidDocument, String> {
     let path = resolve_input_path(input_path)?;
-    serde_json::from_slice(
-        &fs::read(&path)
-            .map_err(|error| format!("failed to read input humanoid document '{input_path}': {error}"))?,
-    )
+    serde_json::from_slice(&fs::read(&path).map_err(|error| {
+        format!("failed to read input humanoid document '{input_path}': {error}")
+    })?)
     .map_err(|error| format!("invalid input humanoid JSON: {error}"))
 }
 
 fn write_json<T: Serialize>(path: &Path, value: &T, label: &str) -> Result<(), String> {
-    let bytes =
-        serde_json::to_vec(value).map_err(|error| format!("failed to serialize {label}: {error}"))?;
+    let bytes = serde_json::to_vec(value)
+        .map_err(|error| format!("failed to serialize {label}: {error}"))?;
     fs::write(path, bytes).map_err(|error| format!("failed to write {label}: {error}"))
 }
 
