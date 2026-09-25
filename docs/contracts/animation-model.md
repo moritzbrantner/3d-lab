@@ -107,4 +107,4 @@ Each `SkinInfluence` has four joint slots and four non-negative finite weights. 
 
 ## glTF boundary
 
-`three-d-formats::load_gltf_animation_clips` is the file-format adapter into this contract. It resolves glTF channel targets to numeric node indices and converts LINEAR/STEP translation, rotation, and scale samplers into `AnimationClip` tracks. CUBICSPLINE and morph-weight animation fail explicitly until their semantics are represented. Generic mesh loading remains loss-aware and still rejects JOINTS/WEIGHTS when the `three-d-assets` mesh model cannot preserve them.
+`three-d-formats::load_gltf_animation_clips` is the file-format adapter into this contract. It resolves glTF channel targets to numeric node indices and converts LINEAR/STEP translation, rotation, and scale samplers into `AnimationClip` tracks. CUBICSPLINE and morph-weight animation fail explicitly until their semantics are represented. Generic mesh loading remains loss-aware and now preserves paired `JOINTS_0`/`WEIGHTS_0` as vertex-aligned `SkinInfluence` data. Scene-node skin binding and skeleton assembly remain separate from mesh-asset extraction.
