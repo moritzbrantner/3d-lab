@@ -23,7 +23,12 @@ fn canonical_khronos_simple_skin_preserves_per_vertex_skin_influences() {
     assert_eq!(influences.len(), primitive.mesh().vertices().len());
     assert!(
         influences.iter().any(|influence| {
-            influence.weights.iter().filter(|weight| **weight > 0.0).count() > 1
+            influence
+                .weights
+                .iter()
+                .filter(|weight| **weight > 0.0)
+                .count()
+                > 1
         }),
         "fixture must exercise blended skinning rather than only rigid weights"
     );
@@ -32,7 +37,10 @@ fn canonical_khronos_simple_skin_preserves_per_vertex_skin_influences() {
         assert!((total - 1.0).abs() < 1.0e-5);
         for (&joint, &weight) in influence.joints.iter().zip(&influence.weights) {
             if weight > 0.0 {
-                assert!(joint < 2, "SimpleSkin references only its two authored joints");
+                assert!(
+                    joint < 2,
+                    "SimpleSkin references only its two authored joints"
+                );
             }
         }
     }
