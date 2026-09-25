@@ -154,7 +154,10 @@ impl fmt::Display for HumanoidSkeletonError {
                 "humanoid skeleton has {skeleton} joints but the rig rest pose has {rest_pose} nodes"
             ),
             Self::MissingProductionBone(bone) => {
-                write!(formatter, "production humanoid is missing required bone {bone:?}")
+                write!(
+                    formatter,
+                    "production humanoid is missing required bone {bone:?}"
+                )
             }
             Self::RootHasParent { root_node, parent } => write!(
                 formatter,
@@ -170,10 +173,16 @@ impl fmt::Display for HumanoidSkeletonError {
                 "{bone:?} node {node} must descend from {expected_ancestor:?} node {expected_ancestor_node}"
             ),
             Self::DuplicateSocket(socket) => {
-                write!(formatter, "humanoid socket {socket:?} is bound more than once")
+                write!(
+                    formatter,
+                    "humanoid socket {socket:?} is bound more than once"
+                )
             }
             Self::MissingRequiredSocket(socket) => {
-                write!(formatter, "production humanoid is missing required socket {socket:?}")
+                write!(
+                    formatter,
+                    "production humanoid is missing required socket {socket:?}"
+                )
             }
             Self::SocketBoneMismatch {
                 socket,
@@ -221,9 +230,11 @@ impl HumanoidSkeleton {
             }
         }
 
-        let root_node = rig
-            .node(HumanoidBone::Root)
-            .ok_or(HumanoidSkeletonError::MissingProductionBone(HumanoidBone::Root))?;
+        let root_node =
+            rig.node(HumanoidBone::Root)
+                .ok_or(HumanoidSkeletonError::MissingProductionBone(
+                    HumanoidBone::Root,
+                ))?;
         if let Some(parent) = skeleton.joints()[root_node].parent {
             return Err(HumanoidSkeletonError::RootHasParent { root_node, parent });
         }
@@ -261,7 +272,9 @@ impl HumanoidSkeleton {
                 });
             }
             if !valid_attachment_transform(binding.local) {
-                return Err(HumanoidSkeletonError::InvalidSocketTransform(binding.socket));
+                return Err(HumanoidSkeletonError::InvalidSocketTransform(
+                    binding.socket,
+                ));
             }
 
             let slot = &mut sockets[binding.socket.index()];
@@ -311,9 +324,11 @@ fn validate_semantic_ancestry(
     let node = rig
         .node(bone)
         .ok_or(HumanoidSkeletonError::MissingProductionBone(bone))?;
-    let expected_ancestor_node = rig
-        .node(expected_ancestor)
-        .ok_or(HumanoidSkeletonError::MissingProductionBone(expected_ancestor))?;
+    let expected_ancestor_node =
+        rig.node(expected_ancestor)
+            .ok_or(HumanoidSkeletonError::MissingProductionBone(
+                expected_ancestor,
+            ))?;
 
     if !has_ancestor(skeleton, node, expected_ancestor_node) {
         return Err(HumanoidSkeletonError::InvalidSemanticHierarchy {
@@ -335,9 +350,11 @@ fn validate_optional_ancestry(
     let Some(node) = rig.node(bone) else {
         return Ok(());
     };
-    let expected_ancestor_node = rig
-        .node(expected_ancestor)
-        .ok_or(HumanoidSkeletonError::MissingProductionBone(expected_ancestor))?;
+    let expected_ancestor_node =
+        rig.node(expected_ancestor)
+            .ok_or(HumanoidSkeletonError::MissingProductionBone(
+                expected_ancestor,
+            ))?;
     if !has_ancestor(skeleton, node, expected_ancestor_node) {
         return Err(HumanoidSkeletonError::InvalidSemanticHierarchy {
             bone,
