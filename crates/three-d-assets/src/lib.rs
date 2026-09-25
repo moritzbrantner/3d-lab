@@ -7,6 +7,7 @@
 mod resources;
 
 use core::fmt;
+use three_d_animation::SkinInfluence;
 use three_d_core::Mesh;
 
 pub use resources::{
@@ -140,11 +141,30 @@ impl Material {
 pub struct MeshPrimitive {
     mesh: Mesh,
     material: Option<usize>,
+    skin_influences: Option<Vec<SkinInfluence>>,
 }
 
 impl MeshPrimitive {
     pub const fn new(mesh: Mesh, material: Option<usize>) -> Self {
-        Self { mesh, material }
+        Self {
+            mesh,
+            material,
+            skin_influences: None,
+        }
+    }
+
+    pub fn with_skin_influences(
+        mut self,
+        skin_influences: Vec<SkinInfluence>,
+    ) -> Result<Self, AssetError> {
+        if skin_influences.len() != self.mesh.vertices().len() {
+            return Err(AssetError::SkinInfluenceCountMismatch {
+                vertex_count: self.mesh.vertices().len(),
+                influence_count: skin_influences.len(),
+            });
+        }
+        self.skin_influences = Some(skin_influences);
+        Ok(self)
     }
 
     pub const fn mesh(&self) -> &Mesh {
@@ -153,6 +173,10 @@ impl MeshPrimitive {
 
     pub const fn material(&self) -> Option<usize> {
         self.material
+    }
+
+    pub fn skin_influences(&self) -> Option<&[SkinInfluence]> {
+        self.skin_influences.as_deref()
     }
 }
 
@@ -256,6 +280,10 @@ pub enum AssetError {
     EmptyEncodedImage,
     InvalidNormalTextureScale,
     EmptyAssetMesh,
+    SkinInfluenceCountMismatch {
+        vertex_count: usize,
+        influence_count: usize,
+    },
     TextureImageIndexOutOfBounds {
         texture_index: usize,
         image_index: usize,
@@ -300,6 +328,13 @@ impl fmt::Display for AssetError {
             Self::EmptyAssetMesh => {
                 formatter.write_str("an asset mesh must contain at least one primitive")
             }
+            Self::SkinInfluenceCountMismatch {
+                vertex_count,
+                influence_count,
+            } => write!(
+                formatter,
+                "mesh has {vertex_count} vertices but {influence_count} skin influences"
+            ),
             Self::TextureImageIndexOutOfBounds {
                 texture_index,
                 image_index,
@@ -378,6 +413,24 @@ mod tests {
 
         assert_eq!(asset.meshes()[0].primitives()[0].material(), Some(0));
         assert_eq!(asset.materials()[0].name(), Some("Blue PBR"));
+    }
+
+    #[test]
+    fn primitive_skin_influences_must_align_with_mesh_vertices() {
+        let influence =
+            SkinInfluence::new([0, 1, 0, 0], [0.75, 0.25, 0.0, 0.0]).unwrap();
+        let primitive = MeshPrimitive::new(triangle(), None)
+            .with_skin_influences(vec![influence; 3])
+            .unwrap();
+
+        assert_eq!(primitive.skin_influences(), Some(&[influence; 3][..]));
+        assert_eq!(
+            MeshPrimitive::new(triangle(), None).with_skin_influences(vec![influence; 2]),
+            Err(AssetError::SkinInfluenceCountMismatch {
+                vertex_count: 3,
+                influence_count: 2,
+            })
+        );
     }
 
     #[test]
