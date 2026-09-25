@@ -95,6 +95,24 @@ impl HumanoidSocket {
             Self::LeftHip | Self::RightHip => HumanoidBone::Hips,
         }
     }
+
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Head => "head",
+            Self::Chest => "chest",
+            Self::Back => "back",
+            Self::LeftHand => "left-hand",
+            Self::RightHand => "right-hand",
+            Self::LeftHip => "left-hip",
+            Self::RightHip => "right-hip",
+        }
+    }
+
+    pub fn from_id(value: &str) -> Option<Self> {
+        Self::REQUIRED
+            .into_iter()
+            .find(|socket| socket.id() == value)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -500,6 +518,14 @@ mod tests {
         rest_pose[1].translation = Vec3::new(0.0, 0.9, 0.0);
         let rig = HumanoidRig::new(rest_pose, &bindings, 1.8).unwrap();
         (skeleton, rig, socket_bindings())
+    }
+
+    #[test]
+    fn stable_socket_ids_round_trip_every_standard_socket() {
+        for socket in HumanoidSocket::REQUIRED {
+            assert_eq!(HumanoidSocket::from_id(socket.id()), Some(socket));
+        }
+        assert_eq!(HumanoidSocket::from_id("weapon"), None);
     }
 
     #[test]
