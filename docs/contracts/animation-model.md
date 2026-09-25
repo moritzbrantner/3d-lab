@@ -66,6 +66,30 @@ by the explicit reference-height ratio, and scale changes are transferred as
 ratios. No node-name lookup, asset parsing, renderer mutation, or allocation is
 required on the successful hot path.
 
+## Production humanoid contract
+
+`HumanoidSkeleton::production_v1` composes the existing `Skeleton` and
+`HumanoidRig` authorities into the stricter reusable-game-character profile.
+It does not introduce a second hierarchy or skinning representation.
+
+The production profile requires a character-space `Root` distinct from
+`Hips`. The root carries character-relative/root-motion presentation data;
+hips remain the pelvis and may move independently inside authored animation.
+Gameplay/world placement is still owned by the consuming game or physics
+authority rather than by this animation contract.
+
+The required semantic chains cover spine/head, clavicles plus complete arms, and
+complete legs through the feet. Semantic relationships are validated as
+ancestry rather than direct-parent equality so imported rigs may keep twist or
+helper joints between canonical humanoid bones. Optional toe semantics extend
+the foot chains.
+
+Production rigs also provide standard attachment sockets for head, chest, back,
+both hands, and both hips. Each socket is a finite local transform owned by its
+expected semantic bone. These are presentation attachment frames for weapons,
+armor, hair, backpacks, and similar assets; they do not encode gameplay
+equipment legality or statistics.
+
 ## Skinning contract
 
 A `Skeleton` is an ordered joint hierarchy plus inverse bind matrices. Skin matrices are computed as:
