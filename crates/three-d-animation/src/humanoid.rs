@@ -330,7 +330,7 @@ fn validate_semantic_ancestry(
                 expected_ancestor,
             ))?;
 
-    if !has_ancestor(skeleton, node, expected_ancestor_node) {
+    if !has_semantic_ancestor_path(skeleton, rig, node, expected_ancestor_node) {
         return Err(HumanoidSkeletonError::InvalidSemanticHierarchy {
             bone,
             node,
@@ -355,7 +355,7 @@ fn validate_optional_ancestry(
             .ok_or(HumanoidSkeletonError::MissingProductionBone(
                 expected_ancestor,
             ))?;
-    if !has_ancestor(skeleton, node, expected_ancestor_node) {
+    if !has_semantic_ancestor_path(skeleton, rig, node, expected_ancestor_node) {
         return Err(HumanoidSkeletonError::InvalidSemanticHierarchy {
             bone,
             node,
@@ -366,11 +366,23 @@ fn validate_optional_ancestry(
     Ok(())
 }
 
-fn has_ancestor(skeleton: &Skeleton, node: usize, ancestor: usize) -> bool {
+fn has_semantic_ancestor_path(
+    skeleton: &Skeleton,
+    rig: &HumanoidRig,
+    node: usize,
+    ancestor: usize,
+) -> bool {
     let mut current = skeleton.joints()[node].parent;
     while let Some(parent) = current {
         if parent == ancestor {
             return true;
+        }
+        if HumanoidBone::ALL
+            .iter()
+            .copied()
+            .any(|bone| rig.node(bone) == Some(parent))
+        {
+            return false;
         }
         current = skeleton.joints()[parent].parent;
     }
@@ -528,6 +540,23 @@ mod tests {
                 node: 8,
                 expected_ancestor: HumanoidBone::LeftUpperArm,
                 expected_ancestor_node: 7,
+            })
+        );
+    }
+
+    #[test]
+    fn production_profile_rejects_cross_branch_semantic_nodes_in_ancestry_gaps() {
+        let mut parents = PARENTS;
+        parents[10] = Some(9);
+        let (skeleton, rig, sockets) = build_parts(parents, None);
+
+        assert_eq!(
+            HumanoidSkeleton::production_v1(skeleton, rig, &sockets),
+            Err(HumanoidSkeletonError::InvalidSemanticHierarchy {
+                bone: HumanoidBone::RightShoulder,
+                node: 10,
+                expected_ancestor: HumanoidBone::Chest,
+                expected_ancestor_node: 3,
             })
         );
     }
