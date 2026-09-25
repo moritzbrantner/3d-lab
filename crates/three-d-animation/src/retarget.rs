@@ -86,6 +86,37 @@ impl HumanoidBone {
     const fn index(self) -> usize {
         self as usize
     }
+
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Hips => "hips",
+            Self::Spine => "spine",
+            Self::Chest => "chest",
+            Self::Neck => "neck",
+            Self::Head => "head",
+            Self::LeftUpperArm => "left-upper-arm",
+            Self::LeftLowerArm => "left-lower-arm",
+            Self::LeftHand => "left-hand",
+            Self::RightUpperArm => "right-upper-arm",
+            Self::RightLowerArm => "right-lower-arm",
+            Self::RightHand => "right-hand",
+            Self::LeftUpperLeg => "left-upper-leg",
+            Self::LeftLowerLeg => "left-lower-leg",
+            Self::LeftFoot => "left-foot",
+            Self::RightUpperLeg => "right-upper-leg",
+            Self::RightLowerLeg => "right-lower-leg",
+            Self::RightFoot => "right-foot",
+            Self::Root => "root",
+            Self::LeftShoulder => "left-shoulder",
+            Self::RightShoulder => "right-shoulder",
+            Self::LeftToes => "left-toes",
+            Self::RightToes => "right-toes",
+        }
+    }
+
+    pub fn from_id(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|bone| bone.id() == value)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -394,6 +425,14 @@ mod tests {
             .dot(expected.normalized().unwrap())
             .abs();
         assert!((1.0 - dot).abs() < 1.0e-5, "{actual:?} != {expected:?}");
+    }
+
+    #[test]
+    fn stable_bone_ids_round_trip_every_semantic() {
+        for bone in HumanoidBone::ALL {
+            assert_eq!(HumanoidBone::from_id(bone.id()), Some(bone));
+        }
+        assert_eq!(HumanoidBone::from_id("left-arm"), None);
     }
 
     #[test]

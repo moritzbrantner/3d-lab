@@ -90,6 +90,13 @@ expected semantic bone. These are presentation attachment frames for weapons,
 armor, hair, backpacks, and similar assets; they do not encode gameplay
 equipment legality or statistics.
 
+Humanoid bones and sockets expose stable lower-kebab-case semantic IDs for
+cross-process adapters. `asset-tooling-humanoid-adapter` accepts the
+`three-d-humanoid-json-v1` transport envelope and calls
+`HumanoidSkeleton::production_v1` as the authoritative validation step. The
+adapter may parse and serialize the transport document, but it must not duplicate
+the hierarchy, Root/Hips, or socket-ownership rules in another implementation.
+
 ## Skinning contract
 
 A `Skeleton` is an ordered joint hierarchy plus inverse bind matrices. Skin matrices are computed as:
