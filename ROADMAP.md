@@ -60,6 +60,7 @@
 
 ### Slice 7 — procedural character animation
 
+- [x] Establish a strict production-humanoid profile that composes the existing skeleton and retargeting contracts, separates Root from Hips, validates semantic limb ancestry, and standardizes equipment attachment sockets.
 - [ ] Add renderer-independent analytical two-bone IK for arms and legs with explicit target, pole-vector, reach, and joint-limit semantics.
 - [ ] Add weighted post-sampling pose constraints so authored/keyframed animation remains the base pose and procedural correction can blend in and out without becoming gameplay authority.
 - [ ] Add foot/limb placement that consumes external world-contact samples (position, normal, support identity) without making `three-d-animation` depend on a physics engine.

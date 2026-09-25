@@ -32,10 +32,42 @@ pub enum HumanoidBone {
     RightUpperLeg,
     RightLowerLeg,
     RightFoot,
+    /// Character-space root. Production rigs keep this separate from pelvic motion on Hips.
+    Root,
+    /// Left clavicle / shoulder girdle joint.
+    LeftShoulder,
+    /// Right clavicle / shoulder girdle joint.
+    RightShoulder,
+    LeftToes,
+    RightToes,
 }
 
 impl HumanoidBone {
-    pub const COUNT: usize = 17;
+    pub const COUNT: usize = 22;
+    pub const ALL: [Self; Self::COUNT] = [
+        Self::Hips,
+        Self::Spine,
+        Self::Chest,
+        Self::Neck,
+        Self::Head,
+        Self::LeftUpperArm,
+        Self::LeftLowerArm,
+        Self::LeftHand,
+        Self::RightUpperArm,
+        Self::RightLowerArm,
+        Self::RightHand,
+        Self::LeftUpperLeg,
+        Self::LeftLowerLeg,
+        Self::LeftFoot,
+        Self::RightUpperLeg,
+        Self::RightLowerLeg,
+        Self::RightFoot,
+        Self::Root,
+        Self::LeftShoulder,
+        Self::RightShoulder,
+        Self::LeftToes,
+        Self::RightToes,
+    ];
 
     const REQUIRED: [Self; 11] = [
         Self::Hips,
