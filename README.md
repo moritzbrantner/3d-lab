@@ -8,6 +8,7 @@ The repository deliberately has parallel surfaces:
 - **Web / Three.js** — visual, interactive lessons and an authoring/inspection surface that can be published with GitHub Pages and dogfoods the reusable renderer contract.
 - **Rust / `three-d-core`** — renderer-independent mesh geometry, topology, normals, UVs, and tangent-space derivation.
 - **Rust / `three-d-animation`** — renderer-independent matrices, transforms, animation tracks/clips, and skeletal data.
+- **Rust / `three-d-rigged-assets`** — renderer-independent composition of skeletons, skin influences, animation clips, and joint-local primitive collision proxies, including deterministic bind-pose proxy fitting. It does not own physics simulation or asset-generation provenance.
 - **Rust / `three-d-camera`** — renderer-independent right-handed view plus perspective and orthographic WebGPU-depth camera matrices.
 - **Rust / `three-d-assets`** — renderer-independent asset meshes, PBR material factors, encoded texture resources, normal-map bindings, and cross-resource validation.
 - **Rust / `three-d-formats`** — loss-aware OBJ/glTF decoding adapters that normalize supported file semantics into `three-d-assets`.
@@ -105,6 +106,8 @@ Then run `bun run dev` for the local teaching site.
 See [`docs/contracts/mesh-model.md`](docs/contracts/mesh-model.md) for the mesh and tangent-space parity contract.
 
 See [`docs/contracts/animation-model.md`](docs/contracts/animation-model.md) for transform, keyframe, hierarchy, and skeleton ownership.
+
+See [`docs/contracts/rigged-assets.md`](docs/contracts/rigged-assets.md) for rigged-asset composition and automatic collision-proxy fitting.
 
 See [`docs/contracts/renderer-parity.md`](docs/contracts/renderer-parity.md) for the cross-renderer mesh, matrix, and camera evidence contract.
 
