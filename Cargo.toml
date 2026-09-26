@@ -6,6 +6,7 @@ members = [
     "crates/three-d-projective",
     "crates/three-d-spatial",
     "crates/three-d-assets",
+    "crates/three-d-rigged-assets",
     "crates/three-d-formats",
     "crates/three-d-lod",
     "crates/three-d-scene",
