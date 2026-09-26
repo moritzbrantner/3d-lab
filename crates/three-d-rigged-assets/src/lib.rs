@@ -144,16 +144,16 @@ impl RiggedAsset {
         let joint_count = skeleton.joints().len();
 
         for (vertex, influence) in influences.iter().copied().enumerate() {
-            influence.validate_joints(joint_count).map_err(|source| {
-                RiggedAssetError::InvalidSkinInfluence { vertex, source }
-            })?;
+            influence
+                .validate_joints(joint_count)
+                .map_err(|source| RiggedAssetError::InvalidSkinInfluence { vertex, source })?;
         }
 
         let mut pose = vec![Transform::IDENTITY; joint_count];
         for (clip, animation) in animations.iter().enumerate() {
-            animation.sample(0.0, &mut pose).map_err(|source| {
-                RiggedAssetError::InvalidAnimation { clip, source }
-            })?;
+            animation
+                .sample(0.0, &mut pose)
+                .map_err(|source| RiggedAssetError::InvalidAnimation { clip, source })?;
         }
 
         for (proxy, collision_proxy) in collision_proxies.iter().copied().enumerate() {
@@ -210,7 +210,10 @@ impl fmt::Display for RiggedAssetError {
                 write!(formatter, "skin influence {vertex} is invalid: {source}")
             }
             Self::InvalidAnimation { clip, source } => {
-                write!(formatter, "animation clip {clip} is invalid for this skeleton: {source}")
+                write!(
+                    formatter,
+                    "animation clip {clip} is invalid for this skeleton: {source}"
+                )
             }
             Self::InvalidCollisionProxy { proxy, source } => {
                 write!(formatter, "collision proxy {proxy} is invalid: {source}")
@@ -251,8 +254,7 @@ impl CollisionFitOptions {
                 field: "min_vertices_per_joint",
             });
         }
-        if !self.min_dominant_weight.is_finite()
-            || !(0.0..=1.0).contains(&self.min_dominant_weight)
+        if !self.min_dominant_weight.is_finite() || !(0.0..=1.0).contains(&self.min_dominant_weight)
         {
             return Err(CollisionFitError::InvalidOption {
                 field: "min_dominant_weight",
@@ -356,7 +358,10 @@ impl fmt::Display for CollisionFitError {
                 "bind-pose position {vertex} became non-finite in joint {joint} local space"
             ),
             Self::GeneratedProxyInvalid { joint, source } => {
-                write!(formatter, "generated collision proxy for joint {joint} is invalid: {source}")
+                write!(
+                    formatter,
+                    "generated collision proxy for joint {joint} is invalid: {source}"
+                )
             }
         }
     }
@@ -432,16 +437,18 @@ pub fn fit_joint_collision_proxies(
         if !finite_vec3(position) {
             return Err(CollisionFitError::NonFinitePosition { vertex });
         }
-        let influence = influence.validate_joints(joint_count).map_err(|source| {
-            CollisionFitError::InvalidSkinInfluence { vertex, source }
-        })?;
+        let influence = influence
+            .validate_joints(joint_count)
+            .map_err(|source| CollisionFitError::InvalidSkinInfluence { vertex, source })?;
         let (joint, weight) = dominant_joint(influence);
         if weight < options.min_dominant_weight {
             low_confidence_vertices += 1;
             continue;
         }
 
-        let local = skeleton.joints()[joint].inverse_bind.transform_point(position);
+        let local = skeleton.joints()[joint]
+            .inverse_bind
+            .transform_point(position);
         if !finite_vec3(local) {
             return Err(CollisionFitError::NonFiniteJointLocalPosition { vertex, joint });
         }
@@ -467,9 +474,8 @@ pub fn fit_joint_collision_proxies(
         let center = joint_bounds.center();
         let size = joint_bounds.padded_size(options);
         let shape = choose_shape(size, options);
-        let proxy = JointCollisionProxy::new(joint, center, shape).map_err(|source| {
-            CollisionFitError::GeneratedProxyInvalid { joint, source }
-        })?;
+        let proxy = JointCollisionProxy::new(joint, center, shape)
+            .map_err(|source| CollisionFitError::GeneratedProxyInvalid { joint, source })?;
         proxies.push(proxy);
     }
 
@@ -524,9 +530,7 @@ fn finite_vec3(value: Vec3) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use three_d_animation::{
-        AnimationTrack, Interpolation, Joint, Keyframe, KeyframeTrack, Mat4,
-    };
+    use three_d_animation::{AnimationTrack, Interpolation, Joint, Keyframe, KeyframeTrack, Mat4};
 
     fn skeleton(inverse_bind: Mat4) -> Skeleton {
         Skeleton::new(vec![Joint {
@@ -648,12 +652,9 @@ mod tests {
 
     #[test]
     fn rigged_asset_rejects_collision_target_outside_skeleton() {
-        let proxy = JointCollisionProxy::new(
-            1,
-            Vec3::ZERO,
-            CollisionProxyShape::Sphere { radius: 0.5 },
-        )
-        .expect("fixture proxy geometry is valid");
+        let proxy =
+            JointCollisionProxy::new(1, Vec3::ZERO, CollisionProxyShape::Sphere { radius: 0.5 })
+                .expect("fixture proxy geometry is valid");
 
         assert_eq!(
             RiggedAsset::new(
