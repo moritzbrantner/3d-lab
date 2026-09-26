@@ -482,7 +482,7 @@ mod tests {
 
         assert_eq!(output.proxies.len(), 1);
         assert!(matches!(
-            output.proxies[0],
+            &output.proxies[0],
             ProxyDocument::Capsule { joint: 0, .. }
         ));
         assert_eq!(observations.vertex_count, 8);
@@ -499,7 +499,7 @@ mod tests {
         document.joints[0].inverse_bind[12] = -10.0;
 
         let (output, _) = fit(&document, parameters()).unwrap();
-        let center = match output.proxies[0] {
+        let center = match &output.proxies[0] {
             ProxyDocument::Capsule { center, .. } => center,
             _ => panic!("expected capsule"),
         };
