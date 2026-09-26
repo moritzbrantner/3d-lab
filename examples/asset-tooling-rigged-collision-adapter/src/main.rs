@@ -6,8 +6,7 @@ use serde::{Deserialize, Serialize};
 use three_d_animation::{Joint, Mat4, Skeleton, SkinInfluence};
 use three_d_core::Vec3;
 use three_d_rigged_assets::{
-    CollisionFitObservations, CollisionFitOptions, CollisionProxyShape,
-    fit_joint_collision_proxies,
+    CollisionFitObservations, CollisionFitOptions, CollisionProxyShape, fit_joint_collision_proxies,
 };
 
 const PROTOCOL: &str = "asset-tooling-process-adapter-v1";
@@ -85,7 +84,11 @@ struct RiggedCollisionOutput {
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
-#[serde(tag = "shape", rename_all = "kebab-case", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "shape",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
 enum ProxyDocument {
     Box {
         joint: usize,
@@ -188,11 +191,7 @@ fn vec3_array(value: Vec3) -> [f32; 3] {
     [value.x, value.y, value.z]
 }
 
-fn proxy_document(
-    joint: usize,
-    center: Vec3,
-    shape: CollisionProxyShape,
-) -> ProxyDocument {
+fn proxy_document(joint: usize, center: Vec3, shape: CollisionProxyShape) -> ProxyDocument {
     match shape {
         CollisionProxyShape::Box { size } => ProxyDocument::Box {
             joint,
@@ -269,7 +268,9 @@ fn fit(
         return Err("rigged collision document must contain at least one joint".into());
     }
     if document.joints.len() > usize::from(u16::MAX) + 1 {
-        return Err("rigged collision document has more joints than u16 skin indices can address".into());
+        return Err(
+            "rigged collision document has more joints than u16 skin indices can address".into(),
+        );
     }
     if document.positions.len() != document.influences.len() {
         return Err(format!(
@@ -295,7 +296,12 @@ fn fit(
         .collect::<Result<Vec<_>, String>>()?;
     let skeleton = Skeleton::new(joints).map_err(|error| format!("invalid skeleton: {error}"))?;
 
-    let positions = document.positions.iter().copied().map(vec3).collect::<Vec<_>>();
+    let positions = document
+        .positions
+        .iter()
+        .copied()
+        .map(vec3)
+        .collect::<Vec<_>>();
     let influences = document
         .influences
         .iter()
@@ -306,13 +312,8 @@ fn fit(
         })
         .collect::<Vec<_>>();
 
-    let fitted = fit_joint_collision_proxies(
-        &positions,
-        &influences,
-        &skeleton,
-        parameters.into(),
-    )
-    .map_err(|error| format!("collision fitting failed: {error}"))?;
+    let fitted = fit_joint_collision_proxies(&positions, &influences, &skeleton, parameters.into())
+        .map_err(|error| format!("collision fitting failed: {error}"))?;
 
     let proxies = fitted
         .proxies()
@@ -413,7 +414,10 @@ fn main() {
                 || output.is_none()
                 || observations.is_none()
             {
-                Err("usage: rigged collision adapter probe | generate REQUEST OUTPUT OBSERVATIONS".into())
+                Err(
+                    "usage: rigged collision adapter probe | generate REQUEST OUTPUT OBSERVATIONS"
+                        .into(),
+                )
             } else {
                 generate(
                     request.as_deref().expect("checked above"),
@@ -422,7 +426,9 @@ fn main() {
                 )
             }
         }
-        _ => Err("usage: rigged collision adapter probe | generate REQUEST OUTPUT OBSERVATIONS".into()),
+        _ => Err(
+            "usage: rigged collision adapter probe | generate REQUEST OUTPUT OBSERVATIONS".into(),
+        ),
     };
 
     if let Err(error) = result {
