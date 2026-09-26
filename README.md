@@ -16,6 +16,7 @@ The repository deliberately has parallel surfaces:
 - **Native / `wgpu` example** — a narrow renderer-comparison adapter that consumes the Rust mesh and camera models without moving GPU ownership into the core crates.
 - **Asset-tooling LOD adapter example** — a narrow process adapter that exposes `three-d-lod` through a canonical position/index mesh JSON envelope without moving asset-tooling ownership into the LOD crate.
 - **Asset-tooling humanoid adapter example** — a narrow process adapter that validates production humanoid hierarchy, semantic bone IDs, Root/Hips separation, rest pose, and attachment sockets through `three-d-animation` without moving those semantics into workflow/provenance tooling.
+- **Asset-tooling rigged-collision adapter example** — a narrow process adapter that exposes deterministic bind-pose joint collision fitting from `three-d-rigged-assets`; it transports data and observations without taking over fitting or physics authority.
 - **Raw browser WebGPU experiment** — one intentionally tiny indexed draw that exposes browser GPU setup without replacing Three.js as the primary browser renderer.
 
 The reusable browser renderer is intentionally Three.js-first. The Rust core crates do not depend on Three.js, WebGL, WebGPU, a windowing stack, or a glTF/OBJ parser; rendering and file-format adapters stay downstream of the renderer-independent models. Applications such as Zoo should consume the renderer package rather than constructing a parallel Three.js/CSS renderer, while still keeping their game-specific scene composition and interaction policy outside 3d-lab.
@@ -76,6 +77,7 @@ The asset-tooling integration adapters remain separate from the authoritative do
 ```bash
 cargo run -p asset-tooling-lod-adapter -- probe
 cargo run -p asset-tooling-humanoid-adapter -- probe
+cargo run -p asset-tooling-rigged-collision-adapter -- probe
 ```
 
 ### Reusable browser renderer
