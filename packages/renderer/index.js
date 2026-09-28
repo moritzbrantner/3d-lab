@@ -1,6 +1,8 @@
 import * as THREE from "three"
 import {webGpuProjectionToWebGl} from "./depth.js"
 import {createSceneEnvironment} from "./environment.js"
+import {createMaterial, materialKey} from "./materials.js"
+import {createIndexedMeshGeometry} from "./mesh-geometry.js"
 import {projectWorldPointUnchecked} from "./projection.js"
 import {acquireResource, evictUnusedResources} from "./resources.js"
 
@@ -135,6 +137,17 @@ function validateIndexedMeshGeometry(geometry) {
     }
     for (const normal of geometry.normals) {
       requireFiniteTuple("mesh normal", normal, 3)
+    }
+  }
+  if (geometry.colors !== undefined) {
+    if (!Array.isArray(geometry.colors) || geometry.colors.length !== geometry.positions.length) {
+      throw new ThreeRendererContractError("mesh colors must align one-to-one with positions")
+    }
+    for (const color of geometry.colors) {
+      requireFiniteTuple("mesh color", color, 3)
+      if (color[0] < 0 || color[0] > 1 || color[1] < 0 || color[1] > 1 || color[2] < 0 || color[2] > 1) {
+        throw new ThreeRendererContractError("mesh color components must be between 0 and 1")
+      }
     }
   }
 }
@@ -306,43 +319,11 @@ function createGeometry(geometry) {
       return new THREE.SphereGeometry(geometry.radius, 20, 12)
     case "cylinder":
       return new THREE.CylinderGeometry(geometry.radius, geometry.radius, geometry.height, 20)
-    case "mesh": {
-      const meshGeometry = new THREE.BufferGeometry()
-      meshGeometry.setAttribute(
-        "position",
-        new THREE.Float32BufferAttribute(geometry.positions.flat(), 3),
-      )
-      meshGeometry.setIndex([...geometry.indices])
-      if (geometry.normals !== undefined) {
-        meshGeometry.setAttribute(
-          "normal",
-          new THREE.Float32BufferAttribute(geometry.normals.flat(), 3),
-        )
-      } else {
-        meshGeometry.computeVertexNormals()
-      }
-      meshGeometry.computeBoundingSphere()
-      return meshGeometry
-    }
+    case "mesh":
+      return createIndexedMeshGeometry(geometry)
     default:
       throw new ThreeRendererContractError(`unsupported geometry kind: ${String(geometry.kind)}`)
   }
-}
-
-function materialKey(node) {
-  return `${String(node.color)}:${node.opacity ?? 1}:${node.wireframe === true}`
-}
-
-function createMaterial(node) {
-  const opacity = node.opacity ?? 1
-  return new THREE.MeshStandardMaterial({
-    color: new THREE.Color(node.color),
-    opacity,
-    transparent: opacity < 1,
-    wireframe: node.wireframe === true,
-    roughness: 0.86,
-    metalness: 0.02,
-  })
 }
 
 function applyNodeTransform(mesh, node, scratch) {

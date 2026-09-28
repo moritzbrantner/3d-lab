@@ -29,13 +29,20 @@ export type CylinderGeometry = {
 export type IndexedMeshGeometry = {
   kind: "mesh"
   /**
-   * Stable immutable identity for this exact geometry payload.
+   * Stable immutable identity for this exact geometry payload, including positions, indices,
+   * normals, and colors. Geometry is cached by this key alone, so a payload with different
+   * contents (for example recolored terrain) needs a different key.
    * Content-addressed asset hashes are the preferred downstream value.
    */
   resourceKey: string
   positions: ReadonlyArray<readonly [number, number, number]>
   indices: ReadonlyArray<number>
   normals?: ReadonlyArray<readonly [number, number, number]>
+  /**
+   * Per-vertex sRGB colors with components in 0..1, aligned one-to-one with positions. They
+   * multiply the node color, so a `#ffffff` node shows them unchanged.
+   */
+  colors?: ReadonlyArray<readonly [number, number, number]>
 }
 
 export type RendererGeometry =

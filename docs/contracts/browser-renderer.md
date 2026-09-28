@@ -40,3 +40,11 @@ The renderer creates one hemisphere light, one directional light, one `Fog`, and
 `RendererWorkObservations.environmentUpdateCount` reports how many of the five environment components had state rewritten in the frame: background, sky light, sun light (color/intensity), sun placement (direction, shadow focus, and extent), and fog. It is 0 for an unchanged environment and for `renderCamera`.
 
 Changing fog color or distances only updates uniforms. Turning fog on or off changes the shader variant of every lit material, which costs a program switch (and a compile the first time). Toggle it rarely; fade fog by moving `near`/`far` instead.
+
+## Indexed mesh geometry and vertex colors
+
+A `kind: "mesh"` geometry carries positions, triangle indices, optional aligned normals, and optional aligned `colors`. The renderer validates structural safety every frame and materializes one Three.js `BufferGeometry` per `resourceKey`.
+
+`resourceKey` identifies the exact payload: positions, indices, normals, and colors. The geometry cache is keyed on it alone and never compares buffers, so two payloads that differ in any attribute, such as the same terrain recolored for a season, must use different keys. A key reused with different contents keeps rendering the cached payload until no node uses the key and it is evicted. Content-derived keys (for example a hash of the encoded payload) satisfy this by construction.
+
+`colors` are per-vertex sRGB components in `0..1`, the same color space as `#RRGGBB` node colors: the vertex color `[0x5a/255, 0x8f/255, 0x3c/255]` renders like the node color `#5a8f3c`. They are converted to the Three.js working color space once at materialization and interpolate across triangles. The node color multiplies them, so terrain or props colored per vertex normally use node color `#ffffff`, while a tinted node color darkens or tints the whole mesh.
