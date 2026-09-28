@@ -97,7 +97,7 @@ export type IndexedMeshGeometry = {
   normals?: ReadonlyArray<readonly [number, number, number]>
   /**
    * Per-vertex sRGB colors with components in 0..1, aligned one-to-one with positions. They
-   * multiply the node color, so a `#ffffff` node shows them unchanged.
+   * multiply the node color in linear space, so a `#ffffff` node shows them unchanged.
    */
   colors?: ReadonlyArray<readonly [number, number, number]>
 }
