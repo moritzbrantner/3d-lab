@@ -70,13 +70,54 @@ export type RendererSceneNode = RendererNodeBase & (
     }
 )
 
+export type RendererInstance = {
+  /** Overrides the batch color for this instance. */
+  color?: number | `#${string}`
+} & (
+  | {
+      modelMatrix: Matrix4Values
+      transform?: never
+    }
+  | {
+      modelMatrix?: never
+      transform: RendererTransform
+    }
+)
+
+/**
+ * Many copies of one geometry drawn in a single draw call. Use for repeated static or
+ * bulk-updated content such as vegetation, props, or crowds.
+ */
+export type RendererInstanceBatch = {
+  id: string
+  geometry: RendererGeometry
+  /** Default instance color. */
+  color: number | `#${string}`
+  opacity?: number
+  wireframe?: boolean
+  visible?: boolean
+  /**
+   * Stable identity for the exact instance payload (instances plus batch color). When present
+   * and unchanged since the previous frame, the renderer skips re-uploading instance data.
+   * Omit for batches whose instances change every frame.
+   */
+  revision?: string
+  instances: ReadonlyArray<RendererInstance>
+}
+
 export type RendererFrame = {
   camera: RendererCamera
   nodes: RendererSceneNode[]
+  /** Instance batch ids are unique among batches; they do not share a namespace with node ids. */
+  instanceBatches?: ReadonlyArray<RendererInstanceBatch>
 }
 
 export type RendererWorkObservations = Readonly<{
   nodeVisitCount: number
+  instanceBatchCount: number
+  instanceCount: number
+  /** Batches whose instance data was (re)uploaded this frame. */
+  instanceUploadCount: number
   objectCreateCount: number
   objectReuseCount: number
   objectRemoveCount: number
@@ -89,6 +130,7 @@ export type RendererWorkObservations = Readonly<{
   liveObjectCount: number
   liveGeometryCount: number
   liveMaterialCount: number
+  liveInstanceBatchCount: number
 }>
 
 export type ProjectionViewport = {

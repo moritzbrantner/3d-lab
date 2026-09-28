@@ -1,6 +1,7 @@
 import * as THREE from "three"
 import {webGpuProjectionToWebGl} from "./depth.js"
 import {projectWorldPointUnchecked} from "./projection.js"
+import {syncInstanceBatch} from "./instance-batches.js"
 import {acquireResource, evictUnusedResources} from "./resources.js"
 
 const DEFAULT_BACKGROUND = 0x0c111a
@@ -116,31 +117,31 @@ function validateGeometry(geometry) {
   }
 }
 
-function validateTransform(node) {
+function validateTransform(node, label = node.id) {
   const hasMatrix = node.modelMatrix !== undefined
   const hasTransform = node.transform !== undefined
   if (hasMatrix === hasTransform) {
     throw new ThreeRendererContractError(
-      `scene node ${node.id} must provide exactly one of modelMatrix or transform`,
+      `scene node ${label} must provide exactly one of modelMatrix or transform`,
     )
   }
   if (hasMatrix) {
-    requireFiniteMatrix(`model matrix for ${node.id}`, node.modelMatrix)
+    requireFiniteMatrix(`model matrix for ${label}`, node.modelMatrix)
     return
   }
 
   if (!node.transform || typeof node.transform !== "object") {
-    throw new ThreeRendererContractError(`transform for ${node.id} must be an object`)
+    throw new ThreeRendererContractError(`transform for ${label} must be an object`)
   }
-  requireFiniteTuple(`translation for ${node.id}`, node.transform.translation, 3)
+  requireFiniteTuple(`translation for ${label}`, node.transform.translation, 3)
   if (node.transform.scale !== undefined) {
-    requireFiniteTuple(`scale for ${node.id}`, node.transform.scale, 3, {positive: true})
+    requireFiniteTuple(`scale for ${label}`, node.transform.scale, 3, {positive: true})
   }
   if (node.transform.rotationQuaternion !== undefined) {
-    requireFiniteTuple(`rotation quaternion for ${node.id}`, node.transform.rotationQuaternion, 4)
+    requireFiniteTuple(`rotation quaternion for ${label}`, node.transform.rotationQuaternion, 4)
     const lengthSquared = node.transform.rotationQuaternion.reduce((sum, entry) => sum + entry * entry, 0)
     if (!Number.isFinite(lengthSquared) || lengthSquared <= Number.EPSILON) {
-      throw new ThreeRendererContractError(`rotation quaternion for ${node.id} must be non-zero`)
+      throw new ThreeRendererContractError(`rotation quaternion for ${label} must be non-zero`)
     }
   }
 }
@@ -169,12 +170,55 @@ export function validateRenderFrame(frame) {
     validateTransform(node)
     validateGeometry(node.geometry)
     requireColor(node.color)
-    if (node.opacity !== undefined && (!Number.isFinite(node.opacity) || node.opacity < 0 || node.opacity > 1)) {
-      throw new ThreeRendererContractError(`opacity for ${node.id} must be between 0 and 1`)
-    }
+    requireOpacity(node)
   }
 
+  if (frame.instanceBatches !== undefined) validateInstanceBatches(frame.instanceBatches)
+
   return frame
+}
+
+function requireOpacity(entry) {
+  if (entry.opacity !== undefined && (!Number.isFinite(entry.opacity) || entry.opacity < 0 || entry.opacity > 1)) {
+    throw new ThreeRendererContractError(`opacity for ${entry.id} must be between 0 and 1`)
+  }
+}
+
+function validateInstanceBatches(batches) {
+  if (!Array.isArray(batches)) {
+    throw new ThreeRendererContractError("render frame instanceBatches must be an array")
+  }
+  const ids = new Set()
+  for (const batch of batches) {
+    if (!batch || typeof batch !== "object") {
+      throw new ThreeRendererContractError("instance batch must be an object")
+    }
+    if (typeof batch.id !== "string" || batch.id.length === 0) {
+      throw new ThreeRendererContractError("instance batch id must be a non-empty string")
+    }
+    if (ids.has(batch.id)) {
+      throw new ThreeRendererContractError(`duplicate instance batch id: ${batch.id}`)
+    }
+    ids.add(batch.id)
+    if (batch.revision !== undefined && (typeof batch.revision !== "string" || batch.revision.length === 0)) {
+      throw new ThreeRendererContractError(`revision for instance batch ${batch.id} must be a non-empty string`)
+    }
+    validateGeometry(batch.geometry)
+    requireColor(batch.color)
+    requireOpacity(batch)
+    if (!Array.isArray(batch.instances)) {
+      throw new ThreeRendererContractError(`instances for batch ${batch.id} must be an array`)
+    }
+    for (let index = 0; index < batch.instances.length; index += 1) {
+      const instance = batch.instances[index]
+      const label = `${batch.id}[${index}]`
+      if (!instance || typeof instance !== "object") {
+        throw new ThreeRendererContractError(`instance ${label} must be an object`)
+      }
+      validateTransform(instance, label)
+      if (instance.color !== undefined) requireColor(instance.color)
+    }
+  }
 }
 
 function requireProjectionCamera(camera) {
@@ -290,9 +334,9 @@ function createMaterial(node) {
   })
 }
 
-function applyNodeTransform(mesh, node, scratch) {
+function composeTransform(matrix, node, scratch) {
   if (node.modelMatrix !== undefined) {
-    mesh.matrix.fromArray(node.modelMatrix)
+    matrix.fromArray(node.modelMatrix)
     return
   }
 
@@ -302,12 +346,24 @@ function applyNodeTransform(mesh, node, scratch) {
   scratch.translation.fromArray(translation)
   scratch.scale.fromArray(scale)
   scratch.rotation.fromArray(rotation).normalize()
-  mesh.matrix.compose(scratch.translation, scratch.rotation, scratch.scale)
+  matrix.compose(scratch.translation, scratch.rotation, scratch.scale)
+}
+
+function instanceMaterialKey(batch) {
+  // Batch color is applied per instance, so batches differing only in color share one material.
+  return `instanced:${batch.opacity ?? 1}:${batch.wireframe === true}`
+}
+
+function createInstanceMaterial(batch) {
+  return createMaterial({...batch, color: 0xffffff})
 }
 
 function createWorkObservations(nodeVisitCount) {
   return {
     nodeVisitCount,
+    instanceBatchCount: 0,
+    instanceCount: 0,
+    instanceUploadCount: 0,
     objectCreateCount: 0,
     objectReuseCount: 0,
     objectRemoveCount: 0,
@@ -320,6 +376,7 @@ function createWorkObservations(nodeVisitCount) {
     liveObjectCount: 0,
     liveGeometryCount: 0,
     liveMaterialCount: 0,
+    liveInstanceBatchCount: 0,
   }
 }
 
@@ -347,13 +404,17 @@ export function createThreeSceneRenderer(canvas, options = {}) {
   const camera = new THREE.Camera()
   camera.matrixAutoUpdate = false
   const objects = new Map()
+  const instanceBatches = new Map()
   const geometries = new Map()
   const materials = new Map()
   const transformScratch = {
     translation: new THREE.Vector3(),
     rotation: new THREE.Quaternion(),
     scale: new THREE.Vector3(),
+    matrix: new THREE.Matrix4(),
+    color: new THREE.Color(),
   }
+  const writeInstanceMatrix = (matrix, instance) => composeTransform(matrix, instance, transformScratch)
   const pixelRatioLimit = options.pixelRatioLimit ?? DEFAULT_PIXEL_RATIO_LIMIT
   let configuredWidth = null
   let configuredHeight = null
@@ -399,6 +460,7 @@ export function createThreeSceneRenderer(canvas, options = {}) {
       observations.liveObjectCount = objects.size
       observations.liveGeometryCount = geometries.size
       observations.liveMaterialCount = materials.size
+      observations.liveInstanceBatchCount = instanceBatches.size
       renderer.render(scene, camera)
       return observations
     },
@@ -447,14 +509,10 @@ export function createThreeSceneRenderer(canvas, options = {}) {
           mesh.geometry = nextGeometry
           mesh.material = nextMaterial
         }
-        applyNodeTransform(mesh, node, transformScratch)
+        composeTransform(mesh.matrix, node, transformScratch)
         mesh.matrixWorldNeedsUpdate = true
         mesh.visible = node.visible !== false
       }
-
-      observations.objectReuseCount = observations.nodeVisitCount - observations.objectCreateCount
-      observations.geometryReuseCount = observations.nodeVisitCount - observations.geometryCreateCount
-      observations.materialReuseCount = observations.nodeVisitCount - observations.materialCreateCount
 
       for (const [id, mesh] of objects) {
         if (liveObjectIds.has(id)) continue
@@ -462,11 +520,73 @@ export function createThreeSceneRenderer(canvas, options = {}) {
         objects.delete(id)
         observations.objectRemoveCount += 1
       }
+
+      const liveBatchIds = new Set()
+      for (const batch of frame.instanceBatches ?? []) {
+        liveBatchIds.add(batch.id)
+        const nextGeometryKey = geometryKey(batch.geometry)
+        const geometry = acquireResource(
+          geometries,
+          nextGeometryKey,
+          createGeometry,
+          batch.geometry,
+          observations,
+          "geometryCreateCount",
+        )
+        const nextMaterialKey = instanceMaterialKey(batch)
+        const material = acquireResource(
+          materials,
+          nextMaterialKey,
+          createInstanceMaterial,
+          batch,
+          observations,
+          "materialCreateCount",
+        )
+        liveGeometryKeys.add(nextGeometryKey)
+        liveMaterialKeys.add(nextMaterialKey)
+
+        const result = syncInstanceBatch(
+          instanceBatches.get(batch.id),
+          batch,
+          geometry,
+          material,
+          writeInstanceMatrix,
+          transformScratch,
+        )
+        if (result.replacedMesh) {
+          scene.remove(result.replacedMesh)
+          result.replacedMesh.dispose()
+        }
+        if (result.created) {
+          result.state.mesh.castShadow = options.shadows === true
+          result.state.mesh.receiveShadow = options.shadows === true
+          scene.add(result.state.mesh)
+          observations.objectCreateCount += 1
+        }
+        if (result.uploaded) observations.instanceUploadCount += 1
+        instanceBatches.set(batch.id, result.state)
+        observations.instanceBatchCount += 1
+        observations.instanceCount += batch.instances.length
+      }
+      for (const [id, state] of instanceBatches) {
+        if (liveBatchIds.has(id)) continue
+        scene.remove(state.mesh)
+        state.mesh.dispose()
+        instanceBatches.delete(id)
+        observations.objectRemoveCount += 1
+      }
+
+      // Each node and each instance batch acquires exactly one object, geometry, and material.
+      const acquisitions = observations.nodeVisitCount + observations.instanceBatchCount
+      observations.objectReuseCount = acquisitions - observations.objectCreateCount
+      observations.geometryReuseCount = acquisitions - observations.geometryCreateCount
+      observations.materialReuseCount = acquisitions - observations.materialCreateCount
       observations.geometryEvictCount = evictUnusedResources(geometries, liveGeometryKeys)
       observations.materialEvictCount = evictUnusedResources(materials, liveMaterialKeys)
       observations.liveObjectCount = objects.size
       observations.liveGeometryCount = geometries.size
       observations.liveMaterialCount = materials.size
+      observations.liveInstanceBatchCount = instanceBatches.size
 
       renderer.render(scene, camera)
       return observations
@@ -475,8 +595,10 @@ export function createThreeSceneRenderer(canvas, options = {}) {
     dispose() {
       for (const geometry of geometries.values()) geometry.dispose()
       for (const material of materials.values()) material.dispose()
+      for (const state of instanceBatches.values()) state.mesh.dispose()
       renderer.dispose()
       objects.clear()
+      instanceBatches.clear()
       geometries.clear()
       materials.clear()
     },
