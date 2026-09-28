@@ -41,6 +41,18 @@ The renderer creates one hemisphere light, one directional light, one `Fog`, and
 
 Changing fog color or distances only updates uniforms. Turning fog on or off changes the shader variant of every lit material, which costs a program switch (and a compile the first time). Toggle it rarely; fade fog by moving `near`/`far` instead.
 
+## Scene node materials
+
+A node's `color`, `opacity`, `wireframe`, and shading select its material:
+
+- **lit** (default): Three.js `MeshStandardMaterial` with the historical roughness 0.86 and metalness 0.02;
+- **emissive**: `emissive: color` adds self-illumination to the lit result. It is not scaled by lights, shadows, or vertex colors, so it keeps glowing spell effects visible at night; and
+- **unlit**: `unlit: true` draws the flat node color (times vertex colors) with `MeshBasicMaterial`, ignoring lights and shadows. Use it for markers, selection circles, and similar elements that must read the same in any lighting.
+
+`unlit` and `emissive` are mutually exclusive; the types forbid the combination and validation rejects it. Fog applies to every material, so distant effects fade with the world. Shadow casting and receiving follow the renderer `shadows` option for all nodes, including emissive and unlit ones.
+
+Materials are cached by their parameters, not by node: nodes with equal color, opacity, wireframe mode, vertex-color use, and shading (including the emissive color) share one material, and the material is evicted when no node uses it. Colors in the key compare by their submitted representation, like the environment. Adding emissive or unlit nodes therefore adds one material per distinct parameter set, visible through `materialCreateCount` and `liveMaterialCount`.
+
 ## Indexed mesh geometry and vertex colors
 
 A `kind: "mesh"` geometry carries positions, triangle indices, optional aligned normals, and optional aligned `colors`. The renderer validates structural safety every frame and materializes one Three.js `BufferGeometry` per `resourceKey`.

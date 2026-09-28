@@ -117,13 +117,36 @@ export type RendererTransform = {
 type RendererNodeBase = {
   id: string
   geometry: RendererGeometry
-  color: number | `#${string}`
+  color: RendererColor
   opacity?: number
   wireframe?: boolean
   visible?: boolean
 }
 
-export type RendererSceneNode = RendererNodeBase & (
+/**
+ * How a node responds to light. Nodes with equal color, opacity, wireframe, vertex-color use,
+ * and shading share one material.
+ */
+export type RendererNodeShading =
+  | {
+      /** Standard lit shading (the default). */
+      unlit?: false
+      /**
+       * Self-illumination added after lighting, unaffected by lights, shadows, or vertex colors.
+       * Use for glowing effects. Defaults to none.
+       */
+      emissive?: RendererColor
+    }
+  | {
+      /**
+       * Flat node color (times vertex colors) that ignores lights and shadows; fog still applies.
+       * Use for markers and other elements that must read the same by day and night.
+       */
+      unlit: true
+      emissive?: never
+    }
+
+export type RendererSceneNode = RendererNodeBase & RendererNodeShading & (
   | {
       modelMatrix: Matrix4Values
       transform?: never

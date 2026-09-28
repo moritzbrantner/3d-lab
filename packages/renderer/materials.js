@@ -7,18 +7,32 @@ import {meshHasVertexColors} from "./mesh-geometry.js"
  */
 export function materialKey(node) {
   const vertexColors = meshHasVertexColors(node.geometry)
-  return `${String(node.color)}:${node.opacity ?? 1}:${node.wireframe === true}:${vertexColors}`
+  return `${String(node.color)}:${node.opacity ?? 1}:${node.wireframe === true}:${vertexColors}:${shadingKey(node)}`
+}
+
+function shadingKey(node) {
+  if (node.unlit === true) return "unlit"
+  return node.emissive === undefined ? "lit" : `emissive=${String(node.emissive)}`
 }
 
 export function createMaterial(node) {
   const opacity = node.opacity ?? 1
-  return new THREE.MeshStandardMaterial({
+  const parameters = {
     color: new THREE.Color(node.color),
     opacity,
     transparent: opacity < 1,
     wireframe: node.wireframe === true,
     // Vertex colors multiply the node color, so white nodes show the vertex colors unchanged.
     vertexColors: meshHasVertexColors(node.geometry),
+  }
+  if (node.unlit === true) {
+    // Ignores lights and shadows; scene fog still applies.
+    return new THREE.MeshBasicMaterial(parameters)
+  }
+  return new THREE.MeshStandardMaterial({
+    ...parameters,
+    // Added after lighting; not scaled by lights, shadows, or vertex colors.
+    emissive: new THREE.Color(node.emissive ?? 0x000000),
     roughness: 0.86,
     metalness: 0.02,
   })

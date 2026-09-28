@@ -107,6 +107,17 @@ function validateEnvironment(environment) {
   }
 }
 
+function validateNodeShading(node) {
+  if (node.unlit !== undefined && typeof node.unlit !== "boolean") {
+    throw new ThreeRendererContractError(`unlit for ${node.id} must be a boolean`)
+  }
+  if (node.emissive === undefined) return
+  if (node.unlit === true) {
+    throw new ThreeRendererContractError(`scene node ${node.id} cannot be both unlit and emissive`)
+  }
+  requireColor(node.emissive, `emissive color for ${node.id}`)
+}
+
 function validateIndexedMeshGeometry(geometry) {
   if (typeof geometry.resourceKey !== "string" || geometry.resourceKey.trim().length === 0) {
     throw new ThreeRendererContractError("mesh resourceKey must be a non-empty string")
@@ -236,6 +247,7 @@ export function validateRenderFrame(frame) {
     ids.add(node.id)
     validateTransform(node)
     validateGeometry(node.geometry)
+    validateNodeShading(node)
     requireColor(node.color)
     if (node.opacity !== undefined && (!Number.isFinite(node.opacity) || node.opacity < 0 || node.opacity > 1)) {
       throw new ThreeRendererContractError(`opacity for ${node.id} must be between 0 and 1`)
