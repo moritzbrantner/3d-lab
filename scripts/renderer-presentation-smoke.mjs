@@ -255,6 +255,25 @@ try {
   evidence.shadow = { unfocused: pixelAt(unfocused.pixels, topCamera, occluded), focused: pixelAt(focused.pixels, topCamera, occluded) };
   checks.push("shadow focus moves the sun's shadow frame to the viewer");
 
+  // 6. A resourceKey reused with a different color layout keeps rendering its cached payload:
+  //    the material follows the cached geometry, not the resubmitted colors.
+  const green = [0, 1, 0];
+  const reusedQuad = (colors) => ({ ...quad(colors), resourceKey: "reused" });
+  const recolored = { camera: flatCamera, nodes: [node({ geometry: reusedQuad([green, green, green, green]), unlit: true })] };
+  const uncolored = { camera: flatCamera, nodes: [node({ geometry: reusedQuad(), unlit: true })] };
+  const [plainFirst, colorsAdded] = await draw({}, [uncolored, recolored]);
+  const [coloredFirst, colorsRemoved] = await draw({}, [recolored, uncolored]);
+  assert.deepEqual(pixelAt(plainFirst.pixels, flatCamera, middle), [255, 255, 255, 255], "uncolored payload renders the node color");
+  assert.deepEqual(pixelAt(colorsAdded.pixels, flatCamera, middle), [255, 255, 255, 255], "colors added under a reused key keep the cached payload");
+  assert.deepEqual(pixelAt(coloredFirst.pixels, flatCamera, middle), [0, 255, 0, 255], "colored payload renders its vertex colors");
+  assert.deepEqual(pixelAt(colorsRemoved.pixels, flatCamera, middle), [0, 255, 0, 255], "colors removed under a reused key keep the cached payload");
+  for (const frame of [colorsAdded, colorsRemoved]) {
+    const { geometryCreateCount, materialCreateCount, materialEvictCount } = frame.observations;
+    assert.deepEqual([geometryCreateCount, materialCreateCount, materialEvictCount], [0, 0, 0], "reused key reuses its geometry and material");
+  }
+  evidence.reusedResourceKey = { colorsAdded: pixelAt(colorsAdded.pixels, flatCamera, middle), colorsRemoved: pixelAt(colorsRemoved.pixels, flatCamera, middle) };
+  checks.push("a reused resourceKey keeps rendering its cached payload, colors included");
+
   assert.deepEqual(errors, [], "page must not report errors or warnings");
 } finally {
   await writeFile(path.join(output, "result.json"), `${JSON.stringify({ checks, evidence, errors }, null, 2)}\n`);

@@ -401,6 +401,8 @@ export function createThreeSceneRenderer(canvas, options = {}) {
     rotation: new THREE.Quaternion(),
     scale: new THREE.Vector3(),
   }
+  // Reused per node so material lookup allocates no request object.
+  const materialInput = {node: null, vertexColors: false}
   const pixelRatioLimit = options.pixelRatioLimit ?? DEFAULT_PIXEL_RATIO_LIMIT
   let configuredWidth = null
   let configuredHeight = null
@@ -470,12 +472,16 @@ export function createThreeSceneRenderer(canvas, options = {}) {
           observations,
           "geometryCreateCount",
         )
-        const nextMaterialKey = materialKey(node)
+        // The material follows the geometry actually bound to the mesh, so both always agree on
+        // the color attribute even when a resourceKey is reused with a different payload.
+        materialInput.node = node
+        materialInput.vertexColors = nextGeometry.hasAttribute("color")
+        const nextMaterialKey = materialKey(materialInput)
         const nextMaterial = acquireResource(
           materials,
           nextMaterialKey,
           createMaterial,
-          node,
+          materialInput,
           observations,
           "materialCreateCount",
         )
@@ -499,6 +505,7 @@ export function createThreeSceneRenderer(canvas, options = {}) {
         mesh.matrixWorldNeedsUpdate = true
         mesh.visible = node.visible !== false
       }
+      materialInput.node = null
 
       observations.objectReuseCount = observations.nodeVisitCount - observations.objectCreateCount
       observations.geometryReuseCount = observations.nodeVisitCount - observations.geometryCreateCount

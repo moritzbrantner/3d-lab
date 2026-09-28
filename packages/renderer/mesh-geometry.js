@@ -1,9 +1,5 @@
 import * as THREE from "three"
 
-export function meshHasVertexColors(geometry) {
-  return geometry.kind === "mesh" && geometry.colors !== undefined
-}
-
 // Vertex colors arrive as sRGB components like `#RRGGBB` node colors and are converted to the
 // Three.js working color space once, when the geometry is materialized.
 function workingColorBuffer(colors) {

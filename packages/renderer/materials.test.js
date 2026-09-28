@@ -13,9 +13,14 @@ function node(overrides = {}) {
   return {id: "n", transform: {translation: [0, 0, 0]}, geometry: BOX, color: "#ffffff", ...overrides}
 }
 
+/** A material request as the renderer builds it: the node plus its bound geometry's color flag. */
+function request(overrides = {}, vertexColors = false) {
+  return {node: node(overrides), vertexColors}
+}
+
 describe("scene node materials", () => {
   test("the default material keeps the historical lit parameters", () => {
-    const material = createMaterial(node({color: "#78a861"}))
+    const material = createMaterial(request({color: "#78a861"}))
 
     expect(material).toBeInstanceOf(THREE.MeshStandardMaterial)
     expect(material.color.equals(new THREE.Color("#78a861"))).toBe(true)
@@ -26,54 +31,65 @@ describe("scene node materials", () => {
   })
 
   test("nodes with equal material parameters share a key regardless of geometry shape", () => {
-    expect(materialKey(node({geometry: BOX}))).toBe(materialKey(node({geometry: PLAIN_MESH})))
-    expect(materialKey(node({geometry: COLORED_MESH, id: "a"}))).toBe(
-      materialKey(node({geometry: {...COLORED_MESH, resourceKey: "other"}, id: "b"})),
+    expect(materialKey(request({geometry: BOX}))).toBe(materialKey(request({geometry: PLAIN_MESH})))
+    expect(materialKey(request({geometry: COLORED_MESH, id: "a"}, true))).toBe(
+      materialKey(request({geometry: {...COLORED_MESH, resourceKey: "other"}, id: "b"}, true)),
     )
   })
 
   test("every material parameter distinguishes the key", () => {
-    const base = materialKey(node())
+    const base = materialKey(request())
     for (const variant of [
-      node({color: "#fffffe"}),
-      node({opacity: 0.5}),
-      node({wireframe: true}),
-      node({geometry: COLORED_MESH}),
-      node({emissive: "#ff8800"}),
-      node({unlit: true}),
+      request({color: "#fffffe"}),
+      request({opacity: 0.5}),
+      request({wireframe: true}),
+      request({}, true),
+      request({emissive: "#ff8800"}),
+      request({unlit: true}),
     ]) {
       expect(materialKey(variant)).not.toBe(base)
     }
   })
 
   test("vertex-colored meshes get a vertex-color material that multiplies the node color", () => {
-    const material = createMaterial(node({geometry: COLORED_MESH, color: "#ffffff"}))
+    const material = createMaterial(request({geometry: COLORED_MESH, color: "#ffffff"}, true))
 
     expect(material.vertexColors).toBe(true)
     expect(material.color.getHex()).toBe(0xffffff)
-    expect(createMaterial(node({geometry: PLAIN_MESH})).vertexColors).toBe(false)
+    expect(createMaterial(request({geometry: PLAIN_MESH})).vertexColors).toBe(false)
+  })
+
+  test("vertex-color use follows the bound geometry, not the submitted payload", () => {
+    // A resourceKey reused with a different color layout binds the cached geometry; the material
+    // must match that geometry or a missing color attribute renders black.
+    expect(materialKey(request({geometry: COLORED_MESH}, false))).toBe(materialKey(request({geometry: PLAIN_MESH}, false)))
+    expect(materialKey(request({geometry: PLAIN_MESH}, true))).toBe(materialKey(request({geometry: COLORED_MESH}, true)))
+    expect(createMaterial(request({geometry: COLORED_MESH}, false)).vertexColors).toBe(false)
+    expect(createMaterial(request({geometry: PLAIN_MESH, unlit: true}, true)).vertexColors).toBe(true)
   })
 
   test("emissive nodes share a material per emissive color and glow on top of lighting", () => {
-    expect(materialKey(node({id: "a", emissive: "#ff8800"}))).toBe(materialKey(node({id: "b", emissive: "#ff8800"})))
-    expect(materialKey(node({emissive: "#ff8800"}))).not.toBe(materialKey(node({emissive: "#ff8801"})))
-    expect(materialKey(node({unlit: false}))).toBe(materialKey(node()))
+    expect(materialKey(request({id: "a", emissive: "#ff8800"}))).toBe(materialKey(request({id: "b", emissive: "#ff8800"})))
+    expect(materialKey(request({emissive: "#ff8800"}))).not.toBe(materialKey(request({emissive: "#ff8801"})))
+    expect(materialKey(request({unlit: false}))).toBe(materialKey(request()))
 
-    const material = createMaterial(node({color: "#553311", emissive: "#ff8800"}))
+    const material = createMaterial(request({color: "#553311", emissive: "#ff8800"}))
     expect(material).toBeInstanceOf(THREE.MeshStandardMaterial)
     expect(material.color.equals(new THREE.Color("#553311"))).toBe(true)
     expect(material.emissive.equals(new THREE.Color("#ff8800"))).toBe(true)
   })
 
   test("unlit nodes use a flat material that keeps opacity, wireframe, vertex colors, and fog", () => {
-    const material = createMaterial(node({geometry: COLORED_MESH, color: "#ffee00", opacity: 0.4, wireframe: true, unlit: true}))
+    const material = createMaterial(
+      request({geometry: COLORED_MESH, color: "#ffee00", opacity: 0.4, wireframe: true, unlit: true}, true),
+    )
 
     expect(material).toBeInstanceOf(THREE.MeshBasicMaterial)
     expect(material.color.equals(new THREE.Color("#ffee00"))).toBe(true)
     expect([material.opacity, material.transparent, material.wireframe]).toEqual([0.4, true, true])
     expect(material.vertexColors).toBe(true)
     expect(material.fog).toBe(true)
-    expect(materialKey(node({id: "a", unlit: true}))).toBe(materialKey(node({id: "b", unlit: true})))
+    expect(materialKey(request({id: "a", unlit: true}))).toBe(materialKey(request({id: "b", unlit: true})))
   })
 })
 
