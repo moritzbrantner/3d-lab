@@ -35,11 +35,11 @@ For worlds larger than one shadow map, move `shadowFocus` with the viewer each f
 
 ### Change tracking
 
-The renderer creates one hemisphere light, one directional light, one `Fog`, and one background `Color` for its lifetime and never replaces them. Each frame it compares the submitted values with the values it last applied and writes only what differs. An unchanged environment, including an equal environment submitted as a new object, performs no Three.js writes and allocates nothing. Colors compare by their submitted representation, so `0xffffff` after `"#ffffff"` counts as a change.
+The renderer creates one hemisphere light, one directional light, one `Fog`, and one background `Color` for its lifetime and never replaces them. Each frame it compares the submitted values with the values it last applied and writes only what differs. An unchanged environment, including an equal environment submitted as a new object, performs no Three.js writes, and applying it allocates nothing. Colors compare by their submitted representation, so `0xffffff` after `"#ffffff"` counts as a change.
 
 `RendererWorkObservations.environmentUpdateCount` reports how many of the five environment components had state rewritten in the frame: background, sky light, sun light (color/intensity), sun placement (direction, shadow focus, and extent), and fog. It is 0 for an unchanged environment and for `renderCamera`.
 
-Changing fog color or distances only updates uniforms. Turning fog on or off changes the shader variant of every lit material, which costs a program switch (and a compile the first time). Toggle it rarely; fade fog by moving `near`/`far` instead.
+Changing fog color or distances only updates uniforms. Turning fog on or off changes the shader variant of every material, lit or unlit, which costs a program switch (and a compile the first time). Toggle it rarely; fade fog by moving `near`/`far` instead.
 
 ## Scene node materials
 
@@ -49,7 +49,7 @@ A node's `color`, `opacity`, `wireframe`, and shading select its material:
 - **emissive**: `emissive: color` adds self-illumination to the lit result. It is not scaled by lights, shadows, or vertex colors, so it keeps glowing spell effects visible at night; and
 - **unlit**: `unlit: true` draws the flat node color (times vertex colors) with `MeshBasicMaterial`, ignoring lights and shadows. Use it for markers, selection circles, and similar elements that must read the same in any lighting.
 
-`unlit` and `emissive` are mutually exclusive; the types forbid the combination and validation rejects it. Fog applies to every material, so distant effects fade with the world. Shadow casting and receiving follow the renderer `shadows` option for all nodes, including emissive and unlit ones.
+`unlit` and `emissive` are mutually exclusive; the types forbid the combination and validation rejects it. Fog applies to every material, so distant effects fade with the world. Shadow casting follows the renderer `shadows` option for all nodes, including emissive and unlit ones; unlit nodes never show received shadows.
 
 Materials are cached by their parameters, not by node: nodes with equal color, opacity, wireframe mode, vertex-color use, and shading (including the emissive color) share one material, and the material is evicted when no node uses it. Colors in the key compare by their submitted representation, like the environment. Adding emissive or unlit nodes therefore adds one material per distinct parameter set, visible through `materialCreateCount` and `liveMaterialCount`.
 
