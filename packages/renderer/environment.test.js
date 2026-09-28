@@ -163,7 +163,8 @@ describe("renderer scene environment", () => {
     expect(new THREE.Vector3().setFromMatrixPosition(sun.target.matrixWorld).toArray()).toEqual([100, 2, -40])
     expect(sun.position.x).toBe(100)
     expect(sun.position.z).toBe(-40)
-    expect(sun.position.y).toBeCloseTo(2 + 60, 10)
+    // Default caster reach = extent: the near plane sits `extent` beyond the region toward the sun.
+    expect(sun.position.y).toBeCloseTo(2 + 30 + 30 + 0.5, 10)
     const camera = sun.shadow.camera
     expect([camera.left, camera.right, camera.top, camera.bottom, camera.near, camera.far]).toEqual([
       -30, 30, 30, -30, 0.5, 500,
@@ -191,15 +192,62 @@ describe("renderer scene environment", () => {
     const {sun} = f.environment
     f.environment.apply({sun: DUSK.sun, shadowFocus: [0, 0, 0], shadowExtent: 400})
 
-    expect(sun.position.length()).toBeCloseTo(800, 9)
+    expect(sun.position.length()).toBeCloseTo(800.5, 9)
     const direction = new THREE.Vector3(...DUSK.sun.direction).normalize()
     expect(sun.position.clone().normalize().distanceTo(direction)).toBeLessThan(1e-12)
-    expect(sun.shadow.camera.far).toBe(1600)
+    expect(sun.shadow.camera.far).toBe(1600.5)
 
     const frustum = shadowFrustum(sun)
     // The far side of the focus sphere, directly away from the sun, is still inside the frustum.
     expect(frustum.containsPoint(direction.clone().multiplyScalar(-399))).toBe(true)
     expect(frustum.containsPoint(direction.clone().multiplyScalar(399))).toBe(true)
+  })
+
+  test("occluders toward a low sun cast into the region only within the shadow caster reach", () => {
+    const evening = {direction: [1, 0.36, 0], color: 0xffffff, intensity: 2.2}
+    const toSun = new THREE.Vector3(...evening.direction).normalize()
+    // A 10-unit tower top 27 units sunward lies about 28.8 from the focus along the sun direction.
+    const tower = new THREE.Vector3(27, 10, 0)
+    const f = fixture()
+    const {sun} = f.environment
+
+    f.environment.apply({sun: evening})
+    expect(shadowFrustum(sun).containsPoint(tower)).toBe(false)
+
+    expect(f.environment.apply({sun: evening, shadowCasterReach: 30})).toBe(1)
+    const camera = sun.shadow.camera
+    expect([camera.left, camera.right, camera.top, camera.bottom, camera.near, camera.far]).toEqual([
+      -5, 5, 5, -5, 0.5, 500,
+    ])
+    expect(sun.position.length()).toBeCloseTo(5 + 30 + 0.5, 10)
+    const frustum = shadowFrustum(sun)
+    expect(frustum.containsPoint(tower)).toBe(true)
+    // The near plane lies exactly `shadowCasterReach` beyond the region's sun-facing edge.
+    expect(frustum.containsPoint(toSun.clone().multiplyScalar(5 + 30 - 0.01))).toBe(true)
+    expect(frustum.containsPoint(toSun.clone().multiplyScalar(5 + 30 + 0.01))).toBe(false)
+    expect(frustum.containsPoint(toSun.clone().multiplyScalar(-4.99))).toBe(true)
+  })
+
+  test("the caster reach defaults to the shadow extent and is tracked with the sun placement", () => {
+    const f = fixture()
+    const {sun} = f.environment
+    expect(f.environment.apply({shadowExtent: 5, shadowCasterReach: 5})).toBe(0)
+    expectDefaultState(f)
+
+    expect(f.environment.apply({shadowExtent: 40})).toBe(1)
+    const derived = sun.position.toArray()
+    expect(f.environment.apply({shadowExtent: 40, shadowCasterReach: 40})).toBe(0)
+    expect(sun.position.toArray()).toEqual(derived)
+
+    // A reach alone moves the sun back and, once the frame outgrows the minimum, the far plane.
+    expect(f.environment.apply({shadowExtent: 40, shadowCasterReach: 1000})).toBe(1)
+    expect(sun.position.length()).toBeCloseTo(40 + 1000 + 0.5, 9)
+    expect(sun.shadow.camera.far).toBe(40 + 1000 + 0.5 + 2 * 40)
+    expect(shadowFrustum(sun).containsPoint(new THREE.Vector3(0, 0, 0))).toBe(true)
+    expect(f.environment.apply({shadowExtent: 40, shadowCasterReach: 1000})).toBe(0)
+    expect(f.environment.apply({shadowExtent: 40})).toBe(1)
+    expect(sun.position.toArray()).toEqual(derived)
+    expect(sun.shadow.camera.far).toBe(500)
   })
 })
 
@@ -208,6 +256,7 @@ describe("renderer environment validation", () => {
     expect(validateRenderFrame(frame(DUSK)).environment).toBe(DUSK)
     expect(validateRenderFrame(frame(undefined)).environment).toBeUndefined()
     expect(validateRenderFrame(frame({fog: null})).environment.fog).toBeNull()
+    expect(validateRenderFrame(frame({shadowCasterReach: 0})).environment.shadowCasterReach).toBe(0)
   })
 
   test.each([
@@ -239,6 +288,16 @@ describe("renderer environment validation", () => {
     ["fog with a negative near", {fog: {color: 0, near: -1, far: 10}}, "0 <= near < far"],
     ["a malformed shadow focus", {shadowFocus: [0, 0]}, "environment shadowFocus"],
     ["a zero shadow extent", {shadowExtent: 0}, "environment shadowExtent must be finite and positive"],
+    [
+      "a negative shadow caster reach",
+      {shadowCasterReach: -1},
+      "environment shadowCasterReach must be finite and non-negative",
+    ],
+    [
+      "a non-finite shadow caster reach",
+      {shadowCasterReach: Number.POSITIVE_INFINITY},
+      "environment shadowCasterReach must be finite and non-negative",
+    ],
   ])("rejects %s", (_, environment, message) => {
     expect(() => validateRenderFrame(frame(environment))).toThrow(ThreeRendererContractError)
     expect(() => validateRenderFrame(frame(environment))).toThrow(message)

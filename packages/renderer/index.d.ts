@@ -65,6 +65,13 @@ export type RendererEnvironment = {
    * shadow map. Finite and positive; defaults to 5.
    */
   shadowExtent?: number
+  /**
+   * How far beyond the shadow region, along `sun.direction`, occluders still cast shadows into
+   * it. Occluders farther toward the sun are outside the shadow camera and cast nothing, so set
+   * this to at least the longest caster distance you need (roughly caster height divided by the
+   * sine of the lowest sun elevation). Finite and non-negative; defaults to `shadowExtent`.
+   */
+  shadowCasterReach?: number
 }
 
 export type BoxGeometry = {
@@ -211,7 +218,7 @@ export type ThreeSceneRenderer = {
   /**
    * Re-render the currently submitted scene with a new camera only. It redraws the last
    * submitted nodes and environment unchanged. Callers must use full render() whenever node
-   * content or the frame environment (background, sky, sun, fog, shadowFocus, shadowExtent) may
+   * content or any frame environment field (background, sky, sun, fog, or shadow frame) may
    * have changed, for example on every frame of an animated day/night cycle.
    */
   renderCamera(camera: RendererCamera): RendererWorkObservations

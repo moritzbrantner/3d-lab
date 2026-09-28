@@ -56,6 +56,7 @@ export function createSceneEnvironment(scene, {background = null, shadows = fals
     sunDirection: [...DEFAULT_SUN.direction],
     shadowFocus: [...ORIGIN],
     shadowExtent: DEFAULT_SHADOW_EXTENT,
+    shadowCasterReach: DEFAULT_SHADOW_EXTENT,
     fogEnabled: false,
     fogColor: undefined,
   }
@@ -106,19 +107,22 @@ export function createSceneEnvironment(scene, {background = null, shadows = fals
     return changed
   }
 
-  function applySunPlacement(direction, focus, extent) {
-    const extentChanged = extent !== applied.shadowExtent
-    if (!extentChanged && sameTuple(applied.sunDirection, direction) && sameTuple(applied.shadowFocus, focus)) {
+  function applySunPlacement(direction, focus, extent, casterReach) {
+    const frameChanged = extent !== applied.shadowExtent || casterReach !== applied.shadowCasterReach
+    if (!frameChanged && sameTuple(applied.sunDirection, direction) && sameTuple(applied.shadowFocus, focus)) {
       return false
     }
     copyTuple(applied.sunDirection, direction)
     copyTuple(applied.shadowFocus, focus)
     applied.shadowExtent = extent
+    applied.shadowCasterReach = casterReach
 
-    // The sun sits on the ray from the focus toward the sun, far enough that every point within
-    // `extent` of the focus lies inside the shadow camera depth range. The default direction's own
-    // length is the minimum distance, so the default placement is exactly (10, 18, 8).
-    const distance = Math.max(DEFAULT_SUN_DISTANCE, 2 * extent)
+    // The sun sits on the ray from the focus toward the sun, far enough back that the shadow
+    // camera's near plane lies `casterReach` beyond the region's sun-facing edge: occluders that
+    // close to the region along the sun direction still reach the shadow map. The default
+    // direction's own length is the minimum distance, so the default placement (extent 5, reach
+    // 5) is exactly (10, 18, 8).
+    const distance = Math.max(DEFAULT_SUN_DISTANCE, extent + casterReach + SHADOW_NEAR)
     const scale = distance / Math.hypot(direction[0], direction[1], direction[2])
     sun.position.set(
       focus[0] + direction[0] * scale,
@@ -129,7 +133,7 @@ export function createSceneEnvironment(scene, {background = null, shadows = fals
     // The target is not part of the scene graph, so Three.js does not update its world matrix.
     sun.target.updateMatrixWorld()
 
-    if (extentChanged) {
+    if (frameChanged) {
       // The orthographic shadow camera spans +/-extent across the light axis and covers from
       // just in front of the sun to beyond the far side of the focus sphere.
       const shadowCamera = sun.shadow.camera
@@ -189,11 +193,13 @@ export function createSceneEnvironment(scene, {background = null, shadows = fals
       if (applySky(value.sky ?? DEFAULT_SKY)) updates += 1
       const sunValue = value.sun ?? DEFAULT_SUN
       if (applySunLight(sunValue)) updates += 1
+      const shadowExtent = value.shadowExtent ?? DEFAULT_SHADOW_EXTENT
       if (
         applySunPlacement(
           sunValue.direction,
           value.shadowFocus ?? ORIGIN,
-          value.shadowExtent ?? DEFAULT_SHADOW_EXTENT,
+          shadowExtent,
+          value.shadowCasterReach ?? shadowExtent,
         )
       ) {
         updates += 1

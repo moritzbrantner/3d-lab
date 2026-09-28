@@ -1,5 +1,6 @@
 // Chromium acceptance for the reusable renderer's presentation semantics:
-// frame environment defaults, vertex color space, emissive/unlit shading, fog, and shadow focus.
+// frame environment defaults, vertex color space, emissive/unlit shading, fog, shadow focus and
+// caster reach, and material sharing across nodes and reused geometry keys.
 // bun scripts/renderer-presentation-smoke.mjs [OUTPUT_DIR]
 // Functional pixel checks on SwiftShader, never a wall-clock performance gate.
 import assert from "node:assert/strict";
@@ -126,6 +127,7 @@ try {
     fog: null,
     shadowFocus: [0, 0, 0],
     shadowExtent: 5,
+    shadowCasterReach: 5,
   };
   const dusk = {
     background: "#1d2440",
@@ -318,6 +320,33 @@ try {
   );
   evidence.materials = { shared: materialCounts(shared.observations), withoutMarkers: materialCounts(withoutMarkers.observations) };
   checks.push("equal emissive, unlit, and vertex-colored nodes share materials with exact counters");
+
+  // 8. Under a low evening sun, a tower about 27 units sunward is beyond the default shadow frame's
+  //    near plane and casts nothing onto the focus; shadowCasterReach brings its shadow in.
+  const groundCamera = camera([0, 30, 0], [0, 0, 0], [0, 0, -1], 20);
+  const towerNodes = [
+    { id: "ground", transform: { translation: [0, -0.1, 0] }, geometry: { kind: "box", size: [12, 0.2, 12] }, color: "#ffffff" },
+    { id: "tower", transform: { translation: [27, 10, 0] }, geometry: { kind: "box", size: [2, 20, 2] }, color: "#ffffff" },
+  ];
+  const evening = { direction: [1, 0.36, 0], color: 0xffffff, intensity: 2.2 };
+  const [shortReach, longReach] = await draw({ shadows: true }, [
+    { camera: groundCamera, nodes: towerNodes, environment: { sun: evening } },
+    { camera: groundCamera, nodes: towerNodes, environment: { sun: evening, shadowCasterReach: 30 } },
+  ]);
+  const underTower = [0, 0, 0];
+  const beside = [0, 0, 3];
+  assert(
+    luminance(pixelAt(longReach.pixels, groundCamera, underTower)) + 60 < luminance(pixelAt(shortReach.pixels, groundCamera, underTower)),
+    "caster reach brings the distant tower's shadow onto the focus",
+  );
+  assert.deepEqual(pixelAt(shortReach.pixels, groundCamera, underTower), pixelAt(shortReach.pixels, groundCamera, beside), "default reach leaves the focus lit");
+  assert.deepEqual(pixelAt(longReach.pixels, groundCamera, beside), pixelAt(shortReach.pixels, groundCamera, beside), "ground beside the tower's shadow unchanged");
+  evidence.casterReach = {
+    shortReach: pixelAt(shortReach.pixels, groundCamera, underTower),
+    longReach: pixelAt(longReach.pixels, groundCamera, underTower),
+    beside: pixelAt(longReach.pixels, groundCamera, beside),
+  };
+  checks.push("shadowCasterReach lets occluders far toward a low sun shade the focus");
 
   assert.deepEqual(errors, [], "page must not report errors or warnings");
 } finally {

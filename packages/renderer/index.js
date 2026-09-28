@@ -105,6 +105,12 @@ function validateEnvironment(environment) {
   ) {
     throw new ThreeRendererContractError("environment shadowExtent must be finite and positive")
   }
+  if (
+    environment.shadowCasterReach !== undefined &&
+    (!Number.isFinite(environment.shadowCasterReach) || environment.shadowCasterReach < 0)
+  ) {
+    throw new ThreeRendererContractError("environment shadowCasterReach must be finite and non-negative")
+  }
 }
 
 function validateNodeShading(node) {
