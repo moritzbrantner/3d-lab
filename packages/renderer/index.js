@@ -1,5 +1,6 @@
 import * as THREE from "three"
 import {webGpuProjectionToWebGl} from "./depth.js"
+import {createSceneEnvironment} from "./environment.js"
 import {projectWorldPointUnchecked} from "./projection.js"
 import {acquireResource, evictUnusedResources} from "./resources.js"
 
@@ -43,11 +44,64 @@ function requireFiniteTuple(name, value, length, {positive = false} = {}) {
   }
 }
 
-function requireColor(value) {
+function requireColor(value, name = "node color") {
   const numeric = typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 0xffffff
   const hex = typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value)
   if (!numeric && !hex) {
-    throw new ThreeRendererContractError("node color must be a 24-bit integer or #RRGGBB string")
+    throw new ThreeRendererContractError(`${name} must be a 24-bit integer or #RRGGBB string`)
+  }
+}
+
+function requireObject(name, value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new ThreeRendererContractError(`${name} must be an object`)
+  }
+}
+
+function requireIntensity(name, value) {
+  if (!Number.isFinite(value) || value < 0) {
+    throw new ThreeRendererContractError(`${name} must be finite and non-negative`)
+  }
+}
+
+function validateEnvironment(environment) {
+  requireObject("render frame environment", environment)
+  if (environment.background !== undefined) {
+    requireColor(environment.background, "environment background")
+  }
+  if (environment.sky !== undefined) {
+    requireObject("environment sky", environment.sky)
+    requireColor(environment.sky.skyColor, "environment sky skyColor")
+    requireColor(environment.sky.groundColor, "environment sky groundColor")
+    requireIntensity("environment sky intensity", environment.sky.intensity)
+  }
+  if (environment.sun !== undefined) {
+    const sun = environment.sun
+    requireObject("environment sun", sun)
+    requireFiniteTuple("environment sun direction", sun.direction, 3)
+    const length = Math.hypot(sun.direction[0], sun.direction[1], sun.direction[2])
+    if (!Number.isFinite(length) || length <= Number.EPSILON) {
+      throw new ThreeRendererContractError("environment sun direction must be non-zero")
+    }
+    requireColor(sun.color, "environment sun color")
+    requireIntensity("environment sun intensity", sun.intensity)
+  }
+  if (environment.fog !== undefined && environment.fog !== null) {
+    const fog = environment.fog
+    requireObject("environment fog", fog)
+    requireColor(fog.color, "environment fog color")
+    if (!Number.isFinite(fog.near) || fog.near < 0 || !Number.isFinite(fog.far) || fog.far <= fog.near) {
+      throw new ThreeRendererContractError("environment fog must satisfy 0 <= near < far with finite distances")
+    }
+  }
+  if (environment.shadowFocus !== undefined) {
+    requireFiniteTuple("environment shadowFocus", environment.shadowFocus, 3)
+  }
+  if (
+    environment.shadowExtent !== undefined &&
+    (!Number.isFinite(environment.shadowExtent) || environment.shadowExtent <= 0)
+  ) {
+    throw new ThreeRendererContractError("environment shadowExtent must be finite and positive")
   }
 }
 
@@ -150,6 +204,7 @@ export function validateRenderFrame(frame) {
     throw new ThreeRendererContractError("render frame is required")
   }
   validateRenderCamera(frame.camera)
+  if (frame.environment !== undefined) validateEnvironment(frame.environment)
   if (!Array.isArray(frame.nodes)) {
     throw new ThreeRendererContractError("render frame nodes must be an array")
   }
@@ -317,6 +372,7 @@ function createWorkObservations(nodeVisitCount) {
     materialCreateCount: 0,
     materialReuseCount: 0,
     materialEvictCount: 0,
+    environmentUpdateCount: 0,
     liveObjectCount: 0,
     liveGeometryCount: 0,
     liveMaterialCount: 0,
@@ -337,12 +393,10 @@ export function createThreeSceneRenderer(canvas, options = {}) {
   renderer.shadowMap.enabled = options.shadows === true
 
   const scene = new THREE.Scene()
-  scene.background = options.alpha === true ? null : new THREE.Color(options.background ?? DEFAULT_BACKGROUND)
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x334433, 1.7))
-  const keyLight = new THREE.DirectionalLight(0xffffff, 2.2)
-  keyLight.position.set(10, 18, 8)
-  keyLight.castShadow = options.shadows === true
-  scene.add(keyLight)
+  const sceneEnvironment = createSceneEnvironment(scene, {
+    background: options.alpha === true ? null : options.background ?? DEFAULT_BACKGROUND,
+    shadows: options.shadows === true,
+  })
 
   const camera = new THREE.Camera()
   camera.matrixAutoUpdate = false
@@ -408,6 +462,7 @@ export function createThreeSceneRenderer(canvas, options = {}) {
       applyCamera(frame.camera)
 
       const observations = createWorkObservations(frame.nodes.length)
+      observations.environmentUpdateCount = sceneEnvironment.apply(frame.environment)
       const liveObjectIds = new Set()
       const liveGeometryKeys = new Set()
       const liveMaterialKeys = new Set()

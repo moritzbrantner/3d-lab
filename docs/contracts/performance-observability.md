@@ -46,6 +46,8 @@ Creation/reuse counts describe cache acquisitions performed by the renderer. The
 
 The resource cache helpers expose creation-versus-reuse and eviction counts directly, so the observations are produced by the same code path that owns the actual cache. The performance fixture does not maintain a second shadow cache model.
 
+`environmentUpdateCount` reports how many frame-environment components (background, sky light, sun light, sun placement, fog) had Three.js state rewritten. It is produced by the same change-tracking code that decides whether to write, so an unchanged environment reports 0 (see [`browser-renderer.md`](browser-renderer.md#change-tracking)).
+
 ## Editor mutation boundary
 
 The editor hot path follows the same “compute only what changed” rule. `validateEditorScene` remains the authoritative full validator for imported or externally constructed state. Once a scene has crossed that boundary, the local mutation APIs preserve the invariant rather than re-running whole-scene validation on every pointer/input event.
