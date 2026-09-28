@@ -274,6 +274,51 @@ try {
   evidence.reusedResourceKey = { colorsAdded: pixelAt(colorsAdded.pixels, flatCamera, middle), colorsRemoved: pixelAt(colorsRemoved.pixels, flatCamera, middle) };
   checks.push("a reused resourceKey keeps rendering its cached payload, colors included");
 
+  // 7. Equal emissive, unlit, and vertex-colored nodes share materials through render(), and the
+  //    cache counters report creation, reuse, and eviction exactly.
+  const coloredTriangle = (resourceKey) => ({
+    kind: "mesh",
+    resourceKey,
+    positions: [[0, 0, 0], [1, 0, 0], [0, 1, 0]],
+    indices: [0, 1, 2],
+    colors: [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+  });
+  const at = (x) => ({ translation: [x, 0, 0] });
+  const glowing = [
+    { id: "glow-a", transform: at(-3), geometry: { kind: "box", size: [1, 1, 1] }, color: "#202020", emissive: "#ff8800" },
+    { id: "glow-b", transform: at(-2), geometry: { kind: "sphere", radius: 0.5 }, color: "#202020", emissive: "#ff8800" },
+  ];
+  const markers = [
+    { id: "marker-a", transform: at(-1), geometry: { kind: "cylinder", radius: 0.5, height: 0.1 }, color: "#ffee00", unlit: true },
+    { id: "marker-b", transform: at(0), geometry: { kind: "box", size: [1, 0.1, 1] }, color: "#ffee00", unlit: true },
+  ];
+  const terrain = [
+    { id: "terrain-a", transform: at(1), geometry: coloredTriangle("terrain-a"), color: "#ffffff" },
+    { id: "terrain-b", transform: at(2), geometry: coloredTriangle("terrain-b"), color: "#ffffff" },
+  ];
+  const [shared, withoutMarkers] = await draw({}, [
+    { camera: flatCamera, nodes: [...glowing, ...markers, ...terrain] },
+    { camera: flatCamera, nodes: [...glowing, ...terrain] },
+  ]);
+  const materialCounts = ({ materialCreateCount, materialReuseCount, materialEvictCount, liveMaterialCount }) => ({
+    materialCreateCount,
+    materialReuseCount,
+    materialEvictCount,
+    liveMaterialCount,
+  });
+  assert.deepEqual(
+    materialCounts(shared.observations),
+    { materialCreateCount: 3, materialReuseCount: 3, materialEvictCount: 0, liveMaterialCount: 3 },
+    "six nodes in three shading groups share three materials",
+  );
+  assert.deepEqual(
+    materialCounts(withoutMarkers.observations),
+    { materialCreateCount: 0, materialReuseCount: 4, materialEvictCount: 1, liveMaterialCount: 2 },
+    "dropping the unlit group evicts only its material",
+  );
+  evidence.materials = { shared: materialCounts(shared.observations), withoutMarkers: materialCounts(withoutMarkers.observations) };
+  checks.push("equal emissive, unlit, and vertex-colored nodes share materials with exact counters");
+
   assert.deepEqual(errors, [], "page must not report errors or warnings");
 } finally {
   await writeFile(path.join(output, "result.json"), `${JSON.stringify({ checks, evidence, errors }, null, 2)}\n`);
