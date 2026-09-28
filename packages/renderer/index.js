@@ -437,8 +437,9 @@ export function createThreeSceneRenderer(canvas, options = {}) {
     },
 
     /**
-     * Draw the already-submitted scene with a new camera without revisiting scene nodes.
-     * The caller opts into this method only when object/geometry/material/transform state is unchanged.
+     * Draw the already-submitted scene with a new camera without revisiting scene nodes or the
+     * environment. The caller opts into this method only when object/geometry/material/transform
+     * state and the frame environment are unchanged.
      */
     renderCamera(frameCamera) {
       validateRenderCamera(frameCamera)

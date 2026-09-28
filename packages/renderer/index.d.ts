@@ -209,8 +209,10 @@ export type ThreeSceneRendererOptions = {
 export type ThreeSceneRenderer = {
   setSize(width: number, height: number, devicePixelRatio?: number): void
   /**
-   * Re-render the currently submitted scene with a new camera only.
-   * Callers must use full render() whenever node content may have changed.
+   * Re-render the currently submitted scene with a new camera only. It redraws the last
+   * submitted nodes and environment unchanged. Callers must use full render() whenever node
+   * content or the frame environment (background, sky, sun, fog, shadowFocus, shadowExtent) may
+   * have changed, for example on every frame of an animated day/night cycle.
    */
   renderCamera(camera: RendererCamera): RendererWorkObservations
   render(frame: RendererFrame): RendererWorkObservations

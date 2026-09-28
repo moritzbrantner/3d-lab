@@ -10,7 +10,7 @@
 - `nodes` — every scene node to draw, identified by stable ids. A node missing from the frame is removed; and
 - `environment` (optional) — background, lights, fog, and the sun's shadow frame.
 
-The environment follows the same rule as nodes: it describes the whole frame. Every omitted environment field, or an omitted environment, renders that field's renderer default. Callers therefore resend their environment each frame (reusing the same object is fine) rather than issuing incremental commands. `renderCamera(camera)` redraws the last submitted nodes and environment with a new camera only.
+The environment follows the same rule as nodes: it describes the whole frame. Every omitted environment field, or an omitted environment, renders that field's renderer default. Callers therefore resend their environment each frame (reusing the same object is fine) rather than issuing incremental commands. `renderCamera(camera)` redraws the last submitted nodes and environment with a new camera only, so it is valid only while both are unchanged: a frame whose environment may differ, such as each step of a day/night cycle or a shadow focus following the viewer, must go through `render(frame)`.
 
 `validateRenderFrame` rejects malformed input with `ThreeRendererContractError` before any Three.js state changes.
 
