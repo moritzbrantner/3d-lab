@@ -6,6 +6,7 @@ members = [
     "crates/three-d-projective",
     "crates/three-d-spatial",
     "crates/three-d-assets",
+    "crates/three-d-rigged-assets",
     "crates/three-d-formats",
     "crates/three-d-lod",
     "crates/three-d-scene",
@@ -15,6 +16,7 @@ members = [
     "examples/asset-tooling-animation-adapter",
     "examples/asset-tooling-skinning-adapter",
     "examples/asset-tooling-humanoid-adapter",
+    "examples/asset-tooling-rigged-collision-adapter",
     "examples/asset-tooling-scene-adapter",
 ]
 resolver = "2"

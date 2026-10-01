@@ -817,12 +817,13 @@ impl SkinInfluence {
     }
 
     pub fn validate_joints(self, joint_count: usize) -> Result<Self, SkeletonError> {
-        for (&joint, weight) in self.joints.iter().zip(self.weights) {
+        let normalized = Self::new(self.joints, self.weights)?;
+        for (&joint, weight) in normalized.joints.iter().zip(normalized.weights) {
             if weight > 0.0 && joint as usize >= joint_count {
                 return Err(SkeletonError::JointIndexOutOfBounds { joint, joint_count });
             }
         }
-        Ok(self)
+        Ok(normalized)
     }
 }
 
@@ -1139,6 +1140,30 @@ mod tests {
                 joint_count: 2
             })
         );
+    }
+
+    #[test]
+    fn skin_joint_validation_rechecks_public_weight_fields() {
+        let malformed = SkinInfluence {
+            joints: [99, 0, 0, 0],
+            weights: [f32::NAN, 1.0, 0.0, 0.0],
+        };
+        assert_eq!(
+            malformed.validate_joints(2),
+            Err(SkeletonError::InvalidWeight { slot: 0 })
+        );
+    }
+
+    #[test]
+    fn skin_joint_validation_returns_normalized_weights() {
+        let influence = SkinInfluence {
+            joints: [0, 1, 0, 0],
+            weights: [3.0, 1.0, 0.0, 0.0],
+        }
+        .validate_joints(2)
+        .expect("public influence fields are revalidated");
+        assert!((influence.weights[0] - 0.75).abs() < EPSILON);
+        assert!((influence.weights[1] - 0.25).abs() < EPSILON);
     }
 
     #[test]
