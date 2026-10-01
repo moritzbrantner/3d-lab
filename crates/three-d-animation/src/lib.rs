@@ -727,6 +727,7 @@ pub enum SkeletonError {
     MatrixCountMismatch { expected: usize, actual: usize },
     InvalidWeight { slot: usize },
     ZeroTotalWeight,
+    NonFiniteTotalWeight,
     JointIndexOutOfBounds { joint: u16, joint_count: usize },
 }
 
@@ -743,6 +744,9 @@ impl fmt::Display for SkeletonError {
             ),
             Self::InvalidWeight { slot } => write!(formatter, "skin weight slot {slot} is invalid"),
             Self::ZeroTotalWeight => formatter.write_str("skin weights must have a positive total"),
+            Self::NonFiniteTotalWeight => {
+                formatter.write_str("skin weights must have a finite total")
+            }
             Self::JointIndexOutOfBounds { joint, joint_count } => write!(
                 formatter,
                 "skin influence references joint {joint}, but skeleton has {joint_count} joints"
@@ -807,6 +811,9 @@ impl SkinInfluence {
             }
         }
         let total: f32 = weights.iter().sum();
+        if !total.is_finite() {
+            return Err(SkeletonError::NonFiniteTotalWeight);
+        }
         if total <= EPSILON {
             return Err(SkeletonError::ZeroTotalWeight);
         }
@@ -1139,6 +1146,22 @@ mod tests {
                 joint: 2,
                 joint_count: 2
             })
+        );
+    }
+
+    #[test]
+    fn skin_influence_rejects_weights_whose_total_overflows() {
+        assert_eq!(
+            SkinInfluence::new([0, 1, 0, 0], [f32::MAX, f32::MAX, 0.0, 0.0]),
+            Err(SkeletonError::NonFiniteTotalWeight)
+        );
+        let malformed = SkinInfluence {
+            joints: [0, 1, 0, 0],
+            weights: [f32::MAX, f32::MAX, 0.0, 0.0],
+        };
+        assert_eq!(
+            malformed.validate_joints(2),
+            Err(SkeletonError::NonFiniteTotalWeight)
         );
     }
 

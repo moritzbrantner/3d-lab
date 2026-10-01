@@ -47,6 +47,7 @@
 - [x] Add renderer-independent tangent attributes and deterministic tangent derivation.
 - [x] Preserve glTF `TANGENT` attributes and teach tangent-space normal-map shading interactively.
 - [x] Preserve encoded image/texture data and glTF normal-texture bindings through `three-d-assets`.
+- [x] Preserve paired glTF `JOINTS_0`/`WEIGHTS_0` as validated vertex-aligned skin influences without moving scene/skin-instance ownership into the asset model.
 - [x] Restore deterministic level-of-detail and mesh simplification through `three-d-lod`, preserving the source vertex/attribute buffers while deriving index buffers with explicit target/error/border semantics.
 - [x] Keep the asset-tooling process adapter outside `three-d-lod`, using a narrow canonical mesh JSON integration envelope so the domain crate does not depend on workflow/provenance infrastructure.
 
