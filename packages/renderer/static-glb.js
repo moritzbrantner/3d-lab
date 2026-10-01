@@ -79,7 +79,33 @@ function readGlbDocument(bytes) {
   return {json, binLength}
 }
 
-const array = (value) => (Array.isArray(value) ? value : [])
+const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value)
+
+function requireObject(value, label) {
+  if (!isObject(value)) fail(`${label} must be an object`)
+  return value
+}
+
+/** An optional glTF array property: absent means empty, anything but an array is malformed. */
+function list(owner, key, label) {
+  const value = owner[key]
+  if (value === undefined) return []
+  if (!Array.isArray(value)) fail(`${label} ${key} must be an array`)
+  return value
+}
+
+/** An optional glTF array of objects (`buffers`, `materials`, `nodes`, ...). */
+function objectList(owner, key, label) {
+  const entries = list(owner, key, label)
+  entries.forEach((entry, index) => requireObject(entry, `${label} ${key} ${index}`))
+  return entries
+}
+
+function requireByteCount(value, label, {optional = false} = {}) {
+  if (optional && value === undefined) return 0
+  if (!Number.isSafeInteger(value) || value < 0) fail(`${label} must be a non-negative integer`)
+  return value
+}
 
 function requireIndex(value, length, label) {
   if (!Number.isSafeInteger(value) || value < 0 || value >= length) {
@@ -93,66 +119,82 @@ function requireIndex(value, length, label) {
  * root nodes and the optional extensions that were present but not used.
  */
 function preflight(json, binLength) {
-  if (typeof json.asset?.version !== "string" || !json.asset.version.startsWith("2.")) {
+  const asset = requireObject(json.asset, "static GLB asset")
+  if (typeof asset.version !== "string" || !asset.version.startsWith("2.")) {
     fail("static GLB asset.version must be 2.x")
   }
-  for (const name of array(json.extensionsRequired)) {
-    if (!SUPPORTED_EXTENSIONS.has(name)) fail(`static GLB requires unsupported extension ${name}`)
+  for (const name of list(json, "extensionsRequired", "static GLB")) {
+    if (!SUPPORTED_EXTENSIONS.has(name)) fail(`static GLB requires unsupported extension ${String(name)}`)
   }
-  const ignoredExtensions = array(json.extensionsUsed).filter((name) => !SUPPORTED_EXTENSIONS.has(name))
+  const extensionsUsed = list(json, "extensionsUsed", "static GLB")
+  if (extensionsUsed.some((name) => typeof name !== "string")) fail("static GLB extensionsUsed must contain strings")
+  const ignoredExtensions = extensionsUsed.filter((name) => !SUPPORTED_EXTENSIONS.has(name))
 
-  const buffers = array(json.buffers)
+  const buffers = objectList(json, "buffers", "static GLB")
   buffers.forEach((buffer, index) => {
     if (buffer.uri !== undefined) {
       fail(`static GLB buffer ${index} uses a URI; package a self-contained GLB with only the BIN chunk`)
     }
     if (index !== 0) fail("static GLB may declare only the BIN-chunk buffer")
-    if (binLength === null || binLength < buffer.byteLength) {
-      fail(`static GLB buffer 0 needs ${buffer.byteLength} bytes but the BIN chunk is missing or shorter`)
+    const byteLength = requireByteCount(buffer.byteLength, `buffer ${index} byteLength`)
+    if (binLength === null || binLength < byteLength) {
+      fail(`static GLB buffer 0 needs ${byteLength} bytes but the BIN chunk is missing or shorter`)
     }
   })
-  const bufferViews = array(json.bufferViews)
+  const bufferViews = objectList(json, "bufferViews", "static GLB")
   bufferViews.forEach((bufferView, index) => {
     requireIndex(bufferView.buffer, buffers.length, `bufferView ${index} buffer`)
-    if ((bufferView.byteOffset ?? 0) + bufferView.byteLength > buffers[bufferView.buffer].byteLength) {
+    const byteOffset = requireByteCount(bufferView.byteOffset, `bufferView ${index} byteOffset`, {optional: true})
+    const byteLength = requireByteCount(bufferView.byteLength, `bufferView ${index} byteLength`)
+    if (bufferView.byteStride !== undefined) requireByteCount(bufferView.byteStride, `bufferView ${index} byteStride`)
+    if (byteOffset + byteLength > buffers[bufferView.buffer].byteLength) {
       fail(`bufferView ${index} exceeds its buffer`)
     }
   })
-  const accessors = array(json.accessors)
+  const accessors = objectList(json, "accessors", "static GLB")
   accessors.forEach((accessor, index) => {
     if (accessor.bufferView !== undefined) requireIndex(accessor.bufferView, bufferViews.length, `accessor ${index} bufferView`)
+    requireByteCount(accessor.byteOffset, `accessor ${index} byteOffset`, {optional: true})
+    requireByteCount(accessor.count, `accessor ${index} count`)
   })
 
-  if (array(json.skins).length > 0) fail("static GLB declares skins; skinned assets are out of scope for the static adapter")
-  if (array(json.animations).length > 0) fail("static GLB declares animations; animated assets are out of scope for the static adapter")
+  if (list(json, "skins", "static GLB").length > 0) fail("static GLB declares skins; skinned assets are out of scope for the static adapter")
+  if (list(json, "animations", "static GLB").length > 0) {
+    fail("static GLB declares animations; animated assets are out of scope for the static adapter")
+  }
 
-  const materials = array(json.materials)
+  const materials = objectList(json, "materials", "static GLB")
   materials.forEach((material, index) => {
+    const label = `material ${index}`
+    if (material.pbrMetallicRoughness !== undefined) requireObject(material.pbrMetallicRoughness, `${label} pbrMetallicRoughness`)
     for (const [group, slot] of MATERIAL_TEXTURES) {
       const owner = group === null ? material : material[group]
-      if (owner?.[slot] !== undefined) fail(`material ${index} uses ${slot}; textured materials are not supported yet`)
+      if (owner?.[slot] !== undefined) fail(`${label} uses ${slot}; textured materials are not supported yet`)
     }
     if (material.alphaMode !== undefined && material.alphaMode !== "OPAQUE") {
-      fail(`material ${index} alphaMode ${material.alphaMode} is unsupported; only OPAQUE is rendered`)
+      fail(`${label} alphaMode ${String(material.alphaMode)} is unsupported; only OPAQUE is rendered`)
     }
+    if (material.doubleSided !== undefined && typeof material.doubleSided !== "boolean") fail(`${label} doubleSided must be a boolean`)
     // Mirrors `three-d-formats`, which rejects any non-zero emissive factor: emissive semantics
     // belong to the Rust material model first, not to this adapter.
     const emissiveFactor = material.emissiveFactor ?? [0, 0, 0]
-    if (!Array.isArray(emissiveFactor) || emissiveFactor.length !== 3) fail(`material ${index} emissiveFactor must have 3 components`)
+    if (!Array.isArray(emissiveFactor) || emissiveFactor.length !== 3) fail(`${label} emissiveFactor must have 3 components`)
+    requireFinite(emissiveFactor, `${label} emissiveFactor`)
     if (emissiveFactor.some((value) => value !== 0)) {
-      fail(`material ${index} uses a non-zero emissiveFactor; emissive materials are not supported yet`)
+      fail(`${label} uses a non-zero emissiveFactor; emissive materials are not supported yet`)
     }
   })
 
-  const meshes = array(json.meshes)
+  const meshes = objectList(json, "meshes", "static GLB")
   meshes.forEach((mesh, meshIndex) => {
-    if (array(mesh.primitives).length === 0) fail(`mesh ${meshIndex} has no primitives`)
+    const primitives = objectList(mesh, "primitives", `mesh ${meshIndex}`)
+    if (primitives.length === 0) fail(`mesh ${meshIndex} has no primitives`)
     if (mesh.weights !== undefined) fail(`mesh ${meshIndex} declares morph weights; morph targets are unsupported`)
-    mesh.primitives.forEach((primitive, primitiveIndex) => {
+    primitives.forEach((primitive, primitiveIndex) => {
       const label = `mesh ${meshIndex} primitive ${primitiveIndex}`
-      if ((primitive.mode ?? TRIANGLES) !== TRIANGLES) fail(`${label} mode ${primitive.mode} is unsupported; only triangles are rendered`)
-      if (array(primitive.targets).length > 0) fail(`${label} declares morph targets; morph targets are unsupported`)
-      const attributes = primitive.attributes ?? {}
+      if ((primitive.mode ?? TRIANGLES) !== TRIANGLES) fail(`${label} mode ${String(primitive.mode)} is unsupported; only triangles are rendered`)
+      if (list(primitive, "targets", label).length > 0) fail(`${label} declares morph targets; morph targets are unsupported`)
+      const attributes = requireObject(primitive.attributes, `${label} attributes`)
       for (const [semantic, accessor] of Object.entries(attributes)) {
         if (!SUPPORTED_ATTRIBUTES.has(semantic)) fail(`${label} attribute ${semantic} is unsupported`)
         requireIndex(accessor, accessors.length, `${label} ${semantic} accessor`)
@@ -164,7 +206,7 @@ function preflight(json, binLength) {
     })
   })
 
-  const nodes = array(json.nodes)
+  const nodes = objectList(json, "nodes", "static GLB")
   const parents = new Array(nodes.length).fill(null)
   nodes.forEach((node, index) => {
     if (node.skin !== undefined) fail(`node ${index} references a skin; skinned assets are out of scope for the static adapter`)
@@ -172,18 +214,18 @@ function preflight(json, binLength) {
     if (node.mesh !== undefined) requireIndex(node.mesh, meshes.length, `node ${index} mesh`)
     const hasTrs = node.translation !== undefined || node.rotation !== undefined || node.scale !== undefined
     if (node.matrix !== undefined && hasTrs) fail(`node ${index} declares both matrix and TRS properties`)
-    for (const child of array(node.children)) {
+    for (const child of list(node, "children", `node ${index}`)) {
       requireIndex(child, nodes.length, `node ${index} child`)
       if (parents[child] !== null || child === index) fail(`node ${child} has more than one parent or is its own child`)
       parents[child] = index
     }
   })
 
-  const scenes = array(json.scenes)
+  const scenes = objectList(json, "scenes", "static GLB")
   if (scenes.length === 0) fail("static GLB declares no scene to instantiate")
   const sceneIndex = json.scene ?? 0
   requireIndex(sceneIndex, scenes.length, "static GLB default scene")
-  const roots = array(scenes[sceneIndex].nodes)
+  const roots = list(scenes[sceneIndex], "nodes", `scene ${sceneIndex}`)
   const seenRoots = new Set()
   for (const root of roots) {
     requireIndex(root, nodes.length, "scene root node")
@@ -210,6 +252,15 @@ function requireFinite(values, label) {
   }
 }
 
+/** Checks every component of an accessor, including ones the adapter does not carry. */
+function requireFiniteComponents(attribute, size, label) {
+  for (let index = 0; index < attribute.count; index += 1) {
+    for (let component = 0; component < size; component += 1) {
+      if (!Number.isFinite(attribute.getComponent(index, component))) fail(`${label} contains a non-finite value`)
+    }
+  }
+}
+
 function readTuples(attribute, size, label) {
   const tuples = new Array(attribute.count)
   for (let index = 0; index < attribute.count; index += 1) {
@@ -230,8 +281,10 @@ function readSrgbColors(attribute, label) {
   const colors = new Array(attribute.count)
   for (let index = 0; index < attribute.count; index += 1) {
     const linear = [attribute.getX(index), attribute.getY(index), attribute.getZ(index)]
-    requireFinite(linear, label)
-    if (linear.some((value) => value < 0 || value > 1)) fail(`${label} components must be between 0 and 1`)
+    // The alpha of a VEC4 COLOR_0 is dropped (only OPAQUE renders) but checked like RGB first.
+    const checked = attribute.itemSize === 4 ? [...linear, attribute.getW(index)] : linear
+    requireFinite(checked, label)
+    if (checked.some((value) => value < 0 || value > 1)) fail(`${label} components must be between 0 and 1`)
     scratchColor.setRGB(linear[0], linear[1], linear[2], THREE.LinearSRGBColorSpace)
     const srgb = {r: 0, g: 0, b: 0}
     scratchColor.getRGB(srgb, THREE.SRGBColorSpace)
@@ -246,7 +299,13 @@ function clamp01(value) {
 
 async function lowerPrimitive(parser, primitive, resourceKey, label) {
   const attributes = primitive.attributes
-  const accessor = (index) => parser.getDependency("accessor", index)
+  const accessor = async (index) => {
+    try {
+      return await parser.getDependency("accessor", index)
+    } catch (error) {
+      return fail(`${label} accessor ${index} could not be decoded: ${error?.message ?? String(error)}`)
+    }
+  }
   const positionAttribute = await accessor(attributes.POSITION)
   if (positionAttribute.itemSize !== 3 || positionAttribute.count === 0) fail(`${label} POSITION must be non-empty VEC3`)
   const positions = readTuples(positionAttribute, 3, `${label} POSITION`)
@@ -263,9 +322,11 @@ async function lowerPrimitive(parser, primitive, resourceKey, label) {
   const normals = readTuples(await aligned("NORMAL", [3]), 3, `${label} NORMAL`)
   const uvAttribute = await aligned("TEXCOORD_0", [2])
   const colorAttribute = await aligned("COLOR_0", [3, 4])
-  // TANGENT is accepted and validated for alignment but not carried: tangents only serve normal
-  // maps, which this adapter rejects until a textured-material contract exists.
-  await aligned("TANGENT", [4])
+  // TANGENT is validated like the Rust loader (aligned, and every component finite, as
+  // `three-d-core` checks each `Tangent4`) but not carried: tangents only serve normal maps, which
+  // this adapter rejects until a textured-material contract exists.
+  const tangentAttribute = await aligned("TANGENT", [4])
+  if (tangentAttribute) requireFiniteComponents(tangentAttribute, 4, `${label} TANGENT`)
 
   let indices
   if (primitive.indices === undefined) {
@@ -353,9 +414,24 @@ function localMatrix(node, index) {
     if (!Array.isArray(value) || value.length !== length) fail(`node ${index} ${name} must have ${length} values`)
     requireFinite(value, `node ${index} ${name}`)
   }
-  const quaternion = new THREE.Quaternion().fromArray(rotation)
-  if (quaternion.length() <= Number.EPSILON) fail(`node ${index} rotation must be non-zero`)
-  return matrix.compose(new THREE.Vector3().fromArray(translation), quaternion.normalize(), new THREE.Vector3().fromArray(scale))
+  requireNonZeroQuaternion(rotation, `node ${index} rotation`)
+  return matrix.compose(
+    new THREE.Vector3().fromArray(translation),
+    new THREE.Quaternion().fromArray(rotation).normalize(),
+    new THREE.Vector3().fromArray(scale),
+  )
+}
+
+/** Same rule as the renderer's `validateTransform`: normalization must not invent a rotation. */
+function requireNonZeroQuaternion(rotation, label) {
+  const lengthSquared = rotation.reduce((sum, entry) => sum + entry * entry, 0)
+  if (!Number.isFinite(lengthSquared) || lengthSquared <= Number.EPSILON) fail(`${label} must be a finite non-zero quaternion`)
+}
+
+/** Composed matrices can overflow even when every input is finite. */
+function requireFiniteMatrix(matrix, label) {
+  requireFinite(matrix.elements, label)
+  return matrix
 }
 
 const freezeMatrix = (matrix) => Object.freeze(matrix.toArray())
@@ -368,6 +444,7 @@ const freezeMatrix = (matrix) => Object.freeze(matrix.toArray())
  */
 export async function adaptStaticGlb(source, options = {}) {
   const bytes = toBytes(source)
+  requireObject(options, "static GLB adapt options")
   if (options.resourceKey !== undefined && (typeof options.resourceKey !== "string" || options.resourceKey.trim() === "")) {
     fail("static GLB resourceKey must be a non-empty string")
   }
@@ -377,7 +454,7 @@ export async function adaptStaticGlb(source, options = {}) {
   const resourceKey = options.resourceKey ?? `glb-sha256:${sha256Hex(bytes)}`
   const {parser} = await decodeGltf(bytes)
 
-  const materials = Object.freeze(array(json.materials).map(lowerMaterial))
+  const materials = Object.freeze(list(json, "materials", "static GLB").map(lowerMaterial))
   const primitiveCache = new Map()
   const lowered = async (meshIndex, primitiveIndex) => {
     const key = `${meshIndex}/${primitiveIndex}`
@@ -399,8 +476,8 @@ export async function adaptStaticGlb(source, options = {}) {
   const visit = async (index, parent, parentWorld) => {
     const node = json.nodes[index]
     const local = localMatrix(node, index)
-    const world = parentWorld.clone().multiply(local)
-    const children = array(node.children)
+    const world = requireFiniteMatrix(parentWorld.clone().multiply(local), `node ${index} asset-space matrix`)
+    const children = list(node, "children", `node ${index}`)
     nodes.push(
       Object.freeze({
         index,
@@ -444,6 +521,7 @@ export async function adaptStaticGlb(source, options = {}) {
   }
   for (const root of roots) await visit(root, null, new THREE.Matrix4())
   if (drawables.length === 0) fail("static GLB default scene contains no mesh primitives")
+  requireFinite([...assetMin, ...assetMax], "static GLB asset-space bounds")
 
   return Object.freeze({
     resourceKey,
@@ -458,7 +536,13 @@ export async function adaptStaticGlb(source, options = {}) {
 const scratchInstance = new THREE.Matrix4()
 const scratchDrawable = new THREE.Matrix4()
 
+/**
+ * Mirrors the renderer's `validateTransform` for `modelMatrix`/`RendererTransform` placements
+ * (finite values, positive scale, non-zero quaternion) before composing, so the adapter never
+ * renders a transform the renderer contract would reject.
+ */
 function placementMatrix(placement, label) {
+  requireObject(placement, label)
   const matrix = new THREE.Matrix4()
   if (placement.modelMatrix !== undefined && placement.transform !== undefined) {
     fail(`${label} must provide at most one of modelMatrix or transform`)
@@ -469,11 +553,13 @@ function placementMatrix(placement, label) {
     return matrix.fromArray(placement.modelMatrix)
   }
   if (placement.transform !== undefined) {
-    const {translation, rotationQuaternion = [0, 0, 0, 1], scale = [1, 1, 1]} = placement.transform ?? {}
+    const {translation, rotationQuaternion = [0, 0, 0, 1], scale = [1, 1, 1]} = requireObject(placement.transform, `${label} transform`)
     for (const [value, length] of [[translation, 3], [rotationQuaternion, 4], [scale, 3]]) {
       if (!Array.isArray(value) || value.length !== length) fail(`${label} transform has a malformed component`)
       requireFinite(value, `${label} transform`)
     }
+    if (scale.some((value) => value <= 0)) fail(`${label} transform scale values must be positive`)
+    requireNonZeroQuaternion(rotationQuaternion, `${label} transform rotationQuaternion`)
     return matrix.compose(
       new THREE.Vector3().fromArray(translation),
       new THREE.Quaternion().fromArray(rotationQuaternion).normalize(),
@@ -483,11 +569,13 @@ function placementMatrix(placement, label) {
   return matrix
 }
 
-function composedMatrix(instance, drawable) {
-  return scratchInstance.copy(instance).multiply(scratchDrawable.fromArray(drawable.matrix)).toArray()
+function composedMatrix(instance, drawable, label) {
+  return requireFiniteMatrix(scratchInstance.copy(instance).multiply(scratchDrawable.fromArray(drawable.matrix)), label).toArray()
 }
 
 function selectedDrawables(asset, filter) {
+  if (!isObject(asset) || !Array.isArray(asset.drawables)) fail("static GLB asset must be the result of adaptStaticGlb")
+  if (filter !== undefined && typeof filter !== "function") fail("static GLB filter must be a function")
   const drawables = filter === undefined ? asset.drawables : asset.drawables.filter(filter)
   if (drawables.length === 0) fail("static GLB selection contains no drawables")
   return drawables
@@ -504,14 +592,15 @@ function requireId(id) {
  */
 export function staticGlbSceneNodes(asset, placement) {
   requireId(placement?.id)
-  const instance = placementMatrix(placement, `static GLB placement ${placement.id}`)
+  const label = `static GLB placement ${placement.id}`
+  const instance = placementMatrix(placement, label)
   return selectedDrawables(asset, placement.filter).map((drawable) => {
     const {material} = drawable
     const node = {
       id: `${placement.id}/${drawable.id}`,
       geometry: drawable.geometry,
       color: material.baseColor,
-      modelMatrix: composedMatrix(instance, drawable),
+      modelMatrix: composedMatrix(instance, drawable, `${label} ${drawable.id} matrix`),
     }
     if (material.doubleSided) node.doubleSided = true
     if (placement.opacity !== undefined) node.opacity = placement.opacity
@@ -528,14 +617,17 @@ export function staticGlbSceneNodes(asset, placement) {
 export function staticGlbInstanceBatches(asset, options) {
   requireId(options?.id)
   if (!Array.isArray(options.instances)) fail(`static GLB batch ${options.id} instances must be an array`)
-  const instances = options.instances.map((instance, index) => placementMatrix(instance, `static GLB batch ${options.id}[${index}]`))
+  const label = (index) => `static GLB batch ${options.id}[${index}]`
+  const instances = options.instances.map((instance, index) => placementMatrix(instance, label(index)))
   return selectedDrawables(asset, options.filter).map((drawable) => {
     const {material} = drawable
     const batch = {
       id: `${options.id}/${drawable.id}`,
       geometry: drawable.geometry,
       color: material.baseColor,
-      instances: instances.map((instance) => ({modelMatrix: composedMatrix(instance, drawable)})),
+      instances: instances.map((instance, index) => ({
+        modelMatrix: composedMatrix(instance, drawable, `${label(index)} ${drawable.id} matrix`),
+      })),
     }
     if (material.doubleSided) batch.doubleSided = true
     if (options.revision !== undefined) batch.revision = options.revision

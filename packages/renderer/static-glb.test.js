@@ -276,10 +276,112 @@ describe("static GLB rejection", () => {
       const accessor = json.accessors[json.meshes[0].primitives[0].attributes.TEXCOORD_0]
       new DataView(binary.buffer).setFloat32(json.bufferViews[accessor.bufferView].byteOffset, Number.POSITIVE_INFINITY, true)
     }), /TEXCOORD_0 contains a non-finite value/],
+    // TANGENT is not carried, but three-d-core rejects any non-finite Tangent4 component, so the
+    // adapter checks all four (here the handedness w) before discarding the accessor.
+    ["non-finite tangent", () => mutated(rockDocument, (json, binary) => {
+      const accessor = json.accessors[json.meshes[0].primitives[0].attributes.TANGENT]
+      new DataView(binary.buffer).setFloat32((json.bufferViews[accessor.bufferView].byteOffset ?? 0) + 12, Number.NaN, true)
+    }), /TANGENT contains a non-finite value/],
+    // Malformed JSON entries are contract errors, never raw TypeErrors from dereferencing them.
+    ["null material entry", () => mutated(rockDocument, (json) => {
+      json.materials = [null]
+    }), /materials 0 must be an object/],
+    ["non-array materials", () => mutated(rockDocument, (json) => {
+      json.materials = {0: json.materials[0]}
+    }), /materials must be an array/],
+    ["non-object pbrMetallicRoughness", () => mutated(rockDocument, (json) => {
+      json.materials[0].pbrMetallicRoughness = "metal"
+    }), /pbrMetallicRoughness must be an object/],
+    ["non-boolean doubleSided", () => mutated(rockDocument, (json) => {
+      json.materials[0].doubleSided = "yes"
+    }), /doubleSided must be a boolean/],
+    ["non-numeric emissive factor", () => mutated(rockDocument, (json) => {
+      json.materials[0].emissiveFactor = [null, 0, 0]
+    }), /emissiveFactor contains a non-finite value/],
+    ["missing asset", () => mutated(rockDocument, (json) => {
+      json.asset = null
+    }), /asset must be an object/],
+    ["null buffer entry", () => mutated(rockDocument, (json) => {
+      json.buffers = [null]
+    }), /buffers 0 must be an object/],
+    ["buffer without byteLength", () => mutated(rockDocument, (json) => {
+      delete json.buffers[0].byteLength
+    }), /buffer 0 byteLength must be a non-negative integer/],
+    ["null bufferView entry", () => mutated(rockDocument, (json) => {
+      json.bufferViews[0] = null
+    }), /bufferViews 0 must be an object/],
+    ["bufferView without byteLength", () => mutated(rockDocument, (json) => {
+      delete json.bufferViews[0].byteLength
+    }), /bufferView 0 byteLength must be a non-negative integer/],
+    ["null accessor entry", () => mutated(rockDocument, (json) => {
+      json.accessors[0] = null
+    }), /accessors 0 must be an object/],
+    ["accessor without count", () => mutated(rockDocument, (json) => {
+      delete json.accessors[0].count
+    }), /accessor 0 count must be a non-negative integer/],
+    ["null mesh entry", () => mutated(rockDocument, (json) => {
+      json.meshes[0] = null
+    }), /meshes 0 must be an object/],
+    ["null primitive entry", () => mutated(rockDocument, (json) => {
+      json.meshes[0].primitives[0] = null
+    }), /primitives 0 must be an object/],
+    ["missing primitive attributes", () => mutated(rockDocument, (json) => {
+      delete json.meshes[0].primitives[0].attributes
+    }), /primitive 0 attributes must be an object/],
+    ["null node entry", () => mutated(treeDocument, (json) => {
+      json.nodes[2] = null
+    }), /nodes 2 must be an object/],
+    ["non-array node children", () => mutated(treeDocument, (json) => {
+      json.nodes[0].children = 1
+    }), /node 0 children must be an array/],
+    ["null scene entry", () => mutated(rockDocument, (json) => {
+      json.scenes[0] = null
+    }), /scenes 0 must be an object/],
+    ["zero node rotation", () => mutated(treeDocument, (json) => {
+      json.nodes[2].rotation = [0, 0, 0, 0]
+    }), /node 2 rotation must be a finite non-zero quaternion/],
+    ["overflowing node rotation", () => mutated(treeDocument, (json) => {
+      json.nodes[2].rotation = [1e200, 0, 0, 1]
+    }), /node 2 rotation must be a finite non-zero quaternion/],
+    ["overflowing asset-space matrix", () => mutated(treeDocument, (json) => {
+      json.nodes[0].scale = [1e200, 1e200, 1e200]
+      json.nodes[1].scale = [1e200, 1e200, 1e200]
+    }), /node 1 asset-space matrix contains a non-finite value/],
   ]
   for (const [name, bytes, pattern] of cases) {
     test(name, () => rejection(bytes(), pattern))
   }
+
+  test("a VEC4 float COLOR_0 alpha is checked before it is dropped", async () => {
+    // Reuse the rock's float VEC4 tangent accessor as COLOR_0 so the alpha component is real data.
+    const colored = (alpha) => mutated(rockDocument, (json, binary) => {
+      const attributes = json.meshes[0].primitives[0].attributes
+      const accessor = json.accessors[attributes.TANGENT]
+      const view = new DataView(binary.buffer)
+      const offset = json.bufferViews[accessor.bufferView].byteOffset ?? 0
+      for (let vertex = 0; vertex < accessor.count; vertex += 1) {
+        for (let component = 0; component < 4; component += 1) view.setFloat32(offset + (vertex * 4 + component) * 4, 0.5, true)
+      }
+      view.setFloat32(offset + 12, alpha, true)
+      attributes.COLOR_0 = attributes.TANGENT
+      delete attributes.TANGENT
+    })
+    const asset = await adaptStaticGlb(colored(1))
+    expect(asset.drawables[0].geometry.colors).toHaveLength(asset.drawables[0].geometry.positions.length)
+    await rejection(colored(Number.NaN), /COLOR_0 contains a non-finite value/)
+    await rejection(colored(2), /COLOR_0 components must be between 0 and 1/)
+  })
+
+  test("non-object adapt options are a contract error", async () => {
+    let error
+    try {
+      await adaptStaticGlb(rockBytes, null)
+    } catch (caught) {
+      error = caught
+    }
+    expect(error).toBeInstanceOf(StaticGlbContractError)
+    expect(error.message).toMatch(/adapt options must be an object/)
+  })
 
   test("optional extensions, including unlit, are reported and not applied", async () => {
     const asset = await adaptStaticGlb(mutated(rockDocument, (json) => {
@@ -350,6 +452,39 @@ describe("static GLB renderer submission", () => {
     expect(() => validateRenderFrame({camera, nodes: [], instanceBatches: trees})).not.toThrow()
     const bark = staticGlbInstanceBatches(tree, {id: "trees", instances: [{}], filter: (d) => d.material.name === "tree-bark"})
     expect(bark).toHaveLength(3)
+  })
+
+  test("placements follow the renderer transform contract instead of normalizing bad input", async () => {
+    const rock = await adaptStaticGlb(rockBytes)
+    const contractError = (place, pattern) => {
+      let error
+      try {
+        place()
+      } catch (caught) {
+        error = caught
+      }
+      expect(error).toBeInstanceOf(StaticGlbContractError)
+      expect(error.message).toMatch(pattern)
+    }
+    const node = (fields) => () => staticGlbSceneNodes(rock, {id: "rock", ...fields})
+    const batch = (instance, fields = {}) => () => staticGlbInstanceBatches(rock, {id: "rocks", instances: [instance], ...fields})
+    const zeroRotation = {translation: [0, 0, 0], rotationQuaternion: [0, 0, 0, 0]}
+    // The renderer rejects this exact RendererTransform; normalization would render identity.
+    expect(() => validateRenderFrame({camera, nodes: [{id: "n", geometry: rock.drawables[0].geometry, color: "#ffffff", transform: zeroRotation}]})).toThrow(
+      /rotation quaternion for n must be non-zero/,
+    )
+    contractError(node({transform: zeroRotation}), /rotationQuaternion must be a finite non-zero quaternion/)
+    contractError(batch({transform: zeroRotation}), /rocks\[0\] transform rotationQuaternion must be a finite non-zero quaternion/)
+    contractError(node({transform: {translation: [0, 0, 0], rotationQuaternion: [1e200, 0, 0, 1]}}), /finite non-zero quaternion/)
+    contractError(node({transform: {translation: [0, 0, 0], scale: [1, 0, 1]}}), /scale values must be positive/)
+    contractError(batch({transform: {translation: [0, 0, 0], scale: [-1, 1, 1]}}), /scale values must be positive/)
+    contractError(node({transform: null}), /transform must be an object/)
+    contractError(batch(null), /rocks\[0\] must be an object/)
+    contractError(node({modelMatrix: Array(16).fill(1.5e308)}), /matrix contains a non-finite value/)
+    contractError(batch({modelMatrix: Array(16).fill(1.5e308)}), /matrix contains a non-finite value/)
+    contractError(node({filter: "trunk"}), /filter must be a function/)
+    contractError(() => staticGlbSceneNodes({}, {id: "rock"}), /asset must be the result of adaptStaticGlb/)
+    contractError(() => staticGlbInstanceBatches(null, {id: "rocks", instances: []}), /asset must be the result of adaptStaticGlb/)
   })
 })
 

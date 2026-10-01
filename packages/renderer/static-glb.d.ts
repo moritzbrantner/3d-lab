@@ -90,7 +90,8 @@ export type StaticGlbAdaptOptions = {
  * once per asset and reuse the result for every frame and placement. Rejects (with
  * `StaticGlbContractError`) textures, non-OPAQUE alpha, skins, animations, morph targets,
  * non-triangle primitives, missing NORMAL, attributes other than POSITION/NORMAL/TANGENT/
- * TEXCOORD_0/COLOR_0, URI buffers, and unsupported required extensions.
+ * TEXCOORD_0/COLOR_0, URI buffers, unsupported required extensions, malformed JSON entries, and
+ * non-finite accessor values (including TANGENT and COLOR_0 alpha, which are validated but not carried).
  */
 export function adaptStaticGlb(
   source: ArrayBuffer | ArrayBufferView,
@@ -114,7 +115,11 @@ type StaticGlbSelection = {
 
 export type StaticGlbPlacement = StaticGlbSelection & StaticGlbPlacementTransform
 
-/** Scene nodes for one placement of the asset (identity placement when no transform is given). */
+/**
+ * Scene nodes for one placement of the asset (identity placement when no transform is given). The
+ * placement must satisfy the renderer transform contract (finite values, positive scale, non-zero
+ * quaternion); violations throw `StaticGlbContractError` instead of being normalized.
+ */
 export function staticGlbSceneNodes(asset: StaticGlbAsset, placement: StaticGlbPlacement): RendererSceneNode[]
 
 export type StaticGlbInstanceBatchOptions = StaticGlbSelection & {
