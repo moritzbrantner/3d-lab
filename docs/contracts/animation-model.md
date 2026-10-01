@@ -103,7 +103,7 @@ A `Skeleton` is an ordered joint hierarchy plus inverse bind matrices. Skin matr
 
 `joint_world × inverse_bind`
 
-Each `SkinInfluence` has four joint slots and four non-negative finite weights. Construction normalizes the weights to sum to one, and validation rejects active joint indices outside the skeleton.
+Each `SkinInfluence` has four joint slots and four non-negative finite weights. Construction rejects weight tuples whose total is zero or overflows to a non-finite value, normalizes the remaining weights to sum to one, and validation rejects active joint indices outside the skeleton.
 
 ## glTF boundary
 

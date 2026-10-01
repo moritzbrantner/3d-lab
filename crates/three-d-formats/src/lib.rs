@@ -772,6 +772,7 @@ fn convert_obj_model(model_index: usize, model: tobj::Model) -> Result<AssetMesh
 #[cfg(test)]
 mod tests {
     use super::*;
+    use three_d_animation::SkeletonError;
 
     const OBJ_TRIANGLE: &[u8] = br#"
 o Triangle
@@ -850,6 +851,48 @@ f 1//1 2//1 3//1
         assert!(matches!(
             load_gltf(source),
             Err(FormatError::UnsupportedGltfBufferUri(uri)) if uri == "triangle.bin"
+        ));
+    }
+
+    #[test]
+    fn gltf_rejects_skin_weights_whose_total_overflows() {
+        // Vertex 1 carries WEIGHTS_0 = [f32::MAX, f32::MAX, 0, 0]: each component
+        // is finite, but the sum overflows and would normalize to all zeros.
+        let source = br#"{
+          "asset": { "version": "2.0" },
+          "meshes": [{
+            "primitives": [{
+              "attributes": { "POSITION": 0, "JOINTS_0": 2, "WEIGHTS_0": 3 },
+              "indices": 1,
+              "mode": 4
+            }]
+          }],
+          "buffers": [{
+            "byteLength": 116,
+            "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAABAAIAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAAAA//9/f///f38AAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAA="
+          }],
+          "bufferViews": [
+            { "buffer": 0, "byteOffset": 0, "byteLength": 36 },
+            { "buffer": 0, "byteOffset": 36, "byteLength": 6 },
+            { "buffer": 0, "byteOffset": 44, "byteLength": 24 },
+            { "buffer": 0, "byteOffset": 68, "byteLength": 48 }
+          ],
+          "accessors": [
+            { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [0.0, 0.0, 0.0], "max": [1.0, 1.0, 0.0] },
+            { "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" },
+            { "bufferView": 2, "componentType": 5123, "count": 3, "type": "VEC4" },
+            { "bufferView": 3, "componentType": 5126, "count": 3, "type": "VEC4" }
+          ]
+        }"#;
+
+        assert!(matches!(
+            load_gltf(source),
+            Err(FormatError::InvalidSkinInfluence {
+                mesh_index: 0,
+                primitive_index: 0,
+                vertex_index: 1,
+                reason,
+            }) if reason == SkeletonError::NonFiniteTotalWeight.to_string()
         ));
     }
 
