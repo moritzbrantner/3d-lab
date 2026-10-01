@@ -1218,5 +1218,6 @@ mod tests {
 
 pub mod humanoid;
 pub mod retarget;
+pub mod sampling;
 
 mod projective;

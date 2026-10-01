@@ -53,6 +53,17 @@ An `AnimationClip` groups one or more typed transform tracks and samples them in
 
 `PoseBuffer` and `ClipBlendWorkspace` own reusable transform storage. Cross-fades sample both clips from the same explicit base pose and blend translation/scale linearly and rotations with shortest-arc SLERP. Callers provide the output slice, so the hot path does not require per-sample pose allocation.
 
+## Hot-path clip sampling contract
+
+`AnimationClip::sample` remains the reference sampler. `three_d_animation::sampling` adds crowd-scale samplers that are checked against it rather than defining new semantics:
+
+- `CompiledClip::compile(&clip, node_count)` pre-resolves every track's node and channel once (failing with `ClipError::NodeOutOfBounds`) and flattens key times and values into contiguous `f32` arrays. `sample(time, pose)` uses a per-track binary search; `sample_with_cursor(time, &mut cursor, pose)` first tries the cursor's cached segment and its successor, then falls back to binary search. Both write only animated channels into a caller-owned pose of exactly `node_count` transforms and allocate nothing.
+- Compiled sampling is bit-for-bit identical to the reference for every finite time: the same clip-time policy, the same segment rule (clamp at/outside the end keys, otherwise `times[s] < t <= times[s + 1]`), the same interpolation-factor arithmetic, and the same `Interpolate`/SLERP code. A `SampleCursor` affects lookup cost only, never the selected segment.
+- `SampleCursor` is per-instance state (one per character per clip); compiled clips are shared immutable data. A cursor from a clip with a different track count fails with `SamplerError::CursorMismatch`; a wrong pose length fails with `SamplerError::PoseLengthMismatch`; non-finite time fails with `ClipError::NonFiniteTime`. Errors are detected before any pose write.
+- `QuantizedClip::compress(&clip, node_count, QuantizationBudget)` stores key values as `u16` (translation/scale over each track's per-component range, rotations over `[-1, 1]` decoded as unit quaternions) while keeping key times exact. The budget is an explicit per-key maximum: Euclidean distance for translation/scale and rotation angle in radians (`sampling::rotation_angle`). Compression fails closed on an invalid budget, non-finite or zero-length keys, a quantization-induced SLERP hemisphere flip, or any key exceeding its budget; `measured_error()` reports the largest accepted error. Because segment selection and factors are unchanged, sampled error is bounded by the key budget plus float rounding.
+
+`benches/clip_sampling_hot_path.rs` prints raw JSON evidence for one character and a 256-character crowd (reference, compiled, cursor, quantized, plus key-storage bytes). It is evidence, not a timing gate.
+
 ## Retargeting contract
 
 Humanoid retargeting is explicit semantic adaptation, not renderer behavior.

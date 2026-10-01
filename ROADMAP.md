@@ -98,5 +98,6 @@
 - [x] Add topology structural work budgets, deterministic topology runtime evidence, and weekly same-surface runtime calibration.
 - [x] Replace per-operation flat topology rematerialization with persistent vertex/attribute chunks and localized triangle chunks; materialize contiguous `IndexedMesh` data only at explicit compatibility/render/export boundaries.
 - [x] Replace repeated full topology adjacency rebuilds with a lazily built vertex-incidence cache that follows localized chunk replacements and undo/redo without entering semantic history.
+- [x] Add pre-resolved, allocation-free compiled clip sampling with cursor/binary-search key lookup, bit-for-bit parity against the reference sampler, an optional 16-bit quantized track store with an explicit fail-closed error budget, and raw single-character/crowd benchmark evidence.
 - [ ] Reduce renderer-side full topology materialization and whole `BufferGeometry` replacement where browser evidence shows it is material.
 - [ ] After at least four independent same-surface calibration runs, review robust MAD-derived wall-time/RSS margins and move the accepted policy into an evaluator-owned confirmation gate.
