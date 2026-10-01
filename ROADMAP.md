@@ -61,12 +61,14 @@
 ### Slice 7 — procedural character animation
 
 - [x] Establish a strict production-humanoid profile that composes the existing skeleton and retargeting contracts, separates Root from Hips, validates semantic limb ancestry, and standardizes equipment attachment sockets.
-- [ ] Add renderer-independent analytical two-bone IK for arms and legs with explicit target, pole-vector, reach, and joint-limit semantics.
-- [ ] Add weighted post-sampling pose constraints so authored/keyframed animation remains the base pose and procedural correction can blend in and out without becoming gameplay authority.
+- [x] Add renderer-independent analytical two-bone IK for arms and legs with explicit target, pole-vector, and reach semantics (layered foot/hand/look-at goals in `three_d_animation::ik`).
+- [ ] Add per-joint angular limits to two-bone IK.
+- [x] Add weighted post-sampling pose constraints so authored/keyframed animation remains the base pose and procedural correction can blend in and out without becoming gameplay authority.
 - [ ] Add foot/limb placement that consumes external world-contact samples (position, normal, support identity) without making `three-d-animation` depend on a physics engine.
 - [ ] Add authored contact/plant metadata, world-space foot locking, pelvis/body-height correction, and surface-normal alignment for stable walking on slopes, stairs, and uneven ground.
 - [ ] Add predictive swing/landing targets and bounded motion-warping primitives for interactions, attacks, vaults, and other target-relative animation while keeping authoritative movement outside the animation runtime.
 - [ ] Generalize proven constraint primitives to hand grips, look-at/aim constraints, quadruped limbs, and longer chains only after the two-bone/contact contracts are stable.
+- [ ] Add an interactive layered-IK browser lab (deferred from #65 until the Rust IK semantics are reachable from the web lab without a parallel TypeScript solver).
 - [ ] Add an interactive uneven-ground/stair acceptance lab plus deterministic pose/constraint fixtures so render adapters can share the same semantics.
 
 ### Slice 8 — automatic rigged asset preparation

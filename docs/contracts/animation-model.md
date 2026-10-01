@@ -13,7 +13,8 @@ The Three.js lessons and Rust animation crate intentionally share concepts, not 
 - `Transform` as translation + quaternion rotation + scale;
 - ordered `TransformNode` hierarchies and deterministic world-matrix evaluation;
 - typed keyframes, step/linear/smooth interpolation, reusable `AnimationClip` tracks, explicit loop policy, reusable pose buffers, and deterministic cross-fades;
-- skeleton joints, inverse bind matrices, and normalized four-slot skin influences.
+- skeleton joints, inverse bind matrices, and normalized four-slot skin influences;
+- layered post-sampling IK for two-bone limbs, feet, hands, and look-at chains.
 
 The web application owns interactive presentation, Three.js scene objects, `AnimationMixer`, `Bone`/`SkinnedMesh`, and `GLTFLoader`.
 
@@ -96,6 +97,34 @@ cross-process adapters. `asset-tooling-humanoid-adapter` accepts the
 `HumanoidSkeleton::production_v1` as the authoritative validation step. The
 adapter may parse and serialize the transport document, but it must not duplicate
 the hierarchy, Root/Hips, or socket-ownership rules in another implementation.
+
+## Layered IK contract
+
+`three_d_animation::ik` applies procedural correction after sampling. The
+caller samples clips/blends into a base pose; `IkWorkspace::solve` reads that
+base pose, copies it into a caller-owned output, and applies `IkLayer`s in
+slice order. Source clips and the base pose are never written.
+
+- `TwoBoneChain` is a validated root → mid → tip ancestry (helper/twist joints
+  may sit between). `LimbGoal` solves it analytically with an explicit target,
+  optional pole point for the bend plane, and `max_reach` fraction. Targets
+  outside `[|upper - lower|, max_reach]` are clamped to the nearest reachable
+  pose and reported as `IkStatus::Clamped`.
+- Foot targets align a foot-local up axis to a supplied ground normal; hand
+  targets optionally set an exact character-space grip orientation.
+- `LookAtChain` distributes aim rotation over at most four ancestor → aim
+  joints with per-joint weights and a maximum total deviation angle.
+- Each layer has a weight in `[0, 1]` and an optional per-joint `JointMask`;
+  affected joints blend local rotations from the pre-layer pose with shortest-arc
+  SLERP. Weight zero leaves the pose bit-identical.
+- Work is bounded: at most `MAX_IK_LAYERS` layers, no iteration, and at most
+  `MAX_WORLD_PASSES_PER_LAYER` hierarchy refreshes per layer, each starting at
+  the first changed joint. Solves reuse workspace storage and do not allocate.
+
+Targets, poles, and normals are explicit character-space inputs. Ground
+contacts, aim points, and grips come from the consuming game/physics authority;
+the IK module performs no world queries. Rotations are applied as character-space
+deltas, so ancestors of solved joints are expected to carry uniform scale.
 
 ## Skinning contract
 
