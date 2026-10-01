@@ -1,0 +1,13 @@
+[package]
+name = "three-d-playback"
+version = "0.1.0"
+edition = "2024"
+description = "Frame-rate-independent playback clocks and cross-fade transition policy for 3d-lab"
+license = "MIT"
+
+[dependencies]
+three-d-animation = { path = "../three-d-animation" }
+
+[dev-dependencies]
+serde_json = "=1.0.151"
+three-d-core = { path = "../three-d-core" }

@@ -28,6 +28,7 @@
 - [x] Build a three-joint skinned strip from explicit bone weights before introducing file formats.
 - [x] Load a minimal glTF 2.0 translation animation with `GLTFLoader` and `AnimationMixer`.
 - [x] Add renderer-independent `Mat4`, `Quat`, `Transform`, hierarchy, keyframe/clip, skeleton, and skin-influence types in Rust.
+- [x] Add frame-rate-independent playback through `three-d-playback`: elapsed-time clamp/loop/reverse clocks, wall-time transitions separate from clip clocks, deterministic cross-fades, and a Rust-evidence timing lab.
 
 ### Slice 4 — renderer comparison
 
