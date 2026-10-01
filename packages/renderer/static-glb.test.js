@@ -96,8 +96,6 @@ describe("static GLB adaptation", () => {
       baseColorFactor: [0.25, 0.27, 0.29, 1],
       metallicFactor: 0,
       roughnessFactor: 0.85,
-      emissive: null,
-      unlit: false,
       doubleSided: true,
     })
     expect(Object.isFrozen(asset) && Object.isFrozen(drawable.geometry) && Object.isFrozen(drawable.geometry.positions[0])).toBe(true)
@@ -147,7 +145,6 @@ describe("static GLB adaptation", () => {
     // Normalized UNSIGNED_BYTE COLOR_0 (linear) becomes sRGB components; alpha is dropped.
     const top = foliage.geometry.positions.findIndex(([, y]) => y > 0)
     expectClose(foliage.geometry.colors[top], [128, 200, 64].map((c) => toSrgbComponent(c / 255)), 4)
-    expect(foliage.material.emissive).toBe(toSrgbHex([0, 0.02, 0]))
     expect(foliage.material.baseColor).toBe("#ffffff")
 
     // Non-indexed primitives get sequential indices.
@@ -195,6 +192,22 @@ describe("static GLB rejection", () => {
       json.extensionsUsed = ["KHR_draco_mesh_compression"]
       json.extensionsRequired = ["KHR_draco_mesh_compression"]
     }), /requires unsupported extension KHR_draco_mesh_compression/],
+    // three-d-formats enables no glTF extension, so a required unlit extension fails there too.
+    ["required unlit extension", () => mutated(rockDocument, (json) => {
+      json.extensionsUsed = ["KHR_materials_unlit"]
+      json.extensionsRequired = ["KHR_materials_unlit"]
+      json.materials[0].extensions = {KHR_materials_unlit: {}}
+    }), /requires unsupported extension KHR_materials_unlit/],
+    // three-d-formats rejects any non-zero emissive factor; the adapter must not interpret it.
+    ["emissive factor", () => mutated(rockDocument, (json) => {
+      json.materials[0].emissiveFactor = [0, 0.02, 0]
+    }), /material 0 uses a non-zero emissiveFactor/],
+    ["malformed emissive factor", () => mutated(rockDocument, (json) => {
+      json.materials[0].emissiveFactor = [0, 0]
+    }), /emissiveFactor must have 3 components/],
+    ["emissive texture", () => mutated(rockDocument, (json) => {
+      json.materials[0].emissiveTexture = {index: 0}
+    }), /emissiveTexture; textured materials/],
     ["external buffer URI", () => mutated(rockDocument, (json) => {
       json.buffers[0].uri = "rock.bin"
     }), /uses a URI/],
@@ -240,6 +253,9 @@ describe("static GLB rejection", () => {
     ["node with two parents", () => mutated(treeDocument, (json) => {
       json.nodes[3].children = [2]
     }), /more than one parent/],
+    ["duplicate default-scene root", () => mutated(treeDocument, (json) => {
+      json.scenes[0].nodes = [0, 0]
+    }), /scene root node 0 is listed more than once/],
     ["no scene", () => mutated(rockDocument, (json) => {
       delete json.scene
       json.scenes = []
@@ -265,14 +281,26 @@ describe("static GLB rejection", () => {
     test(name, () => rejection(bytes(), pattern))
   }
 
-  test("optional extensions are reported, not applied; unlit is mapped", async () => {
+  test("optional extensions, including unlit, are reported and not applied", async () => {
     const asset = await adaptStaticGlb(mutated(rockDocument, (json) => {
       json.extensionsUsed = ["KHR_materials_specular", "KHR_materials_unlit"]
       json.materials[0].extensions = {KHR_materials_unlit: {}}
     }))
-    expect(asset.ignoredExtensions).toEqual(["KHR_materials_specular"])
-    expect(asset.materials[0].unlit).toBe(true)
-    expect(staticGlbSceneNodes(asset, {id: "rock"})[0].unlit).toBe(true)
+    expect(asset.ignoredExtensions).toEqual(["KHR_materials_specular", "KHR_materials_unlit"])
+    expect(asset.materials[0]).not.toHaveProperty("unlit")
+    const [node] = staticGlbSceneNodes(asset, {id: "rock"})
+    expect(node).not.toHaveProperty("unlit")
+    expect(node).not.toHaveProperty("emissive")
+  })
+
+  test("distinct default-scene roots still adapt", async () => {
+    const asset = await adaptStaticGlb(mutated(treeDocument, (json) => {
+      json.nodes[0].children = [1]
+      json.scenes[0].nodes = [0, 3]
+    }))
+    const ids = staticGlbSceneNodes(asset, {id: "oak"}).map((node) => node.id)
+    expect(new Set(ids).size).toBe(ids.length)
+    expect(() => validateRenderFrame({camera, nodes: staticGlbSceneNodes(asset, {id: "oak"})})).not.toThrow()
   })
 })
 
@@ -283,7 +311,8 @@ describe("static GLB renderer submission", () => {
     expect(nodes.map((node) => node.id)).toEqual(asset.drawables.map((drawable) => `oak-1/${drawable.id}`))
     expect(nodes[0].geometry).toBe(asset.drawables[0].geometry)
     expectClose(matrixParts(nodes[1].modelMatrix).translation, [10, 2.5, -3])
-    expect(nodes[1]).toMatchObject({color: "#ffffff", emissive: toSrgbHex([0, 0.02, 0]), doubleSided: true})
+    expect(nodes[1]).toMatchObject({color: "#ffffff", doubleSided: true})
+    expect(nodes.some((node) => "emissive" in node || "unlit" in node)).toBe(false)
     expect(() => validateRenderFrame({camera, nodes})).not.toThrow()
 
     const trunkOnly = staticGlbSceneNodes(asset, {id: "oak-2", filter: (drawable) => drawable.node === 1})
@@ -301,7 +330,7 @@ describe("static GLB renderer submission", () => {
     expect(createIndexedMeshGeometry(a.geometry).getAttribute("uv").count).toBe(a.geometry.positions.length)
   })
 
-  test("instance batches: one batch per drawable, emissive materials rejected", async () => {
+  test("instance batches: one batch per drawable, matching the equal scene nodes", async () => {
     const rock = await adaptStaticGlb(rockBytes)
     const batches = staticGlbInstanceBatches(rock, {
       id: "rocks",
@@ -315,8 +344,11 @@ describe("static GLB renderer submission", () => {
     expect(() => validateRenderFrame({camera, nodes: [], instanceBatches: batches})).not.toThrow()
 
     const tree = await adaptStaticGlb(treeBytes)
-    expect(() => staticGlbInstanceBatches(tree, {id: "trees", instances: [{}]})).toThrow(/emissive or unlit/)
-    const bark = staticGlbInstanceBatches(tree, {id: "trees", instances: [{}], filter: (d) => !d.material.emissive})
+    const trees = staticGlbInstanceBatches(tree, {id: "trees", instances: [{}]})
+    expect(trees).toHaveLength(4)
+    expect(trees.map((batch) => batch.color)).toEqual(staticGlbSceneNodes(tree, {id: "oak"}).map((node) => node.color))
+    expect(() => validateRenderFrame({camera, nodes: [], instanceBatches: trees})).not.toThrow()
+    const bark = staticGlbInstanceBatches(tree, {id: "trees", instances: [{}], filter: (d) => d.material.name === "tree-bark"})
     expect(bark).toHaveLength(3)
   })
 })

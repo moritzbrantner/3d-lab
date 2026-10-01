@@ -16,8 +16,8 @@ export type StaticGlbBounds = Readonly<{
 }>
 
 /**
- * A glTF material lowered to factors. `baseColor`/`emissive` are the sRGB `#RRGGBB` forms of the
- * linear glTF factors that the renderer applies; metallic/roughness are preserved for inspection
+ * A glTF material lowered to factors. `baseColor` is the sRGB `#RRGGBB` form of the linear glTF
+ * factor that the renderer applies; metallic/roughness are preserved for inspection
  * but not yet rendered (the renderer's lit material has fixed metalness/roughness).
  */
 export type StaticGlbMaterial = Readonly<{
@@ -29,10 +29,6 @@ export type StaticGlbMaterial = Readonly<{
   baseColorFactor: readonly [number, number, number, number]
   metallicFactor: number
   roughnessFactor: number
-  /** sRGB emissive color, or `null` when the emissive factor is zero or the material is unlit. */
-  emissive: `#${string}` | null
-  /** `KHR_materials_unlit`. */
-  unlit: boolean
   doubleSided: boolean
 }>
 
@@ -127,10 +123,7 @@ export type StaticGlbInstanceBatchOptions = StaticGlbSelection & {
   revision?: string
 }
 
-/**
- * One instance batch per drawable for many placements of the asset. Throws for drawables with
- * emissive or unlit materials, which batches cannot render.
- */
+/** One instance batch per drawable for many placements of the asset. */
 export function staticGlbInstanceBatches(
   asset: StaticGlbAsset,
   options: StaticGlbInstanceBatchOptions,

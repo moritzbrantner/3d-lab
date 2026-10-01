@@ -15,8 +15,12 @@ const JSON_CHUNK = 0x4e4f534a
 const BIN_CHUNK = 0x004e4942
 const TRIANGLES = 4
 const SUPPORTED_ATTRIBUTES = new Set(["POSITION", "NORMAL", "TANGENT", "TEXCOORD_0", "COLOR_0"])
-/** Extensions whose semantics the adapter maps; every other required extension is rejected. */
-const SUPPORTED_EXTENSIONS = new Set(["KHR_materials_unlit"])
+/**
+ * Extensions whose semantics the adapter maps. Empty on purpose: `three-d-formats` enables no glTF
+ * extension, so it rejects every required extension and ignores optional ones (including
+ * `KHR_materials_unlit`). The adapter mirrors that instead of interpreting extensions itself.
+ */
+const SUPPORTED_EXTENSIONS = new Set()
 const MATERIAL_TEXTURES = [
   ["pbrMetallicRoughness", "baseColorTexture"],
   ["pbrMetallicRoughness", "metallicRoughnessTexture"],
@@ -131,6 +135,13 @@ function preflight(json, binLength) {
     if (material.alphaMode !== undefined && material.alphaMode !== "OPAQUE") {
       fail(`material ${index} alphaMode ${material.alphaMode} is unsupported; only OPAQUE is rendered`)
     }
+    // Mirrors `three-d-formats`, which rejects any non-zero emissive factor: emissive semantics
+    // belong to the Rust material model first, not to this adapter.
+    const emissiveFactor = material.emissiveFactor ?? [0, 0, 0]
+    if (!Array.isArray(emissiveFactor) || emissiveFactor.length !== 3) fail(`material ${index} emissiveFactor must have 3 components`)
+    if (emissiveFactor.some((value) => value !== 0)) {
+      fail(`material ${index} uses a non-zero emissiveFactor; emissive materials are not supported yet`)
+    }
   })
 
   const meshes = array(json.meshes)
@@ -173,9 +184,12 @@ function preflight(json, binLength) {
   const sceneIndex = json.scene ?? 0
   requireIndex(sceneIndex, scenes.length, "static GLB default scene")
   const roots = array(scenes[sceneIndex].nodes)
+  const seenRoots = new Set()
   for (const root of roots) {
     requireIndex(root, nodes.length, "scene root node")
     if (parents[root] !== null) fail(`scene root node ${root} is also a child of node ${parents[root]}`)
+    if (seenRoots.has(root)) fail(`scene root node ${root} is listed more than once`)
+    seenRoots.add(root)
   }
   return {roots, ignoredExtensions}
 }
@@ -305,8 +319,6 @@ const DEFAULT_MATERIAL = Object.freeze({
   baseColorFactor: Object.freeze([1, 1, 1, 1]),
   metallicFactor: 1,
   roughnessFactor: 1,
-  emissive: null,
-  unlit: false,
   doubleSided: false,
 })
 
@@ -316,10 +328,6 @@ function lowerMaterial(material, index) {
   const baseColorFactor = pbr.baseColorFactor ?? [1, 1, 1, 1]
   if (!Array.isArray(baseColorFactor) || baseColorFactor.length !== 4) fail(`${label} baseColorFactor must have 4 components`)
   baseColorFactor.forEach((value) => requireFactor(value, 0, `${label} baseColorFactor`))
-  const emissiveFactor = material.emissiveFactor ?? [0, 0, 0]
-  if (!Array.isArray(emissiveFactor) || emissiveFactor.length !== 3) fail(`${label} emissiveFactor must have 3 components`)
-  emissiveFactor.forEach((value) => requireFactor(value, 0, `${label} emissiveFactor`))
-  const unlit = material.extensions?.KHR_materials_unlit !== undefined
   return Object.freeze({
     index,
     name: typeof material.name === "string" ? material.name : null,
@@ -327,8 +335,6 @@ function lowerMaterial(material, index) {
     baseColorFactor: Object.freeze([...baseColorFactor]),
     metallicFactor: requireFactor(pbr.metallicFactor, 1, `${label} metallicFactor`),
     roughnessFactor: requireFactor(pbr.roughnessFactor, 1, `${label} roughnessFactor`),
-    emissive: !unlit && emissiveFactor.some((value) => value > 0) ? linearToSrgbHex(emissiveFactor) : null,
-    unlit,
     doubleSided: material.doubleSided === true,
   })
 }
@@ -507,8 +513,6 @@ export function staticGlbSceneNodes(asset, placement) {
       color: material.baseColor,
       modelMatrix: composedMatrix(instance, drawable),
     }
-    if (material.unlit) node.unlit = true
-    else if (material.emissive !== null) node.emissive = material.emissive
     if (material.doubleSided) node.doubleSided = true
     if (placement.opacity !== undefined) node.opacity = placement.opacity
     if (placement.wireframe !== undefined) node.wireframe = placement.wireframe
@@ -519,8 +523,7 @@ export function staticGlbSceneNodes(asset, placement) {
 
 /**
  * Instance batches for many placements of one adapted asset: one batch (one draw call) per
- * selected drawable. Batches use the default lit material, so drawables whose material is
- * emissive or unlit are rejected rather than silently rendered lit.
+ * selected drawable, drawn with the same default lit material as the equivalent scene nodes.
  */
 export function staticGlbInstanceBatches(asset, options) {
   requireId(options?.id)
@@ -528,9 +531,6 @@ export function staticGlbInstanceBatches(asset, options) {
   const instances = options.instances.map((instance, index) => placementMatrix(instance, `static GLB batch ${options.id}[${index}]`))
   return selectedDrawables(asset, options.filter).map((drawable) => {
     const {material} = drawable
-    if (material.unlit || material.emissive !== null) {
-      fail(`static GLB drawable ${drawable.id} uses an emissive or unlit material, which instance batches cannot render`)
-    }
     const batch = {
       id: `${options.id}/${drawable.id}`,
       geometry: drawable.geometry,

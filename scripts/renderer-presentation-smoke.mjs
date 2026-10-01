@@ -478,6 +478,15 @@ try {
     [1, 3, 1],
     "three rock placements are one batch over one geometry",
   );
+  // Lowered materials never carry emissive/unlit shading, so every tree drawable (bark and the
+  // vertex-colored foliage) batches and renders like the equal tree nodes.
+  const treeBatches = staticGlbInstanceBatches(tree, { id: "oaks", instances: [{ transform: { translation: [0, 0, -1] } }] });
+  const [treeNodesOnly, treeBatched] = await draw({}, [
+    { camera: glbCamera, nodes: placeTree(0) },
+    { camera: glbCamera, nodes: [], instanceBatches: treeBatches },
+  ]);
+  assert(maxChannelDifference(treeBatched.pixels, treeNodesOnly.pixels) <= 1, "batched tree renders like tree nodes");
+  assert.equal(treeBatched.observations.instanceBatchCount, 4, "every tree drawable is one batch");
   evidence.staticGlb = {
     first: resourceCounts(glbFirst.observations),
     moved: resourceCounts(glbMoved.observations),

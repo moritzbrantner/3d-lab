@@ -287,7 +287,6 @@ export function treeDocument() {
         name: "tree-foliage",
         doubleSided: true,
         pbrMetallicRoughness: { baseColorFactor: [1, 1, 1, 1], metallicFactor: 0, roughnessFactor: 0.9 },
-        emissiveFactor: [0, 0.02, 0],
       },
     ],
   });
