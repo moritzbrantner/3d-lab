@@ -32,7 +32,8 @@ An implementer run (Codex: the `implementer-loop` skill in `.agents/skills/`; So
 1. **Fix your own open PR.** A PR of yours (its issue carries your `agent:*` label) needs work when:
    - a CI check failed;
    - a Codex review finding is neither fixed nor answered;
-   - the loop driver posted a "changes needed" comment newer than your last push.
+   - the loop driver posted a "changes needed" comment newer than your last push;
+   - the owner commented after your `Blocked:` comment (treat that comment as the change list).
 
    Fix it on the same branch, push, and reply to each finding. After substantial fixes, comment `@codex review`. After three failed attempts on the same failure, comment `Blocked:` followed by what blocks you on the PR and stop touching it; the loop driver then stops re-dispatching and escalates the PR to the owner.
 2. **Otherwise, wait if your PR is still in review.** If a PR of yours is open and only waiting on CI, Codex or the loop driver's merge, do nothing. One task in flight per implementer.
