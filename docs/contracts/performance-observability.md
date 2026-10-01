@@ -38,7 +38,7 @@ Normalization remains deterministic and idempotent. Re-normalizing an already-no
 - Three.js mesh objects (including one instanced mesh per batch) created, reused, and removed;
 - geometry resources created, reused, and evicted;
 - material resources created, reused, and evicted; and
-- live object, geometry, material, and instance-batch cache sizes after the frame.
+- live object, geometry, material, and instance-batch cache sizes after the frame. The live object count includes one instanced mesh per live batch, so it stays consistent with the object create/remove counts; the live instance-batch count is the batch-specific subset.
 
 Creation/reuse counts describe cache acquisitions performed by the renderer; each scene node and each instance batch performs exactly one object, geometry, and material acquisition. They intentionally do not claim GPU allocation cost or exclusive CPU time. Chromium/runtime timing remains owned by `runtime-profiler`.
 

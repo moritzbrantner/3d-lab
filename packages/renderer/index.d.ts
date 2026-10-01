@@ -127,9 +127,11 @@ export type RendererWorkObservations = Readonly<{
   materialCreateCount: number
   materialReuseCount: number
   materialEvictCount: number
+  /** Live Three.js mesh objects: scene-node meshes plus one instanced mesh per live instance batch. */
   liveObjectCount: number
   liveGeometryCount: number
   liveMaterialCount: number
+  /** Batch-specific subset of `liveObjectCount`. */
   liveInstanceBatchCount: number
 }>
 

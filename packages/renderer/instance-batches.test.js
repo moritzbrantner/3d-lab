@@ -2,6 +2,7 @@ import {describe, expect, test} from "bun:test"
 import * as THREE from "three"
 import {ThreeRendererContractError, validateRenderFrame} from "./index.js"
 import {attachInstanceBatchResult, syncInstanceBatch} from "./instance-batches.js"
+import {recordLiveCacheCounts} from "./resources.js"
 
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 const camera = {viewMatrix: IDENTITY, projectionMatrix: IDENTITY}
@@ -114,6 +115,50 @@ describe("instance batch sync", () => {
 
     expect(grownObservations).toEqual({objectCreateCount: 1, objectRemoveCount: 1, instanceUploadCount: 1})
     expect(scene.children).toEqual([grown.state.mesh])
+  })
+
+  test("counts live batch meshes as live objects so created minus removed equals live", () => {
+    const scene = new THREE.Scene()
+    const caches = {
+      objects: new Map([["node", new THREE.Mesh(geometry, material)]]),
+      instanceBatches: new Map(),
+      geometries: new Map([["box", geometry]]),
+      materials: new Map([["standard", material]]),
+    }
+    const counts = () => ({
+      objectCreateCount: 0,
+      objectRemoveCount: 0,
+      instanceUploadCount: 0,
+      liveObjectCount: 0,
+      liveGeometryCount: 0,
+      liveMaterialCount: 0,
+      liveInstanceBatchCount: 0,
+    })
+
+    const firstObservations = counts()
+    const first = syncInstanceBatch(undefined, batch(2), geometry, material, writeTranslation, scratch())
+    attachInstanceBatchResult(scene, first, false, firstObservations)
+    caches.instanceBatches.set("trees", first.state)
+    recordLiveCacheCounts(firstObservations, caches)
+    expect(firstObservations.objectCreateCount).toBe(1)
+    expect(firstObservations.liveInstanceBatchCount).toBe(1)
+    expect(firstObservations.liveObjectCount).toBe(2)
+
+    const grownObservations = counts()
+    const grown = syncInstanceBatch(first.state, batch(3), geometry, material, writeTranslation, scratch())
+    attachInstanceBatchResult(scene, grown, false, grownObservations)
+    caches.instanceBatches.set("trees", grown.state)
+    recordLiveCacheCounts(grownObservations, caches)
+    expect(grownObservations.liveObjectCount).toBe(2)
+    expect(grownObservations.liveInstanceBatchCount).toBe(1)
+
+    caches.instanceBatches.clear()
+    const removedObservations = counts()
+    recordLiveCacheCounts(removedObservations, caches)
+    expect(removedObservations.liveObjectCount).toBe(1)
+    expect(removedObservations.liveInstanceBatchCount).toBe(0)
+    expect(removedObservations.liveGeometryCount).toBe(1)
+    expect(removedObservations.liveMaterialCount).toBe(1)
   })
 
   test("re-uploads when geometry changes under an unchanged revision", () => {

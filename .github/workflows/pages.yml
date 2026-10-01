@@ -20,8 +20,10 @@ permissions:
   pages: write
   id-token: write
 
+# Pull request runs only validate, so each PR gets its own group; pushes to main share one deploy group.
+# A single shared group let unrelated PR runs cancel each other.
 concurrency:
-  group: pages
+  group: pages-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || 'deploy' }}
   cancel-in-progress: true
 
 jobs:

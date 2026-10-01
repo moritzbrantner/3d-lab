@@ -2,7 +2,7 @@ import * as THREE from "three"
 import {webGpuProjectionToWebGl} from "./depth.js"
 import {projectWorldPointUnchecked} from "./projection.js"
 import {attachInstanceBatchResult, syncInstanceBatch} from "./instance-batches.js"
-import {acquireResource, evictUnusedResources} from "./resources.js"
+import {acquireResource, evictUnusedResources, recordLiveCacheCounts} from "./resources.js"
 
 const DEFAULT_BACKGROUND = 0x0c111a
 const DEFAULT_PIXEL_RATIO_LIMIT = 2
@@ -407,6 +407,7 @@ export function createThreeSceneRenderer(canvas, options = {}) {
   const instanceBatches = new Map()
   const geometries = new Map()
   const materials = new Map()
+  const liveCaches = {objects, instanceBatches, geometries, materials}
   const transformScratch = {
     translation: new THREE.Vector3(),
     rotation: new THREE.Quaternion(),
@@ -457,10 +458,7 @@ export function createThreeSceneRenderer(canvas, options = {}) {
       applyCamera(frameCamera)
 
       const observations = createWorkObservations(0)
-      observations.liveObjectCount = objects.size
-      observations.liveGeometryCount = geometries.size
-      observations.liveMaterialCount = materials.size
-      observations.liveInstanceBatchCount = instanceBatches.size
+      recordLiveCacheCounts(observations, liveCaches)
       renderer.render(scene, camera)
       return observations
     },
@@ -573,10 +571,7 @@ export function createThreeSceneRenderer(canvas, options = {}) {
       observations.materialReuseCount = acquisitions - observations.materialCreateCount
       observations.geometryEvictCount = evictUnusedResources(geometries, liveGeometryKeys)
       observations.materialEvictCount = evictUnusedResources(materials, liveMaterialKeys)
-      observations.liveObjectCount = objects.size
-      observations.liveGeometryCount = geometries.size
-      observations.liveMaterialCount = materials.size
-      observations.liveInstanceBatchCount = instanceBatches.size
+      recordLiveCacheCounts(observations, liveCaches)
 
       renderer.render(scene, camera)
       return observations
