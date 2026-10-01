@@ -19,6 +19,7 @@ import {
 import {
   effectiveEditorGizmoMode,
   effectiveEditorGizmoSpace,
+  endEditorGizmoDragForTeardown,
   type EditorGizmoMode,
   type EditorGizmoSpace,
 } from "@/lib/scene-editor-gizmo";
@@ -393,6 +394,10 @@ export function SceneEditorLab() {
       transformControls.removeEventListener("mouseDown", handleMouseDown);
       transformControls.removeEventListener("objectChange", handleObjectChange);
       transformControls.removeEventListener("mouseUp", handleMouseUp);
+      // No dragging-changed event can arrive after the listeners are removed, so a drag
+      // interrupted by a runtime rebuild (e.g. a delayed snapshot import) must end here.
+      endEditorGizmoDragForTeardown(transformControls, setGizmoDragging);
+      cancelledDragRef.current = false;
       transformControls.detach();
       transformControls.dispose();
       transformHelper.removeFromParent();

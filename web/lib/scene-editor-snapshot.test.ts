@@ -3,6 +3,7 @@ import { createEditorScene, updateMeshVertex, updateNodeTransform, type EditorSc
 import {
   EDITOR_SCENE_SNAPSHOT_SCHEMA,
   MAX_EDITOR_SCENE_SNAPSHOT_DEPTH,
+  MAX_EDITOR_SCENE_SNAPSHOT_ERROR_MESSAGE_CHARS,
   MAX_EDITOR_SCENE_SNAPSHOT_FILE_BYTES,
   MAX_EDITOR_SCENE_SNAPSHOT_INDICES_PER_MESH,
   MAX_EDITOR_SCENE_SNAPSHOT_NODES,
@@ -55,7 +56,38 @@ describe("editor scene snapshots", () => {
     expect(() => decodeEditorSceneSnapshot({ ...snapshot, schema: "3d-lab/editor-scene-snapshot/v2" }))
       .toThrow("unsupported scene snapshot schema");
     expect(() => decodeEditorSceneSnapshot({ ...snapshot, history: [] }))
-      .toThrow("unsupported field history");
+      .toThrow('unsupported field "history"');
+  });
+
+  test("bounds untrusted strings in import error messages", () => {
+    const snapshot = JSON.parse(serializeEditorSceneSnapshot(createEditorScene()));
+    const huge = "x".repeat(1_000_000);
+    const errorMessage = (value: unknown): string => {
+      try {
+        decodeEditorSceneSnapshot(value);
+      } catch (error) {
+        return (error as Error).message;
+      }
+      throw new Error("expected decode to fail");
+    };
+
+    const schemaMessage = errorMessage({ ...snapshot, schema: huge });
+    expect(schemaMessage).toContain("unsupported scene snapshot schema");
+    expect(schemaMessage).toContain(`(${huge.length} chars)`);
+    expect(schemaMessage).toContain(EDITOR_SCENE_SNAPSHOT_SCHEMA);
+    expect(schemaMessage.length).toBeLessThan(256);
+
+    const fieldMessage = errorMessage({ ...snapshot, [huge]: true });
+    expect(fieldMessage).toContain("unsupported field");
+    expect(fieldMessage.length).toBeLessThan(256);
+
+    const duplicateIds = JSON.parse(serializeEditorSceneSnapshot(createEditorScene()));
+    duplicateIds.nodes[0].id = huge;
+    duplicateIds.nodes[1].id = huge;
+    duplicateIds.nodes[1].parent = null;
+    const duplicateMessage = errorMessage(duplicateIds);
+    expect(duplicateMessage).toContain("duplicate node id");
+    expect(duplicateMessage.length).toBeLessThanOrEqual(MAX_EDITOR_SCENE_SNAPSHOT_ERROR_MESSAGE_CHARS + 1);
   });
 
   test("validates hierarchy and mesh data at the import trust boundary", () => {

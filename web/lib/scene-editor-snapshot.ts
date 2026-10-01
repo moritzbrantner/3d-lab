@@ -22,6 +22,23 @@ export type EditorSceneSnapshot = Readonly<{
 
 type JsonRecord = Record<string, unknown>;
 
+/** Upper bound for an untrusted string excerpt embedded in an import error. */
+export const MAX_EDITOR_SCENE_SNAPSHOT_ERROR_EXCERPT_CHARS = 64;
+/** Upper bound for any import error message surfaced to the editor UI. */
+export const MAX_EDITOR_SCENE_SNAPSHOT_ERROR_MESSAGE_CHARS = 512;
+
+function untrustedExcerpt(value: string): string {
+  const limit = MAX_EDITOR_SCENE_SNAPSHOT_ERROR_EXCERPT_CHARS;
+  const excerpt = value.length > limit ? `${value.slice(0, limit)}…` : value;
+  const quoted = JSON.stringify(excerpt);
+  return value.length > limit ? `${quoted} (${value.length} chars)` : quoted;
+}
+
+function boundedErrorMessage(message: string): string {
+  const limit = MAX_EDITOR_SCENE_SNAPSHOT_ERROR_MESSAGE_CHARS;
+  return message.length > limit ? `${message.slice(0, limit)}…` : message;
+}
+
 function record(value: unknown, label: string): JsonRecord {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new Error(`${label} must be an object`);
@@ -37,7 +54,7 @@ function list(value: unknown, label: string): readonly unknown[] {
 function exactKeys(value: JsonRecord, allowed: readonly string[], label: string): void {
   const allowedSet = new Set(allowed);
   for (const key of Object.keys(value)) {
-    if (!allowedSet.has(key)) throw new Error(`${label} contains unsupported field ${key}`);
+    if (!allowedSet.has(key)) throw new Error(`${label} contains unsupported field ${untrustedExcerpt(key)}`);
   }
 }
 
@@ -336,12 +353,27 @@ export function serializeEditorSceneSnapshot(scene: EditorScene): string {
   return source;
 }
 
+/**
+ * Decode an untrusted snapshot value. Error messages are bounded so that rejected
+ * files cannot push arbitrarily large untrusted strings (ids, keys, schema) into the UI.
+ */
 export function decodeEditorSceneSnapshot(value: unknown): EditorScene {
+  try {
+    return decodeUntrustedEditorSceneSnapshot(value);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(boundedErrorMessage(message));
+  }
+}
+
+function decodeUntrustedEditorSceneSnapshot(value: unknown): EditorScene {
   const source = record(value, "scene snapshot");
   exactKeys(source, ["schema", "nodes"], "scene snapshot");
   const schema = stringValue(source.schema, "scene snapshot.schema");
   if (schema !== EDITOR_SCENE_SNAPSHOT_SCHEMA) {
-    throw new Error(`unsupported scene snapshot schema ${schema}`);
+    throw new Error(
+      `unsupported scene snapshot schema ${untrustedExcerpt(schema)}; expected ${EDITOR_SCENE_SNAPSHOT_SCHEMA}`,
+    );
   }
   const rawNodes = list(source.nodes, "scene snapshot.nodes");
   if (rawNodes.length === 0) throw new Error("scene snapshot must contain at least one node");
