@@ -7,6 +7,8 @@ import {
   MAX_EDITOR_SCENE_SNAPSHOT_FILE_BYTES,
   MAX_EDITOR_SCENE_SNAPSHOT_INDICES_PER_MESH,
   MAX_EDITOR_SCENE_SNAPSHOT_NODES,
+  MAX_EDITOR_SCENE_SNAPSHOT_NODE_ID_CHARS,
+  MAX_EDITOR_SCENE_SNAPSHOT_NODE_NAME_CHARS,
   MAX_EDITOR_SCENE_SNAPSHOT_TOTAL_VERTICES,
   MAX_EDITOR_SCENE_SNAPSHOT_VERTICES_PER_MESH,
   decodeEditorSceneSnapshot,
@@ -82,8 +84,9 @@ describe("editor scene snapshots", () => {
     expect(fieldMessage.length).toBeLessThan(256);
 
     const duplicateIds = JSON.parse(serializeEditorSceneSnapshot(createEditorScene()));
-    duplicateIds.nodes[0].id = huge;
-    duplicateIds.nodes[1].id = huge;
+    const longId = "x".repeat(MAX_EDITOR_SCENE_SNAPSHOT_NODE_ID_CHARS);
+    duplicateIds.nodes[0].id = longId;
+    duplicateIds.nodes[1].id = longId;
     duplicateIds.nodes[1].parent = null;
     const duplicateMessage = errorMessage(duplicateIds);
     expect(duplicateMessage).toContain("duplicate node id");
@@ -152,6 +155,46 @@ describe("editor scene snapshots", () => {
     })).toThrow("node count");
   });
 
+  test("bounds imported node names and ids before they reach hierarchy and inspector text", () => {
+    const node = (id: string, name: string) => ({
+      id,
+      name,
+      parent: null,
+      transform: { translation: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    });
+    const atLimit = decodeEditorSceneSnapshot({
+      schema: EDITOR_SCENE_SNAPSHOT_SCHEMA,
+      nodes: [node("i".repeat(MAX_EDITOR_SCENE_SNAPSHOT_NODE_ID_CHARS), "n".repeat(MAX_EDITOR_SCENE_SNAPSHOT_NODE_NAME_CHARS))],
+    });
+    expect(atLimit.nodes[0]?.name.length).toBe(MAX_EDITOR_SCENE_SNAPSHOT_NODE_NAME_CHARS);
+
+    const hugeName = "word ".repeat(200_000);
+    const decodeName = () => decodeEditorSceneSnapshot({
+      schema: EDITOR_SCENE_SNAPSHOT_SCHEMA,
+      nodes: [node("root", hugeName)],
+    });
+    expect(decodeName).toThrow(`name length ${hugeName.length} exceeds limit ${MAX_EDITOR_SCENE_SNAPSHOT_NODE_NAME_CHARS}`);
+    try {
+      decodeName();
+    } catch (error) {
+      expect((error as Error).message.length).toBeLessThanOrEqual(MAX_EDITOR_SCENE_SNAPSHOT_ERROR_MESSAGE_CHARS + 1);
+      expect((error as Error).message).not.toContain("word word");
+    }
+
+    expect(() => decodeEditorSceneSnapshot({
+      schema: EDITOR_SCENE_SNAPSHOT_SCHEMA,
+      nodes: [node("i".repeat(MAX_EDITOR_SCENE_SNAPSHOT_NODE_ID_CHARS + 1), "Root")],
+    })).toThrow(`id length ${MAX_EDITOR_SCENE_SNAPSHOT_NODE_ID_CHARS + 1} exceeds limit`);
+
+    const scene = createEditorScene();
+    const renamed: EditorScene = {
+      nodes: scene.nodes.map((entry, index) =>
+        index === 0 ? { ...entry, name: "n".repeat(MAX_EDITOR_SCENE_SNAPSHOT_NODE_NAME_CHARS + 1) } : entry,
+      ),
+    };
+    expect(() => serializeEditorSceneSnapshot(renamed)).toThrow("name length");
+  });
+
   test("bounds mesh and aggregate geometry before copying payload arrays", () => {
     const meshNode = (id: string, vertices: unknown[], indices: unknown[]) => ({
       id,
@@ -200,7 +243,24 @@ describe("editor scene snapshots", () => {
   test("serializer never returns a snapshot larger than the import limit", () => {
     const scene = createEditorScene();
     const nodes = [...scene.nodes];
-    nodes[0] = { ...nodes[0], name: "x".repeat(MAX_EDITOR_SCENE_SNAPSHOT_FILE_BYTES) };
+    // Every per-mesh and aggregate budget passes, but long f32-representable decimals across all
+    // vertex attributes push the serialized JSON past the byte limit.
+    const component = -1.2345678901234567e-30;
+    const count = MAX_EDITOR_SCENE_SNAPSHOT_VERTICES_PER_MESH;
+    const vec = <N extends number>(length: N) => Array.from({ length }, () => component);
+    nodes[0] = {
+      ...nodes[0],
+      mesh: {
+        vertices: Array.from({ length: count }, () => vec(3) as [number, number, number]),
+        indices: [],
+        attributes: {
+          normals: Array.from({ length: count }, () => vec(3) as [number, number, number]),
+          tangents: Array.from({ length: count }, () => vec(4) as [number, number, number, number]),
+          uvs: Array.from({ length: count }, () => vec(2) as [number, number]),
+          colors: Array.from({ length: count }, () => vec(3) as [number, number, number]),
+        },
+      },
+    };
     expect(() => serializeEditorSceneSnapshot({ nodes })).toThrow("file size");
   });
 

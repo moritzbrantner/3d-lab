@@ -14,6 +14,10 @@ export const MAX_EDITOR_SCENE_SNAPSHOT_VERTICES_PER_MESH = 65_536;
 export const MAX_EDITOR_SCENE_SNAPSHOT_INDICES_PER_MESH = 393_216;
 export const MAX_EDITOR_SCENE_SNAPSHOT_TOTAL_VERTICES = 131_072;
 export const MAX_EDITOR_SCENE_SNAPSHOT_TOTAL_INDICES = 786_432;
+/** Upper bound (UTF-16 code units) for node ids, which key hierarchy and selection state. */
+export const MAX_EDITOR_SCENE_SNAPSHOT_NODE_ID_CHARS = 256;
+/** Upper bound (UTF-16 code units) for node names rendered in the hierarchy, toolbar, and inspector. */
+export const MAX_EDITOR_SCENE_SNAPSHOT_NODE_NAME_CHARS = 256;
 
 export type EditorSceneSnapshot = Readonly<{
   schema: typeof EDITOR_SCENE_SNAPSHOT_SCHEMA;
@@ -61,6 +65,17 @@ function exactKeys(value: JsonRecord, allowed: readonly string[], label: string)
 function stringValue(value: unknown, label: string): string {
   if (typeof value !== "string") throw new Error(`${label} must be a string`);
   return value;
+}
+
+function boundedString(value: unknown, label: string, limit: number): string {
+  const parsed = stringValue(value, label);
+  if (parsed.length > limit) throw new Error(`${label} length ${parsed.length} exceeds limit ${limit}`);
+  return parsed;
+}
+
+function requireBoundedNodeStrings(node: EditorNode, label: string): void {
+  boundedString(node.id, `${label}.id`, MAX_EDITOR_SCENE_SNAPSHOT_NODE_ID_CHARS);
+  boundedString(node.name, `${label}.name`, MAX_EDITOR_SCENE_SNAPSHOT_NODE_NAME_CHARS);
 }
 
 function finiteNumber(value: unknown, label: string): number {
@@ -255,8 +270,8 @@ function parseNode(value: unknown, index: number, budget: SnapshotGeometryBudget
   const parent = source.parent;
   if (parent !== null && typeof parent !== "string") throw new Error(`${label}.parent must be a string or null`);
   return {
-    id: stringValue(source.id, `${label}.id`),
-    name: stringValue(source.name, `${label}.name`),
+    id: boundedString(source.id, `${label}.id`, MAX_EDITOR_SCENE_SNAPSHOT_NODE_ID_CHARS),
+    name: boundedString(source.name, `${label}.name`, MAX_EDITOR_SCENE_SNAPSHOT_NODE_NAME_CHARS),
     parent,
     transform: parseTransform(source.transform, `${label}.transform`),
     ...(source.mesh === undefined ? {} : { mesh: parseMesh(source.mesh, `${label}.mesh`, budget) }),
@@ -268,6 +283,7 @@ function requireSnapshotScene(scene: EditorScene): void {
   if (scene.nodes.length > MAX_EDITOR_SCENE_SNAPSHOT_NODES) {
     throw new Error(`scene snapshot node count ${scene.nodes.length} exceeds limit ${MAX_EDITOR_SCENE_SNAPSHOT_NODES}`);
   }
+  scene.nodes.forEach((node, index) => requireBoundedNodeStrings(node, `scene snapshot node ${index}`));
   validateEditorScene(scene);
   for (const node of scene.nodes) requireF32SnapshotValues(node);
 
