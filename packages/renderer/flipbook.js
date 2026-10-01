@@ -86,15 +86,38 @@ export function sampleFlipbook(layout, playback, time) {
 /**
  * UV rectangle of `frame` as `[u, v, width, height]` in texture space with `v` growing upward,
  * for an atlas image whose first row is the top row.
+ *
+ * Without `texelInset` the rectangle spans the cell's exact boundaries, which is cell-safe only for
+ * nearest filtering. For bilinear filtering pass `texelInset: {width, height}`, the atlas size in
+ * pixels: the rectangle then shrinks by half a texel on every side, so samples at the cell edge
+ * stop at the outermost texel centers and never blend texels from the adjacent frame. Cells must
+ * span whole texels (`width % columns === 0`, `height % rows === 0`) for this to hold.
  */
-export function flipbookFrameRect(layout, frame, target = [0, 0, 0, 0]) {
+export function flipbookFrameRect(layout, frame, target = [0, 0, 0, 0], texelInset = undefined) {
   const column = frame % layout.columns
   const row = Math.floor(frame / layout.columns)
   const width = 1 / layout.columns
   const height = 1 / layout.rows
-  target[0] = column * width
-  target[1] = 1 - (row + 1) * height
-  target[2] = width
-  target[3] = height
+  const insetU = texelInset ? 0.5 / texelInset.width : 0
+  const insetV = texelInset ? 0.5 / texelInset.height : 0
+  target[0] = column * width + insetU
+  target[1] = 1 - (row + 1) * height + insetV
+  target[2] = width - 2 * insetU
+  target[3] = height - 2 * insetV
   return target
+}
+
+/**
+ * Validates that an atlas of `width x height` pixels divides into whole-texel cells for `layout`,
+ * so every frame's texels belong to exactly one cell and edge sampling can stay inside it.
+ */
+export function requireWholeTexelCells(layout, width, height) {
+  if (!Number.isSafeInteger(width) || width <= 0 || !Number.isSafeInteger(height) || height <= 0) {
+    throw new FlipbookContractError("flipbook atlas width and height must be positive integers")
+  }
+  if (width % layout.columns !== 0 || height % layout.rows !== 0) {
+    throw new FlipbookContractError(
+      `flipbook atlas ${width}x${height} must divide into whole-texel cells for ${layout.columns}x${layout.rows}`,
+    )
+  }
 }

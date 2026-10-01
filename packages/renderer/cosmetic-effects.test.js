@@ -63,6 +63,19 @@ describe("cosmetic effect layer", () => {
     expect(frameRect(state, 0)).toEqual([0.5, 0, 0.5, 0.5])
   })
 
+  test("linear atlases (the default) inset each frame by half a texel; nearest atlases do not", () => {
+    // 16x16 atlas, 2x2 cells of 8 texels: half a texel is 1/32 of the texture.
+    const {filter: _nearest, ...defaultFilter} = atlas
+    const linear = {...defaultFilter, resourceKey: "fixture:puff-linear"}
+    const layer = createCosmeticEffectLayer(new THREE.Scene())
+    const instances = [puff("n", 0), puff("l", 0, {atlas: linear.resourceKey})]
+    sync(layer, {time: 0.35, atlases: [atlas, linear], instances})
+    expect(frameRect(layer.atlasState(atlas.resourceKey), 0)).toEqual([0.5, 0, 0.5, 0.5])
+    const inset = 1 / 32
+    expect(frameRect(layer.atlasState(linear.resourceKey), 0)).toEqual([0.5 + inset, inset, 0.5 - 2 * inset, 0.5 - 2 * inset])
+    expect(layer.atlasState(linear.resourceKey).texture.magFilter).toBe(THREE.LinearFilter)
+  })
+
   test("pending and expired effects draw nothing", () => {
     const layer = createCosmeticEffectLayer(new THREE.Scene())
     const observations = sync(layer, effects(1, [puff("early", 0), puff("late", 2), puff("now", 0.9)]))
@@ -143,6 +156,7 @@ describe("cosmetic effect validation", () => {
     ["short pixels", {time: 0, atlases: [{...atlas, pixels: new Uint8Array(4)}], instances: []}],
     ["frames beyond grid", {time: 0, atlases: [{...atlas, frameCount: 5}], instances: []}],
     ["duplicate atlas", {time: 0, atlases: [atlas, atlas], instances: []}],
+    ["cells splitting texels", {time: 0, atlases: [{...createPuffAtlas(), columns: 3, rows: 2, frameCount: 4}], instances: []}],
   ])("rejects %s", (_, value) => {
     expect(() => validateRenderFrame(frame(value))).toThrow(ThreeRendererContractError)
   })

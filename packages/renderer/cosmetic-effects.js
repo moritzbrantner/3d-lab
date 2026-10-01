@@ -3,6 +3,7 @@ import {
   compileFlipbookLayout,
   compileFlipbookPlayback,
   flipbookFrameRect,
+  requireWholeTexelCells,
   sampleFlipbook,
 } from "./flipbook.js"
 
@@ -64,7 +65,7 @@ export function validateCosmeticEffects(effects, fail) {
       fail(`${label} filter must be "linear" or "nearest"`)
     }
     try {
-      compileFlipbookLayout(atlas)
+      requireWholeTexelCells(compileFlipbookLayout(atlas), atlas.width, atlas.height)
     } catch (error) {
       fail(`${label}: ${error.message}`)
     }
@@ -160,6 +161,9 @@ function createAtlasState(atlas, capacity) {
   mesh.renderOrder = 1
   return {
     layout: compileFlipbookLayout(atlas),
+    // Linear filtering (the default) blends neighboring texels, so frame rectangles are inset by
+    // half a texel to keep edge samples inside their cell; nearest filtering samples exact cells.
+    texelInset: atlas.filter === "nearest" ? undefined : {width: atlas.width, height: atlas.height},
     texture,
     material,
     geometry,
@@ -252,7 +256,7 @@ export function createCosmeticEffectLayer(
     colorChanged = store(colorArray, slot * 3, scratchColor.r) || colorChanged
     colorChanged = store(colorArray, slot * 3 + 1, scratchColor.g) || colorChanged
     colorChanged = store(colorArray, slot * 3 + 2, scratchColor.b) || colorChanged
-    flipbookFrameRect(state.layout, sample.frame, rect)
+    flipbookFrameRect(state.layout, sample.frame, rect, state.texelInset)
     const frameArray = state.frameAttribute.array
     for (let index = 0; index < 4; index += 1) {
       frameChanged = store(frameArray, slot * 4 + index, rect[index]) || frameChanged

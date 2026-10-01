@@ -476,7 +476,35 @@ try {
     [1, 0],
     "disabling effects disposes the atlas resources",
   );
+  // The default linear filter must stay inside each cell: magnified 8-texel cells sampled just inside
+  // every internal cell edge show only their own frame's color, not a blend with the neighbor.
+  // Omit `filter` so the renderer default (linear) applies.
+  const { filter: _nearest, ...linearAtlas } = createPuffAtlas({ resourceKey: "fixture:puff-2x2-linear" });
+  const linearPayload = { ...linearAtlas, pixels: Array.from(linearAtlas.pixels) };
+  const linearAt = (time) => ({
+    camera: flatCamera,
+    nodes: [],
+    effects: {
+      time,
+      atlases: [linearPayload],
+      instances: [{ id: "impact", atlas: linearAtlas.resourceKey, space: "world", origin: [0, 0, 0], startTime: 1, duration: 0.4, scale: 2 }],
+    },
+  });
+  const [linearFirst, linearLast] = await draw({}, [linearAt(1.05), linearAt(1.35)]);
+  const edge = 0.97;
+  const linearEdges = {
+    "frame 0 right edge (frame 1 beside it)": [linearFirst, [edge, 0, 0], PUFF_FRAME_COLORS[0]],
+    "frame 0 bottom edge (frame 2 below it)": [linearFirst, [0, -edge, 0], PUFF_FRAME_COLORS[0]],
+    "frame 3 left edge (frame 2 beside it)": [linearLast, [-edge, 0, 0], PUFF_FRAME_COLORS[3]],
+    "frame 3 top edge (frame 1 above it)": [linearLast, [0, edge, 0], PUFF_FRAME_COLORS[3]],
+  };
+  for (const [label, [sample, point, color]] of Object.entries(linearEdges)) {
+    assertNear(pixelAt(sample.pixels, flatCamera, point), [...color, 255], 2, `linear-filtered ${label} does not bleed`);
+  }
   evidence.cosmeticEffects = {
+    linearEdges: Object.fromEntries(
+      Object.entries(linearEdges).map(([label, [sample, point]]) => [label, pixelAt(sample.pixels, flatCamera, point)]),
+    ),
     frames: [f0, f1, f2, f3].map((sample) => pixelAt(sample.pixels, flatCamera, middle)),
     effectTinted: pixelAt(effectTinted.pixels, flatCamera, middle),
     effectFaded: pixelAt(effectFaded.pixels, flatCamera, middle),
@@ -488,7 +516,7 @@ try {
     })),
   };
   await writeFile(path.join(output, "cosmetic-effect-frames.json"), `${JSON.stringify(evidence.cosmeticEffects, null, 2)}\n`);
-  checks.push("cosmetic flipbook effects sample frames by age, tint, fade, face the camera, and release resources");
+  checks.push("cosmetic flipbook effects sample frames by age, tint, fade, face the camera, keep linear filtering inside each cell, and release resources");
 
   assert.deepEqual(errors, [], "page must not report errors or warnings");
 } finally {

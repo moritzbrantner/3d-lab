@@ -210,14 +210,19 @@ export type RendererInstanceBatch = {
 export type RendererEffectAtlas = {
   /** Stable identity of the exact pixels and layout, like mesh `resourceKey`. */
   resourceKey: string
+  /** Must be a multiple of `columns` (whole-texel cells). */
   width: number
+  /** Must be a multiple of `rows` (whole-texel cells). */
   height: number
   pixels: Uint8Array | Uint8ClampedArray
   columns: number
   rows: number
   /** Defaults to `columns * rows`. */
   frameCount?: number
-  /** Texture filtering; defaults to `"linear"`. */
+  /**
+   * Texture filtering; defaults to `"linear"`. Linear atlases sample each frame inset by half a
+   * texel so edges never blend the adjacent frame; `"nearest"` samples the exact cell.
+   */
   filter?: "linear" | "nearest"
 }
 

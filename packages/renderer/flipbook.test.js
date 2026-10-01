@@ -4,6 +4,7 @@ import {
   compileFlipbookLayout,
   compileFlipbookPlayback,
   flipbookFrameRect,
+  requireWholeTexelCells,
   sampleFlipbook,
 } from "./flipbook.js"
 
@@ -54,6 +55,22 @@ describe("flipbook sampling", () => {
     expect(flipbookFrameRect(layout, 1)).toEqual([0.5, 0.5, 0.5, 0.5])
     expect(flipbookFrameRect(layout, 3)).toEqual([0.5, 0, 0.5, 0.5])
     expect(compileFlipbookLayout({columns: 3, rows: 2, frameCount: 5}).frameCount).toBe(5)
+  })
+
+  test("a texel inset keeps bilinear edge samples on the cell's own texel centers", () => {
+    // 4x2 atlas in 2x2 cells of 2x1 texels; half a texel is 1/8 horizontally and 1/4 vertically.
+    const [u, v, width, height] = flipbookFrameRect(layout, 1, undefined, {width: 4, height: 2})
+    expect([u, v, width, height]).toEqual([0.625, 0.75, 0.25, 0])
+    // The edges land exactly on the centers of the cell's outermost texels (texels 2 and 3, row 1).
+    expect([u * 4, (u + width) * 4]).toEqual([2.5, 3.5])
+    expect([v * 2, (v + height) * 2]).toEqual([1.5, 1.5])
+    expect(flipbookFrameRect(layout, 3, undefined, {width: 16, height: 16})).toEqual([0.53125, 0.03125, 0.4375, 0.4375])
+  })
+
+  test("atlas cells must span whole texels", () => {
+    expect(() => requireWholeTexelCells(layout, 16, 16)).not.toThrow()
+    expect(() => requireWholeTexelCells(layout, 15, 16)).toThrow(FlipbookContractError)
+    expect(() => requireWholeTexelCells(layout, 16, 0)).toThrow(FlipbookContractError)
   })
 
   test("rejects invalid layouts, timing, and sample times", () => {
