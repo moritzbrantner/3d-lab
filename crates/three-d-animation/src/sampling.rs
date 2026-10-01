@@ -14,8 +14,9 @@
 //!   O(log keys). The chosen segment never depends on the cursor, only the
 //!   lookup cost does.
 //! - [`QuantizedClip`] stores key values as 16-bit integers with an explicit
-//!   [`QuantizationBudget`]. Compression fails closed when any decoded key would
-//!   exceed the budget.
+//!   [`QuantizationBudget`]. Compression fails closed when any decoded key, or
+//!   the derived bound on rotations interpolated between adjacent decoded keys,
+//!   would exceed the budget.
 
 use core::fmt;
 
@@ -379,11 +380,22 @@ impl ValueDecoder for CompiledClip {
     }
 }
 
-/// Maximum decoded per-key error accepted by [`QuantizedClip::compress`].
+/// Maximum sampled error accepted by [`QuantizedClip::compress`].
 ///
-/// Translation and scale errors are Euclidean distances in clip units;
-/// rotation error is the angle in radians between the normalized source key
-/// and its normalized decoded key.
+/// Translation and scale errors are Euclidean distances in clip units. Both
+/// channels interpolate componentwise and convexly, so a per-key bound also
+/// bounds every interpolated sample.
+///
+/// Rotation error is the angle in radians between the normalized source and
+/// decoded orientations. Per-key error alone does not bound SLERP between keys:
+/// deviations perpendicular to the arc grow towards the middle of a segment by
+/// up to `1 / cos(Ω / 2)`, where `Ω` is the quaternion-space angle between the
+/// adjacent keys (at most `√2` once SLERP takes the shorter arc). Compression
+/// therefore checks every key and, for each interpolated segment, the derived
+/// bound `max(e0, e1) / cos(Ω / 2)` against `rotation_radians`. The bound is
+/// first order in the key errors and holds up to float rounding; it is
+/// conservative, so clips whose actual mid-segment error fits may still be
+/// rejected. Step tracks never sample between keys and only check keys.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct QuantizationBudget {
     pub translation: f32,
@@ -407,7 +419,9 @@ impl QuantizationBudget {
     }
 }
 
-/// Largest per-key error actually introduced by quantization.
+/// Largest error introduced by quantization: per key for translation and
+/// scale, and the larger of per-key error and the derived interpolation bound
+/// (see [`QuantizationBudget`]) for rotation.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct QuantizationError {
     pub translation: f32,
@@ -432,6 +446,8 @@ pub enum CompressionError {
         track: usize,
         key: usize,
     },
+    /// A decoded key exceeded the budget, or for a rotation track the
+    /// interpolation bound of the segment starting at `key` did.
     BudgetExceeded {
         track: usize,
         key: usize,
@@ -578,7 +594,8 @@ impl QuantizedClip {
                     ranges.push(range);
                 }
                 AnimationTrack::Rotation { track, .. } => {
-                    let mut previous: Option<(Quat, Quat)> = None;
+                    let interpolates = !matches!(track.interpolation, Interpolation::Step);
+                    let mut previous: Option<(Quat, Quat, f32)> = None;
                     for (key_index, frame) in track.frames().iter().enumerate() {
                         let source = frame.value;
                         if ![source.x, source.y, source.z, source.w]
@@ -611,17 +628,36 @@ impl QuantizedClip {
                                 budget: budget.rotation_radians,
                             });
                         }
-                        if let Some((previous_source, previous_decoded)) = previous
-                            && (previous_source.dot(source) < 0.0)
-                                != (previous_decoded.dot(decoded) < 0.0)
+                        let mut bound = error;
+                        if let Some((previous_source, previous_decoded, previous_error)) = previous
                         {
-                            return Err(CompressionError::AmbiguousRotationHemisphere {
-                                track: track_index,
-                                key: key_index - 1,
-                            });
+                            if (previous_source.dot(source) < 0.0)
+                                != (previous_decoded.dot(decoded) < 0.0)
+                            {
+                                return Err(CompressionError::AmbiguousRotationHemisphere {
+                                    track: track_index,
+                                    key: key_index - 1,
+                                });
+                            }
+                            if interpolates {
+                                let segment = segment_rotation_bound(
+                                    (previous_source, previous_decoded, previous_error),
+                                    (source, decoded, error),
+                                );
+                                if segment > budget.rotation_radians {
+                                    return Err(CompressionError::BudgetExceeded {
+                                        track: track_index,
+                                        key: key_index - 1,
+                                        channel: Channel::Rotation,
+                                        error: segment,
+                                        budget: budget.rotation_radians,
+                                    });
+                                }
+                                bound = bound.max(segment);
+                            }
                         }
-                        previous = Some((source, decoded));
-                        measured.rotation_radians = measured.rotation_radians.max(error);
+                        previous = Some((source, decoded, error));
+                        measured.rotation_radians = measured.rotation_radians.max(bound);
                         values.extend_from_slice(&encoded);
                     }
                     ranges.push(ROTATION_DEQUANT);
@@ -653,7 +689,8 @@ impl QuantizedClip {
         self.budget
     }
 
-    /// Largest per-key error measured during compression (always within budget).
+    /// Largest error measured or bounded during compression (always within
+    /// budget); see [`QuantizationError`].
     pub fn measured_error(&self) -> QuantizationError {
         self.measured
     }
@@ -752,6 +789,21 @@ fn decode_rotation(q: &[u16; 4]) -> Quat {
     Quat::new(c(0), c(1), c(2), c(3))
         .normalized()
         .unwrap_or(Quat::IDENTITY)
+}
+
+/// First-order bound on the rotation error of any SLERP sample between two
+/// adjacent keys, given each key's `(source, decoded, error)`.
+///
+/// Errors along the arc interpolate between the endpoint errors, while errors
+/// perpendicular to it follow a Jacobi field on the unit 3-sphere, whose
+/// magnitude peaks at `max(e0, e1) / cos(Ω / 2)` for a quaternion-space arc of
+/// `Ω`. `Ω` is half the rotation angle between the keys; the larger of the
+/// source and decoded arcs is used.
+fn segment_rotation_bound(start: (Quat, Quat, f32), end: (Quat, Quat, f32)) -> f32 {
+    let arc = rotation_angle(start.0, end.0).max(rotation_angle(start.1, end.1));
+    // rotation angle ≤ π, so the divisor is at least cos(π / 4).
+    let amplification = 1.0 / f64::from(arc / 4.0).cos();
+    (f64::from(start.2.max(end.2)) * amplification) as f32
 }
 
 fn track_kind(clip: &AnimationClip, track: usize) -> Channel {
@@ -1057,9 +1109,9 @@ mod tests {
 
     #[test]
     fn quantized_sampling_error_is_bounded_by_budget() {
-        // Sampled values are convex (vector) or geodesic (rotation)
-        // interpolations of decoded keys, so the key budget bounds the sampled
-        // error up to float rounding.
+        // Vector samples are convex interpolations of decoded keys, so the key
+        // budget bounds them; rotation samples are bounded by the per-segment
+        // SLERP bound compression enforces. Both hold up to float rounding.
         const VECTOR_SLACK: f32 = 1.0e-5;
         const ROTATION_SLACK: f32 = 1.0e-4;
         for loop_mode in [LoopMode::Clamp, LoopMode::Repeat] {
@@ -1097,6 +1149,69 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn rotation_budget_bounds_interpolated_samples_not_only_keys() {
+        // Two near-orthogonal keys (quaternion dot ≈ 0.05) whose decoded keys
+        // both fit a 4e-5 rad budget, but whose SLERP midpoint deviates by
+        // ≈ 4.9e-5 rad: per-key checks alone would accept this track.
+        let a = Quat::new(-0.589_183_45, 0.528_153_96, 0.202_371_03, -0.577_028_75);
+        let b = Quat::new(0.470_512_03, 0.848_038_14, -0.202_357_34, 0.136_019_1);
+        let clip = AnimationClip::new(
+            "orthogonal",
+            vec![AnimationTrack::Rotation {
+                node: 0,
+                track: quat_track(&[(0.0, a), (1.0, b)], Interpolation::Linear),
+            }],
+        )
+        .unwrap();
+        let budget = |rotation| QuantizationBudget::new(1.0, rotation, 1.0);
+        let sampled_error = |quantized: &QuantizedClip| {
+            (0..=64)
+                .map(|step| {
+                    let time = step as f32 / 64.0;
+                    let mut expected = [Transform::IDENTITY];
+                    clip.sample(time, &mut expected).unwrap();
+                    let mut actual = [Transform::IDENTITY];
+                    quantized.sample(time, &mut actual).unwrap();
+                    rotation_angle(actual[0].rotation, expected[0].rotation)
+                })
+                .fold(0.0_f32, f32::max)
+        };
+
+        // The keys fit 4e-5 on their own (a Step track only samples keys) ...
+        let keys_only = AnimationClip::new(
+            "orthogonal-step",
+            vec![AnimationTrack::Rotation {
+                node: 0,
+                track: quat_track(&[(0.0, a), (1.0, b)], Interpolation::Step),
+            }],
+        )
+        .unwrap();
+        let step = QuantizedClip::compress(&keys_only, 1, budget(4.0e-5)).unwrap();
+        assert!(step.measured_error().rotation_radians <= 4.0e-5);
+        // ... yet interpolation exceeds it, so the linear track fails closed.
+        let Err(CompressionError::BudgetExceeded {
+            track: 0,
+            key: 0,
+            channel: Channel::Rotation,
+            error: bound,
+            ..
+        }) = QuantizedClip::compress(&clip, 1, budget(4.0e-5))
+        else {
+            panic!("interpolated rotation error must be checked against the budget");
+        };
+
+        // With the derived bound as budget, every sampled rotation fits it.
+        let quantized = QuantizedClip::compress(&clip, 1, budget(bound)).unwrap();
+        assert_eq!(quantized.measured_error().rotation_radians, bound);
+        let actual = sampled_error(&quantized);
+        assert!(
+            actual > 4.0e-5,
+            "midpoint error {actual} should exceed key errors"
+        );
+        assert!(actual <= bound + 1.0e-6, "sampled {actual} > bound {bound}");
     }
 
     #[test]
