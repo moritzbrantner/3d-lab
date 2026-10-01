@@ -211,12 +211,79 @@ export type RendererInstanceBatch = {
   instances: ReadonlyArray<RendererInstance>
 }
 
+/**
+ * A baked flipbook atlas: RGBA sRGB pixels, top row first, divided into `columns` x `rows` cells.
+ * Frames are numbered row-major from the top-left cell. The renderer uploads one texture per
+ * `resourceKey` and keeps it while the atlas is declared in `RendererEffects.atlases`.
+ */
+export type RendererEffectAtlas = {
+  /** Stable identity of the exact pixels and layout, like mesh `resourceKey`. */
+  resourceKey: string
+  /** Must be a multiple of `columns` (whole-texel cells). */
+  width: number
+  /** Must be a multiple of `rows` (whole-texel cells). */
+  height: number
+  pixels: Uint8Array | Uint8ClampedArray
+  columns: number
+  rows: number
+  /** Defaults to `columns * rows`. */
+  frameCount?: number
+  /**
+   * Texture filtering; defaults to `"linear"`. Linear atlases sample each frame inset by half a
+   * texel so edges never blend the adjacent frame; `"nearest"` samples the exact cell.
+   */
+  filter?: "linear" | "nearest"
+}
+
+/**
+ * One cosmetic camera-facing flipbook. Playback is sampled statelessly from `RendererEffects.time`:
+ * pending before `startTime`, active for `duration * loops`, then expired. Effects never feed back
+ * into simulation or game state.
+ */
+export type RendererEffectInstance = {
+  /** Unique among effects; the caller owns lifetime by including or omitting the id. */
+  id: string
+  /** `resourceKey` of a declared atlas. */
+  atlas: string
+  /** Only world space is supported; callers compose attached effects into a world origin. */
+  space: "world"
+  origin: readonly [number, number, number]
+  /** Same clock as `RendererEffects.time`. */
+  startTime: number
+  /** Seconds (or caller clock units) for one pass through all frames; positive. */
+  duration: number
+  /** Whole passes before expiry; defaults to 1. */
+  loops?: number
+  /** World-space quad size: one number for a square or `[width, height]`. Positive. */
+  scale: number | readonly [number, number]
+  /** Multiplies the atlas color; defaults to `#ffffff`. */
+  color?: RendererColor
+  /** Multiplies the atlas alpha; 0..1, defaults to 1. */
+  opacity?: number
+}
+
+export type RendererEffects = {
+  /** The cosmetic clock the effects are sampled at. */
+  time: number
+  /** `false` draws nothing and disposes every effect resource; defaults to `true`. */
+  enabled?: boolean
+  /**
+   * Caller budget for this frame (for example a reduced-intensity setting); the renderer
+   * `maxEffectInstances` option still caps it. Newest effects are kept; the rest are dropped.
+   */
+  maxInstances?: number
+  atlases: ReadonlyArray<RendererEffectAtlas>
+  instances: ReadonlyArray<RendererEffectInstance>
+}
+
 export type RendererFrame = {
   camera: RendererCamera
   environment?: RendererEnvironment
   nodes: RendererSceneNode[]
   /** Instance batch ids are unique among batches; they do not share a namespace with node ids. */
   instanceBatches?: ReadonlyArray<RendererInstanceBatch>
+  /** Cosmetic flipbook effects. Omitting it releases all effect resources. */
+  effects?: RendererEffects
 }
 
 export type RendererWorkObservations = Readonly<{
@@ -245,6 +312,21 @@ export type RendererWorkObservations = Readonly<{
   liveMaterialCount: number
   /** Batch-specific subset of `liveObjectCount`. */
   liveInstanceBatchCount: number
+  /** Effects drawn this frame (after the budget). */
+  effectActiveCount: number
+  /** Effects whose `startTime` is still ahead of `effects.time`. */
+  effectPendingCount: number
+  /** Effects past `startTime + duration * loops`. */
+  effectExpiredCount: number
+  /** Active effects dropped by the instance budget. */
+  effectDroppedCount: number
+  /** Effect instance attribute buffers (matrix, color, frame, opacity) marked for upload. */
+  effectBufferUploadCount: number
+  effectAtlasCreateCount: number
+  effectAtlasReuseCount: number
+  effectAtlasDisposeCount: number
+  /** Atlases with live texture, material, geometry, and instanced mesh. Not part of `liveObjectCount`. */
+  liveEffectAtlasCount: number
 }>
 
 export type ProjectionViewport = {
@@ -267,6 +349,8 @@ export type ThreeSceneRendererOptions = {
   background?: number | string
   shadows?: boolean
   pixelRatioLimit?: number
+  /** Hard cap on effects drawn per frame across all atlases (also each atlas mesh's fixed capacity). Defaults to 64. */
+  maxEffectInstances?: number
 }
 
 export type ThreeSceneRenderer = {
