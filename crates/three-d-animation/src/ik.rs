@@ -81,6 +81,11 @@ pub enum IkError {
     DegenerateLimb {
         layer: usize,
     },
+    /// `max_reach` leaves less reach than the limb's minimum `|upper - lower|`
+    /// in the current pose, so no reach interval exists.
+    ReachBelowMinimum {
+        layer: usize,
+    },
 }
 
 impl fmt::Display for IkError {
@@ -136,6 +141,10 @@ impl fmt::Display for IkError {
             Self::DegenerateLimb { layer } => write!(
                 formatter,
                 "IK layer {layer} limb has a zero-length bone in the current pose"
+            ),
+            Self::ReachBelowMinimum { layer } => write!(
+                formatter,
+                "IK layer {layer} max_reach is below the limb's minimum reach |upper - lower| in the current pose"
             ),
         }
     }
@@ -253,7 +262,9 @@ pub struct LimbGoal {
     /// incoming bend plane.
     pub pole: Option<Vec3>,
     /// Fraction of the full chain length usable as reach, in `(0, 1]`.
-    /// Values slightly below one avoid snapping into a locked limb.
+    /// Values slightly below one avoid snapping into a locked limb. The solve
+    /// rejects fractions below `|upper - lower| / (upper + lower)` for the
+    /// current pose with `IkError::ReachBelowMinimum`.
     pub max_reach: f32,
     pub end: EndEffector,
 }
@@ -629,6 +640,9 @@ impl IkWorkspace {
 
         let max_reach = (upper + lower) * goal.max_reach;
         let min_reach = (upper - lower).abs();
+        if max_reach < min_reach {
+            return Err(IkError::ReachBelowMinimum { layer });
+        }
         let distance = (t - a).length();
         let reachable = distance <= max_reach + REACH_TOLERANCE
             && distance + REACH_TOLERANCE >= min_reach
@@ -1064,6 +1078,44 @@ mod tests {
         let foot = workspace.world_position(3).unwrap();
         let (upper, lower) = bone_lengths(&workspace, leg(&rig));
         assert!(((foot - hip).length() - 0.9 * (upper + lower)).abs() < TOLERANCE);
+    }
+
+    #[test]
+    fn max_reach_below_unequal_limb_minimum_is_rejected() {
+        let rig = rig();
+        let mut base = base_pose();
+        // Upper leg ~0.5, lower leg 0.25: minimum reach fraction is ~1/3.
+        base[3] = translated(0.0, -0.25, 0.0);
+        let mut workspace = IkWorkspace::new(rig.node_count());
+        let mut output = base.clone();
+        let target = Vec3::new(0.1, 0.5, 0.0);
+
+        let goal = LimbGoal::new(leg(&rig), target).with_max_reach(0.2);
+        assert_eq!(
+            workspace.solve(
+                &rig,
+                &base,
+                &[IkLayer::new(IkGoal::Limb(goal), 1.0)],
+                &mut output
+            ),
+            Err(IkError::ReachBelowMinimum { layer: 0 })
+        );
+
+        // A fraction above the minimum still solves within the reach interval.
+        let goal = LimbGoal::new(leg(&rig), target).with_max_reach(0.5);
+        workspace
+            .solve(
+                &rig,
+                &base,
+                &[IkLayer::new(IkGoal::Limb(goal), 1.0)],
+                &mut output,
+            )
+            .unwrap();
+        let (upper, lower) = bone_lengths(&workspace, leg(&rig));
+        let reach =
+            (workspace.world_position(3).unwrap() - workspace.world_position(1).unwrap()).length();
+        assert!(reach + TOLERANCE >= (upper - lower).abs());
+        assert!(reach <= 0.5 * (upper + lower) + TOLERANCE);
     }
 
     #[test]

@@ -109,7 +109,9 @@ slice order. Source clips and the base pose are never written.
   may sit between). `LimbGoal` solves it analytically with an explicit target,
   optional pole point for the bend plane, and `max_reach` fraction. Targets
   outside `[|upper - lower|, max_reach]` are clamped to the nearest reachable
-  pose and reported as `IkStatus::Clamped`.
+  pose and reported as `IkStatus::Clamped`. A `max_reach` below the current
+  pose's `|upper - lower|` leaves no reach interval and is rejected with
+  `IkError::ReachBelowMinimum`.
 - Foot targets align a foot-local up axis to a supplied ground normal; hand
   targets optionally set an exact character-space grip orientation.
 - `LookAtChain` distributes aim rotation over at most four ancestor → aim
