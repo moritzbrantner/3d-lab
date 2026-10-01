@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import {
+  advancePreviewWallSeconds,
   findCrossFade,
   findPlayback,
   findScenario,
@@ -77,6 +78,25 @@ describe("Rust playback timing evidence", () => {
     expect(fade.readouts.map((readout) => readout.label)).toEqual(["Transition progress", "Blend weight"]);
     const [x, y, z, w] = fade.pose.rotation;
     expect(Math.abs(Math.hypot(x, y, z, w) - 1)).toBeLessThan(1e-5);
+  });
+
+  test("wraps the wall-time preview without dropping measured overrun", () => {
+    // Normal frames advance by the measured delta; the endpoint stays reachable.
+    expect(advancePreviewWallSeconds(1.5, 0.25, 2)).toBeCloseTo(1.75, 12);
+    expect(advancePreviewWallSeconds(1.75, 0.25, 2)).toBe(2);
+    // Crossing the end keeps the remainder instead of restarting at zero.
+    expect(advancePreviewWallSeconds(1.99, 1 / 60, 2)).toBeCloseTo(1.99 + 1 / 60 - 2, 12);
+    expect(advancePreviewWallSeconds(2, 0.1, 2)).toBeCloseTo(0.1, 12);
+    // A hitch spanning several loops lands where continuous time would.
+    expect(advancePreviewWallSeconds(0.5, 5.25, 2)).toBeCloseTo(1.75, 12);
+    // Summing frames across many wraps matches the total measured time.
+    let wall = 0;
+    for (let index = 0; index < 650; index += 1) wall = advancePreviewWallSeconds(wall, 1 / 60, 2);
+    expect(wall).toBeCloseTo((650 / 60) % 2, 9);
+    // Deltas that measure nothing advance nothing.
+    expect(advancePreviewWallSeconds(0.8, -0.004, 2)).toBe(0.8);
+    expect(advancePreviewWallSeconds(0.8, Number.NaN, 2)).toBe(0.8);
+    expect(advancePreviewWallSeconds(0.8, 0.1, 0)).toBe(0);
   });
 
   test("does not reimplement clip sampling or clock policy", () => {

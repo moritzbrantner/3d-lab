@@ -6,6 +6,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { PrecisionRange } from "./PrecisionRange";
 import { disposeRenderableResources } from "@/lib/three-resources";
 import {
+  advancePreviewWallSeconds,
   findScenario,
   lookupTimingFrame,
   partitionFinals,
@@ -214,7 +215,7 @@ export function PlaybackTimingLab() {
     let id = requestAnimationFrame(function tick(now) {
       const delta = (now - last) / 1000;
       last = now;
-      setWallSeconds((current) => (current + delta > total ? 0 : current + delta));
+      setWallSeconds((current) => advancePreviewWallSeconds(current, delta, total));
       id = requestAnimationFrame(tick);
     });
     return () => cancelAnimationFrame(id);

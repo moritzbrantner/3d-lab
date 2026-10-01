@@ -555,11 +555,17 @@ impl AnimationClip {
         &self.tracks
     }
 
+    /// A clip whose duration is at most `EPSILON` has no meaningful timeline:
+    /// every sampling path resolves it to its time-zero pose.
+    fn is_instantaneous(&self) -> bool {
+        self.duration <= EPSILON
+    }
+
     fn sample_time(&self, time: f32) -> Result<f32, ClipError> {
         if !time.is_finite() {
             return Err(ClipError::NonFiniteTime);
         }
-        if self.duration <= EPSILON {
+        if self.is_instantaneous() {
             return Ok(0.0);
         }
         Ok(match self.loop_mode {
@@ -579,11 +585,19 @@ impl AnimationClip {
     /// The clip's own [`LoopMode`] is not applied: the time is only clamped, so
     /// `duration` yields the final pose even for a [`LoopMode::Repeat`] clip
     /// (where [`Self::sample`] would wrap it to the first pose).
+    ///
+    /// Like [`Self::sample`], a clip whose duration is effectively zero always
+    /// samples its time-zero pose, so both paths agree on degenerate clips.
     pub fn sample_resolved(&self, time: f32, pose: &mut [Transform]) -> Result<(), ClipError> {
         if !time.is_finite() {
             return Err(ClipError::NonFiniteTime);
         }
-        self.sample_tracks(time.clamp(0.0, self.duration), pose)
+        let time = if self.is_instantaneous() {
+            0.0
+        } else {
+            time.clamp(0.0, self.duration)
+        };
+        self.sample_tracks(time, pose)
     }
 
     fn sample_tracks(&self, time: f32, pose: &mut [Transform]) -> Result<(), ClipError> {
@@ -1115,6 +1129,45 @@ mod tests {
             clip.sample_resolved(f32::INFINITY, &mut pose),
             Err(ClipError::NonFiniteTime)
         );
+    }
+
+    #[test]
+    fn effectively_instantaneous_clips_sample_time_zero_on_every_path() {
+        let duration = EPSILON * 0.5;
+        let track = KeyframeTrack::new(
+            vec![
+                Keyframe {
+                    time: 0.0,
+                    value: Vec3::ZERO,
+                },
+                Keyframe {
+                    time: duration,
+                    value: Vec3::new(1.0, 0.0, 0.0),
+                },
+            ],
+            Interpolation::Linear,
+        )
+        .unwrap();
+        for loop_mode in [LoopMode::Clamp, LoopMode::Repeat] {
+            let clip = AnimationClip::new(
+                "blink",
+                vec![AnimationTrack::Translation {
+                    node: 0,
+                    track: track.clone(),
+                }],
+            )
+            .unwrap()
+            .with_loop_mode(loop_mode);
+            assert!(clip.duration() > 0.0);
+            for time in [0.0, duration, 1.0] {
+                let mut sampled = [Transform::IDENTITY];
+                let mut resolved = [Transform::IDENTITY];
+                clip.sample(time, &mut sampled).unwrap();
+                clip.sample_resolved(time, &mut resolved).unwrap();
+                assert_vec3_close(sampled[0].translation, Vec3::ZERO);
+                assert_eq!(sampled, resolved, "{loop_mode:?} at {time}");
+            }
+        }
     }
 
     #[test]

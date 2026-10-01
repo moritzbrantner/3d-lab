@@ -170,6 +170,26 @@ export function frameAtWallTime(scenario: TimingScenario, wallSeconds: number): 
   return low;
 }
 
+/**
+ * Advances the lab's looping wall-time preview by one measured browser delta.
+ *
+ * This is presentation time over the recorded evidence range, not clip-clock
+ * policy (that stays in Rust). Crossing the end keeps the overrun instead of
+ * restarting at zero, so no measured time is dropped on a wrap, even after a
+ * hitch spanning several loops. The inclusive endpoint stays reachable.
+ * Negative or non-finite deltas (e.g. a rAF timestamp predating the start
+ * sample) advance nothing.
+ */
+export function advancePreviewWallSeconds(currentSeconds: number, deltaSeconds: number, spanSeconds: number): number {
+  if (!(spanSeconds > 0) || !Number.isFinite(spanSeconds)) return 0;
+  const current = Number.isFinite(currentSeconds) ? Math.min(Math.max(currentSeconds, 0), spanSeconds) : 0;
+  const delta = Number.isFinite(deltaSeconds) && deltaSeconds > 0 ? deltaSeconds : 0;
+  const next = current + delta;
+  if (next <= spanSeconds) return next;
+  const wrapped = next % spanSeconds;
+  return Number.isFinite(wrapped) ? wrapped : 0;
+}
+
 export function poseAt(flat: number[], frame: number): Pose {
   const offset = frame * POSE_STRIDE;
   if (offset < 0 || offset + POSE_STRIDE > flat.length) fail(`no pose for frame ${frame}`);

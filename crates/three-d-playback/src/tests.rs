@@ -541,3 +541,79 @@ fn arithmetic_overflow_is_rejected_without_poisoning_clocks() {
     assert_eq!(fade.advance(2.0), Err(PlaybackError::TimeOverflow));
     assert_eq!(fade, before);
 }
+
+#[test]
+fn effectively_instantaneous_clips_play_their_time_zero_pose() {
+    // A positive duration below the animation epsilon is accepted by the
+    // clock, but the clip owns its sampling semantics: every path shows the
+    // same time-zero pose that `AnimationClip::sample` does.
+    let duration = 5.0e-7_f32;
+    let track = KeyframeTrack::new(
+        vec![
+            Keyframe {
+                time: 0.0,
+                value: Vec3::ZERO,
+            },
+            Keyframe {
+                time: duration,
+                value: Vec3::new(1.0, 0.0, 0.0),
+            },
+        ],
+        Interpolation::Linear,
+    )
+    .unwrap();
+    for loop_mode in [LoopMode::Clamp, LoopMode::Repeat] {
+        let blink = AnimationClip::new(
+            "blink",
+            vec![AnimationTrack::Translation {
+                node: 0,
+                track: track.clone(),
+            }],
+        )
+        .unwrap()
+        .with_loop_mode(loop_mode);
+        let mut expected = [Transform::IDENTITY];
+        blink.sample(0.0, &mut expected).unwrap();
+        for direction in [PlaybackDirection::Forward, PlaybackDirection::Reverse] {
+            let mut clock = PlaybackClock::from_clip(&blink)
+                .unwrap()
+                .with_direction(direction);
+            for delta in [0.0, 1.0e-7, 0.016, 1.0] {
+                clock.advance(delta).unwrap();
+                let mut pose = [Transform::IDENTITY];
+                clock.sample(&blink, &mut pose).unwrap();
+                let mut direct = [Transform::IDENTITY];
+                blink.sample(clock.clip_time(), &mut direct).unwrap();
+                assert_eq!(pose, expected, "{loop_mode:?} {direction:?}");
+                assert_eq!(pose, direct, "{loop_mode:?} {direction:?}");
+            }
+        }
+    }
+
+    // A cross-fade into such a clip agrees with direct sampling as well.
+    let blink = AnimationClip::new(
+        "blink",
+        vec![AnimationTrack::Translation { node: 0, track }],
+    )
+    .unwrap();
+    let mut fade = CrossFade::new(
+        PlaybackClock::from_clip(&clip()).unwrap(),
+        PlaybackClock::from_clip(&blink).unwrap(),
+        TransitionClock::new(0.25, TransitionCurve::Linear).unwrap(),
+    );
+    fade.advance(0.5).unwrap();
+    assert!(fade.transition().is_complete());
+    let mut workspace = ClipBlendWorkspace::new(1);
+    let mut pose = [Transform::IDENTITY];
+    fade.sample(
+        &clip(),
+        &blink,
+        &mut workspace,
+        &[Transform::IDENTITY],
+        &mut pose,
+    )
+    .unwrap();
+    let mut expected = [Transform::IDENTITY];
+    blink.sample(0.0, &mut expected).unwrap();
+    assert_transform_close(pose[0], expected[0]);
+}
