@@ -27,13 +27,25 @@ function wrapClipTime(time: number, duration: number): number {
   return wrapped < 0 ? wrapped + duration : wrapped;
 }
 
-export function createClipClock(time: number, duration = TEACHING_CLIP_DURATION): ClipClock {
-  return { time: wrapClipTime(time, duration), sinceLastPublish: 0 };
+/**
+ * Explicitly set times (scrub, pause sync) keep the inclusive clip endpoint so
+ * the advertised maximum stays inspectable; only playback wraps.
+ */
+function clampClipTime(time: number, duration: number): number {
+  if (!Number.isFinite(time)) return 0;
+  return Math.min(Math.max(time, 0), duration);
 }
 
-/** Sets the clock to an exact time (scrub, pause sync) and restarts the publish window. */
+export function createClipClock(time: number, duration = TEACHING_CLIP_DURATION): ClipClock {
+  return { time: clampClipTime(time, duration), sinceLastPublish: 0 };
+}
+
+/**
+ * Sets the clock to an exact time (scrub, pause sync) and restarts the publish
+ * window. The time is clamped to `[0, duration]`, never wrapped.
+ */
 export function setClipClockTime(clock: ClipClock, time: number, duration = TEACHING_CLIP_DURATION): void {
-  clock.time = wrapClipTime(time, duration);
+  clock.time = clampClipTime(time, duration);
   clock.sinceLastPublish = 0;
 }
 

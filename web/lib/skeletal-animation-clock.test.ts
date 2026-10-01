@@ -54,4 +54,25 @@ describe("skeletal animation clip clock", () => {
     expect(clock.sinceLastPublish).toBe(0);
     expect(advanceClipClock(clock, 0.0625, { publishInterval: 0.125 })).toBe(false);
   });
+
+  test("scrubbing keeps the inclusive clip endpoint and clamps out-of-range times", () => {
+    const clock = createClipClock(TEACHING_CLIP_DURATION);
+    expect(clock.time).toBe(TEACHING_CLIP_DURATION);
+
+    setClipClockTime(clock, 0.4);
+    setClipClockTime(clock, TEACHING_CLIP_DURATION);
+    expect(clock.time).toBe(TEACHING_CLIP_DURATION);
+
+    setClipClockTime(clock, TEACHING_CLIP_DURATION + 0.5);
+    expect(clock.time).toBe(TEACHING_CLIP_DURATION);
+    setClipClockTime(clock, -0.25);
+    expect(clock.time).toBe(0);
+    setClipClockTime(clock, Number.NaN);
+    expect(clock.time).toBe(0);
+
+    // Playback from the endpoint still wraps back into the clip.
+    setClipClockTime(clock, TEACHING_CLIP_DURATION);
+    advanceClipClock(clock, 0.0625);
+    expect(clock.time).toBeCloseTo(0.0625, 9);
+  });
 });
