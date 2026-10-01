@@ -1,9 +1,17 @@
-//! Deterministic level-of-detail generation for renderer-independent meshes.
+//! Deterministic level-of-detail generation and selection for renderer-independent meshes.
 //!
 //! `three-d-core` remains the authority for mesh validity and vertex attributes.
-//! This crate only derives alternate index buffers from that source mesh.
+//! This crate derives alternate index buffers from that source mesh and owns the
+//! renderer-independent screen-space policy that decides which level to show.
 
 use core::fmt;
+
+mod selection;
+
+pub use selection::{
+    LodSelection, LodView, ScreenSpaceLodPolicy, SelectionError, SelectionReason, mesh_extent,
+    projected_error_pixels,
+};
 
 use meshopt::simplify::{SimplifyOptions, simplify_decoder};
 use three_d_core::Mesh;
