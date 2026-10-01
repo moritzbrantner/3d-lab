@@ -15,7 +15,13 @@ One run = the steps below, in order, then a short report. Keep chat output to th
 
 - `git fetch` and work from `origin/main`. Never edit the user's checked-out branch; use a worktree for any change you make yourself.
 - Make sure the labels in `docs/AGENT_TASKS.md` exist (`gh label create … || true`).
-- Recover stale locks: an `agent:opus` or `agent:sonnet` issue labelled `in-progress` that has no open PR and no live background agent from this session loses `in-progress`, with a one-line comment, so it becomes dispatchable again. Never touch `in-progress` on `agent:sol` issues; report a Sol issue that has been `in-progress` for over 48 hours with no PR or branch push.
+- Recover stale locks: an `agent:opus` or `agent:sonnet` issue loses `in-progress`, with a one-line comment, so it becomes dispatchable again, only when all of these hold:
+  - no open PR references it;
+  - the label was added more than 6 hours ago (issue timeline);
+  - the issue's branch has no push in the last 6 hours, or does not exist;
+  - no background agent from this session is working on it.
+
+  Another session's agent may be invisible, so age and branch activity are the evidence. Never touch `in-progress` on `agent:sol` issues; report a Sol issue that has been `in-progress` for over 48 hours with no PR or branch push.
 - Collect state:
   - `gh pr list --state open --limit 200 --json number,title,headRefName,author,labels,isDraft,url`
   - `gh issue list --label agent-task --state open --limit 200 --json number,title,labels,body`
@@ -46,8 +52,8 @@ For each `spec:draft` issue (often drafted in a ChatGPT chat or by a consumer's 
 
 - Check it against the current code on `origin/main`: crate and module names, renderer exports, contract versions, budgets, open parallel tasks and PRs.
 - Check it against `docs/AGENT_TASKS.md`: sizing, one change per versioned format, the implementer label, every section present.
-- If you can complete it by deciding things yourself, edit the body (`gh issue edit <n> --body-file …`), summarise what you changed in a comment, and swap `spec:draft` for `spec:ready`.
-- If a decision belongs to the owner (scope, public API shape for consumers, anything touching an authority boundary), ask in a comment and label it `spec:needs-input`. Re-check those issues for answers on every run.
+- If you can complete it by deciding things yourself, edit the body (`gh issue edit <n> --body-file …`), summarise what you changed in a comment, and swap `spec:draft` for `spec:ready` (exactly one `spec:*` label remains).
+- If a decision belongs to the owner (scope, public API shape for consumers, anything touching an authority boundary), ask in a comment and swap `spec:draft` for `spec:needs-input` (never both). Every run re-checks `spec:needs-input` issues for answers; once answered, complete the spec and swap `spec:needs-input` for `spec:ready`, so exactly one `spec:*` label remains.
 
 ## 3. Refresh and fill the queues
 
