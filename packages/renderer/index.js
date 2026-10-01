@@ -5,6 +5,7 @@ import {createMaterial, instanceBatchMaterialNode, materialKey} from "./material
 import {createIndexedMeshGeometry} from "./mesh-geometry.js"
 import {projectWorldPointUnchecked} from "./projection.js"
 import {attachInstanceBatchResult, syncInstanceBatch} from "./instance-batches.js"
+import {createCosmeticEffectLayer, validateCosmeticEffects} from "./cosmetic-effects.js"
 import {acquireResource, evictUnusedResources, recordLiveCacheCounts} from "./resources.js"
 
 const DEFAULT_BACKGROUND = 0x0c111a
@@ -17,6 +18,10 @@ export class ThreeRendererContractError extends Error {
     super(message)
     this.name = "ThreeRendererContractError"
   }
+}
+
+function failContract(message) {
+  throw new ThreeRendererContractError(message)
 }
 
 function requireFiniteMatrix(name, value) {
@@ -260,6 +265,7 @@ export function validateRenderFrame(frame) {
   }
 
   if (frame.instanceBatches !== undefined) validateInstanceBatches(frame.instanceBatches)
+  if (frame.effects !== undefined) validateCosmeticEffects(frame.effects, failContract)
 
   return frame
 }
@@ -465,6 +471,7 @@ export function createThreeSceneRenderer(canvas, options = {}) {
   const materialInput = {node: null, vertexColors: false}
   // Batches use the default lit material in white; their colors are uploaded as instance colors.
   const batchMaterialNode = {}
+  const effectLayer = createCosmeticEffectLayer(scene, {maxInstances: options.maxEffectInstances, fail: failContract})
   const pixelRatioLimit = options.pixelRatioLimit ?? DEFAULT_PIXEL_RATIO_LIMIT
   let configuredWidth = null
   let configuredHeight = null
@@ -509,6 +516,7 @@ export function createThreeSceneRenderer(canvas, options = {}) {
 
       const observations = createWorkObservations(0)
       recordLiveCacheCounts(observations, liveCaches)
+      effectLayer.observe(observations)
       renderer.render(scene, camera)
       return observations
     },
@@ -631,6 +639,7 @@ export function createThreeSceneRenderer(canvas, options = {}) {
       observations.geometryEvictCount = evictUnusedResources(geometries, liveGeometryKeys)
       observations.materialEvictCount = evictUnusedResources(materials, liveMaterialKeys)
       recordLiveCacheCounts(observations, liveCaches)
+      effectLayer.sync(frame.effects, observations)
 
       renderer.render(scene, camera)
       return observations
@@ -640,6 +649,7 @@ export function createThreeSceneRenderer(canvas, options = {}) {
       for (const geometry of geometries.values()) geometry.dispose()
       for (const material of materials.values()) material.dispose()
       for (const state of instanceBatches.values()) state.mesh.dispose()
+      effectLayer.dispose()
       renderer.dispose()
       objects.clear()
       instanceBatches.clear()
