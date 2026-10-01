@@ -51,7 +51,7 @@ The browser model-pipeline lesson intentionally exposes the full glTF chain—sc
 
 ## Browser renderer materialization boundary
 
-The reusable `@moritzbrantner/three-d-renderer` package accepts validated indexed mesh geometry as a renderer materialization boundary. A mesh descriptor carries positions, triangle indices, optional aligned normals, and a caller-supplied immutable `resourceKey`. The renderer validates structural safety, materializes one Three.js `BufferGeometry`, and caches it by that key.
+The reusable `@moritzbrantner/three-d-renderer` package accepts validated indexed mesh geometry as a renderer materialization boundary. A mesh descriptor carries positions, triangle indices, optional aligned normals and sRGB vertex colors, and a caller-supplied immutable `resourceKey` that identifies that whole payload (see [`browser-renderer.md`](browser-renderer.md#indexed-mesh-geometry-and-vertex-colors)). The renderer validates structural safety, materializes one Three.js `BufferGeometry`, and caches it by that key.
 
 The `resourceKey` is identity, not a filename. Downstream consumers should use a content-derived identity such as the SHA-256 already carried by `asset-tooling` outputs and must change the key whenever geometry bytes/semantics change. The renderer does not infer provenance, decode glTF/OBJ, normalize coordinates, or own asset-processing policy; those responsibilities remain with `three-d-formats`, `three-d-scene`, and `asset-tooling`.
 

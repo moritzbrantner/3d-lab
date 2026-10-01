@@ -1,5 +1,8 @@
 import * as THREE from "three"
 import {webGpuProjectionToWebGl} from "./depth.js"
+import {createSceneEnvironment} from "./environment.js"
+import {createMaterial, materialKey} from "./materials.js"
+import {createIndexedMeshGeometry} from "./mesh-geometry.js"
 import {projectWorldPointUnchecked} from "./projection.js"
 import {acquireResource, evictUnusedResources} from "./resources.js"
 
@@ -43,12 +46,82 @@ function requireFiniteTuple(name, value, length, {positive = false} = {}) {
   }
 }
 
-function requireColor(value) {
+function requireColor(value, name = "node color") {
   const numeric = typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 0xffffff
   const hex = typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value)
   if (!numeric && !hex) {
-    throw new ThreeRendererContractError("node color must be a 24-bit integer or #RRGGBB string")
+    throw new ThreeRendererContractError(`${name} must be a 24-bit integer or #RRGGBB string`)
   }
+}
+
+function requireObject(name, value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new ThreeRendererContractError(`${name} must be an object`)
+  }
+}
+
+function requireIntensity(name, value) {
+  if (!Number.isFinite(value) || value < 0) {
+    throw new ThreeRendererContractError(`${name} must be finite and non-negative`)
+  }
+}
+
+function validateEnvironment(environment) {
+  requireObject("render frame environment", environment)
+  if (environment.background !== undefined) {
+    requireColor(environment.background, "environment background")
+  }
+  if (environment.sky !== undefined) {
+    requireObject("environment sky", environment.sky)
+    requireColor(environment.sky.skyColor, "environment sky skyColor")
+    requireColor(environment.sky.groundColor, "environment sky groundColor")
+    requireIntensity("environment sky intensity", environment.sky.intensity)
+  }
+  if (environment.sun !== undefined) {
+    const sun = environment.sun
+    requireObject("environment sun", sun)
+    requireFiniteTuple("environment sun direction", sun.direction, 3)
+    const length = Math.hypot(sun.direction[0], sun.direction[1], sun.direction[2])
+    if (!Number.isFinite(length) || length <= Number.EPSILON) {
+      throw new ThreeRendererContractError("environment sun direction must be non-zero")
+    }
+    requireColor(sun.color, "environment sun color")
+    requireIntensity("environment sun intensity", sun.intensity)
+  }
+  if (environment.fog !== undefined && environment.fog !== null) {
+    const fog = environment.fog
+    requireObject("environment fog", fog)
+    requireColor(fog.color, "environment fog color")
+    if (!Number.isFinite(fog.near) || fog.near < 0 || !Number.isFinite(fog.far) || fog.far <= fog.near) {
+      throw new ThreeRendererContractError("environment fog must satisfy 0 <= near < far with finite distances")
+    }
+  }
+  if (environment.shadowFocus !== undefined) {
+    requireFiniteTuple("environment shadowFocus", environment.shadowFocus, 3)
+  }
+  if (
+    environment.shadowExtent !== undefined &&
+    (!Number.isFinite(environment.shadowExtent) || environment.shadowExtent <= 0)
+  ) {
+    throw new ThreeRendererContractError("environment shadowExtent must be finite and positive")
+  }
+  if (
+    environment.shadowCasterReach !== undefined &&
+    (!Number.isFinite(environment.shadowCasterReach) || environment.shadowCasterReach < 0)
+  ) {
+    throw new ThreeRendererContractError("environment shadowCasterReach must be finite and non-negative")
+  }
+}
+
+function validateNodeShading(node) {
+  if (node.unlit !== undefined && typeof node.unlit !== "boolean") {
+    throw new ThreeRendererContractError(`unlit for ${node.id} must be a boolean`)
+  }
+  if (node.emissive === undefined) return
+  if (node.unlit === true) {
+    throw new ThreeRendererContractError(`scene node ${node.id} cannot be both unlit and emissive`)
+  }
+  requireColor(node.emissive, `emissive color for ${node.id}`)
 }
 
 function validateIndexedMeshGeometry(geometry) {
@@ -81,6 +154,17 @@ function validateIndexedMeshGeometry(geometry) {
     }
     for (const normal of geometry.normals) {
       requireFiniteTuple("mesh normal", normal, 3)
+    }
+  }
+  if (geometry.colors !== undefined) {
+    if (!Array.isArray(geometry.colors) || geometry.colors.length !== geometry.positions.length) {
+      throw new ThreeRendererContractError("mesh colors must align one-to-one with positions")
+    }
+    for (const color of geometry.colors) {
+      requireFiniteTuple("mesh color", color, 3)
+      if (color[0] < 0 || color[0] > 1 || color[1] < 0 || color[1] > 1 || color[2] < 0 || color[2] > 1) {
+        throw new ThreeRendererContractError("mesh color components must be between 0 and 1")
+      }
     }
   }
 }
@@ -150,6 +234,7 @@ export function validateRenderFrame(frame) {
     throw new ThreeRendererContractError("render frame is required")
   }
   validateRenderCamera(frame.camera)
+  if (frame.environment !== undefined) validateEnvironment(frame.environment)
   if (!Array.isArray(frame.nodes)) {
     throw new ThreeRendererContractError("render frame nodes must be an array")
   }
@@ -168,6 +253,7 @@ export function validateRenderFrame(frame) {
     ids.add(node.id)
     validateTransform(node)
     validateGeometry(node.geometry)
+    validateNodeShading(node)
     requireColor(node.color)
     if (node.opacity !== undefined && (!Number.isFinite(node.opacity) || node.opacity < 0 || node.opacity > 1)) {
       throw new ThreeRendererContractError(`opacity for ${node.id} must be between 0 and 1`)
@@ -251,43 +337,11 @@ function createGeometry(geometry) {
       return new THREE.SphereGeometry(geometry.radius, 20, 12)
     case "cylinder":
       return new THREE.CylinderGeometry(geometry.radius, geometry.radius, geometry.height, 20)
-    case "mesh": {
-      const meshGeometry = new THREE.BufferGeometry()
-      meshGeometry.setAttribute(
-        "position",
-        new THREE.Float32BufferAttribute(geometry.positions.flat(), 3),
-      )
-      meshGeometry.setIndex([...geometry.indices])
-      if (geometry.normals !== undefined) {
-        meshGeometry.setAttribute(
-          "normal",
-          new THREE.Float32BufferAttribute(geometry.normals.flat(), 3),
-        )
-      } else {
-        meshGeometry.computeVertexNormals()
-      }
-      meshGeometry.computeBoundingSphere()
-      return meshGeometry
-    }
+    case "mesh":
+      return createIndexedMeshGeometry(geometry)
     default:
       throw new ThreeRendererContractError(`unsupported geometry kind: ${String(geometry.kind)}`)
   }
-}
-
-function materialKey(node) {
-  return `${String(node.color)}:${node.opacity ?? 1}:${node.wireframe === true}`
-}
-
-function createMaterial(node) {
-  const opacity = node.opacity ?? 1
-  return new THREE.MeshStandardMaterial({
-    color: new THREE.Color(node.color),
-    opacity,
-    transparent: opacity < 1,
-    wireframe: node.wireframe === true,
-    roughness: 0.86,
-    metalness: 0.02,
-  })
 }
 
 function applyNodeTransform(mesh, node, scratch) {
@@ -317,6 +371,7 @@ function createWorkObservations(nodeVisitCount) {
     materialCreateCount: 0,
     materialReuseCount: 0,
     materialEvictCount: 0,
+    environmentUpdateCount: 0,
     liveObjectCount: 0,
     liveGeometryCount: 0,
     liveMaterialCount: 0,
@@ -337,12 +392,10 @@ export function createThreeSceneRenderer(canvas, options = {}) {
   renderer.shadowMap.enabled = options.shadows === true
 
   const scene = new THREE.Scene()
-  scene.background = options.alpha === true ? null : new THREE.Color(options.background ?? DEFAULT_BACKGROUND)
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x334433, 1.7))
-  const keyLight = new THREE.DirectionalLight(0xffffff, 2.2)
-  keyLight.position.set(10, 18, 8)
-  keyLight.castShadow = options.shadows === true
-  scene.add(keyLight)
+  const sceneEnvironment = createSceneEnvironment(scene, {
+    background: options.alpha === true ? null : options.background ?? DEFAULT_BACKGROUND,
+    shadows: options.shadows === true,
+  })
 
   const camera = new THREE.Camera()
   camera.matrixAutoUpdate = false
@@ -354,6 +407,8 @@ export function createThreeSceneRenderer(canvas, options = {}) {
     rotation: new THREE.Quaternion(),
     scale: new THREE.Vector3(),
   }
+  // Reused per node so material lookup allocates no request object.
+  const materialInput = {node: null, vertexColors: false}
   const pixelRatioLimit = options.pixelRatioLimit ?? DEFAULT_PIXEL_RATIO_LIMIT
   let configuredWidth = null
   let configuredHeight = null
@@ -388,8 +443,9 @@ export function createThreeSceneRenderer(canvas, options = {}) {
     },
 
     /**
-     * Draw the already-submitted scene with a new camera without revisiting scene nodes.
-     * The caller opts into this method only when object/geometry/material/transform state is unchanged.
+     * Draw the already-submitted scene with a new camera without revisiting scene nodes or the
+     * environment. The caller opts into this method only when object/geometry/material/transform
+     * state and the frame environment are unchanged.
      */
     renderCamera(frameCamera) {
       validateRenderCamera(frameCamera)
@@ -408,6 +464,7 @@ export function createThreeSceneRenderer(canvas, options = {}) {
       applyCamera(frame.camera)
 
       const observations = createWorkObservations(frame.nodes.length)
+      observations.environmentUpdateCount = sceneEnvironment.apply(frame.environment)
       const liveObjectIds = new Set()
       const liveGeometryKeys = new Set()
       const liveMaterialKeys = new Set()
@@ -422,12 +479,16 @@ export function createThreeSceneRenderer(canvas, options = {}) {
           observations,
           "geometryCreateCount",
         )
-        const nextMaterialKey = materialKey(node)
+        // The material follows the geometry actually bound to the mesh, so both always agree on
+        // the color attribute even when a resourceKey is reused with a different payload.
+        materialInput.node = node
+        materialInput.vertexColors = nextGeometry.hasAttribute("color")
+        const nextMaterialKey = materialKey(materialInput)
         const nextMaterial = acquireResource(
           materials,
           nextMaterialKey,
           createMaterial,
-          node,
+          materialInput,
           observations,
           "materialCreateCount",
         )
@@ -451,6 +512,7 @@ export function createThreeSceneRenderer(canvas, options = {}) {
         mesh.matrixWorldNeedsUpdate = true
         mesh.visible = node.visible !== false
       }
+      materialInput.node = null
 
       observations.objectReuseCount = observations.nodeVisitCount - observations.objectCreateCount
       observations.geometryReuseCount = observations.nodeVisitCount - observations.geometryCreateCount
