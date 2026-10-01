@@ -35,6 +35,10 @@ pub const MAX_WORLD_PASSES_PER_LAYER: usize = MAX_LOOK_AT_JOINTS + 2;
 
 const EPSILON: f32 = 1.0e-6;
 const REACH_TOLERANCE: f32 = 1.0e-4;
+/// Slack applied to the inclusive minimum reach fraction so a fraction
+/// computed exactly as `|upper - lower| / (upper + lower)` still solves despite
+/// `f32` rounding.
+pub const MIN_REACH_FRACTION_TOLERANCE: f32 = 1.0e-5;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum IkError {
@@ -262,9 +266,11 @@ pub struct LimbGoal {
     /// incoming bend plane.
     pub pole: Option<Vec3>,
     /// Fraction of the full chain length usable as reach, in `(0, 1]`.
-    /// Values slightly below one avoid snapping into a locked limb. The solve
-    /// rejects fractions below `|upper - lower| / (upper + lower)` for the
-    /// current pose with `IkError::ReachBelowMinimum`.
+    /// Values slightly below one avoid snapping into a locked limb. The minimum
+    /// `|upper - lower| / (upper + lower)` for the current pose is inclusive:
+    /// fractions within [`MIN_REACH_FRACTION_TOLERANCE`] below it solve at the
+    /// minimum reach, and smaller fractions are rejected with
+    /// `IkError::ReachBelowMinimum`.
     pub max_reach: f32,
     pub end: EndEffector,
 }
@@ -470,12 +476,25 @@ pub struct IkSolveStats {
     pub world_nodes_updated: usize,
 }
 
-/// Reusable scratch storage; a solve performs no heap allocation.
-#[derive(Debug, Clone, PartialEq)]
+/// Reusable scratch storage; a solve performs no heap allocation. Clones keep
+/// room for [`MAX_IK_LAYERS`] outcomes so they uphold the same contract.
+#[derive(Debug, PartialEq)]
 pub struct IkWorkspace {
     world: Vec<Mat4>,
     world_rotation: Vec<Quat>,
     outcomes: Vec<IkLayerOutcome>,
+}
+
+impl Clone for IkWorkspace {
+    fn clone(&self) -> Self {
+        let mut outcomes = Vec::with_capacity(MAX_IK_LAYERS.max(self.outcomes.len()));
+        outcomes.extend_from_slice(&self.outcomes);
+        Self {
+            world: self.world.clone(),
+            world_rotation: self.world_rotation.clone(),
+            outcomes,
+        }
+    }
 }
 
 impl IkWorkspace {
@@ -638,11 +657,14 @@ impl IkWorkspace {
             return Err(IkError::DegenerateLimb { layer });
         }
 
-        let max_reach = (upper + lower) * goal.max_reach;
+        let full_reach = upper + lower;
         let min_reach = (upper - lower).abs();
-        if max_reach < min_reach {
+        if goal.max_reach + MIN_REACH_FRACTION_TOLERANCE < min_reach / full_reach {
             return Err(IkError::ReachBelowMinimum { layer });
         }
+        // Inside the tolerance the reach interval collapses onto the minimum;
+        // this also keeps the clamp below well-ordered.
+        let max_reach = (full_reach * goal.max_reach).max(min_reach);
         let distance = (t - a).length();
         let reachable = distance <= max_reach + REACH_TOLERANCE
             && distance + REACH_TOLERANCE >= min_reach
@@ -774,6 +796,21 @@ fn validate_layer(rig: &IkRig, index: usize, layer: &IkLayer<'_>) -> Result<(), 
     }
     for &joint in affected_joints(&layer.goal).as_slice() {
         rig.check(joint)?;
+    }
+    // Chains only carry indices, so recheck their ancestry against the rig
+    // used for this solve; a chain built for another topology must not rotate
+    // unrelated joints.
+    match &layer.goal {
+        IkGoal::Limb(goal) => {
+            let TwoBoneChain { root, mid, tip } = goal.chain;
+            rig.require_descendant(root, mid)?;
+            rig.require_descendant(mid, tip)?;
+        }
+        IkGoal::LookAt(goal) => {
+            for pair in goal.chain.joints().windows(2) {
+                rig.require_descendant(pair[0], pair[1])?;
+            }
+        }
     }
     let invalid = IkError::InvalidTarget { layer: index };
     match layer.goal {
@@ -1402,5 +1439,134 @@ mod tests {
                 actual: 3
             })
         );
+    }
+
+    #[test]
+    fn chains_are_revalidated_against_the_solve_rig() {
+        let rig = rig();
+        let leg = leg(&rig);
+        let look = LookAtChain::new(&rig, &[(4, 0.5), (5, 1.0)], Vec3::new(0.0, 0.0, 1.0)).unwrap();
+        // Same node count, but the leg joints and head are re-parented to the
+        // hips, so neither chain's ancestry holds.
+        let other = IkRig::new(vec![
+            None,
+            Some(0),
+            Some(0),
+            Some(0),
+            Some(0),
+            Some(0),
+            Some(4),
+            Some(6),
+            Some(7),
+        ])
+        .unwrap();
+        let base = base_pose();
+        let mut workspace = IkWorkspace::new(other.node_count());
+        let mut output = base.clone();
+
+        let limb = IkGoal::Limb(LimbGoal::new(leg, Vec3::new(0.25, 0.3, 0.2)));
+        assert_eq!(
+            workspace.solve(&other, &base, &[IkLayer::new(limb, 1.0)], &mut output),
+            Err(IkError::NotDescendant {
+                ancestor: 1,
+                joint: 2
+            })
+        );
+        let look_at = IkGoal::LookAt(LookAtGoal {
+            chain: look,
+            target: Vec3::new(1.0, 1.6, 1.0),
+            max_angle: PI,
+        });
+        assert_eq!(
+            workspace.solve(&other, &base, &[IkLayer::new(look_at, 1.0)], &mut output),
+            Err(IkError::NotDescendant {
+                ancestor: 4,
+                joint: 5
+            })
+        );
+        // Rejected solves leave the output untouched.
+        assert_eq!(output, base);
+
+        // The originating rig still accepts both chains.
+        workspace
+            .solve(
+                &rig,
+                &base,
+                &[IkLayer::new(limb, 1.0), IkLayer::new(look_at, 1.0)],
+                &mut output,
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn cloned_workspaces_keep_outcome_capacity() {
+        let fresh = IkWorkspace::new(rig().node_count());
+        assert!(fresh.clone().outcomes.capacity() >= MAX_IK_LAYERS);
+
+        let goal = IkGoal::Limb(LimbGoal::new(leg(&rig()), Vec3::new(0.25, 0.3, 0.2)));
+        let (used, _, _) = solve(&[IkLayer::new(goal, 1.0)]);
+        let clone = used.clone();
+        assert!(clone.outcomes.capacity() >= MAX_IK_LAYERS);
+        assert_eq!(clone, used);
+    }
+
+    #[test]
+    fn exact_minimum_reach_fraction_solves_at_minimum_reach() {
+        let rig = rig();
+        let target = Vec3::new(0.1, 0.5, 0.0);
+        let mut boundary_cases = 0;
+        for step in 1..200 {
+            // Straight leg: upper 0.5, lower varies so the f32 boundary
+            // fraction rounds both up and down across the sweep.
+            let lower_length = 0.013 * step as f32 + 0.0007;
+            if (lower_length - 0.5).abs() < 0.01 {
+                continue;
+            }
+            let mut base = base_pose();
+            base[2] = translated(0.0, -0.5, 0.0);
+            base[3] = translated(0.0, -lower_length, 0.0);
+            let mut workspace = IkWorkspace::new(rig.node_count());
+            let mut output = base.clone();
+            let probe = IkGoal::Limb(LimbGoal::new(leg(&rig), target));
+            workspace
+                .solve(&rig, &base, &[IkLayer::new(probe, 0.0)], &mut output)
+                .unwrap();
+            let (upper, lower) = bone_lengths(&workspace, leg(&rig));
+            let fraction = (upper - lower).abs() / (upper + lower);
+            if (upper + lower) * fraction < (upper - lower).abs() {
+                boundary_cases += 1;
+            }
+
+            let goal = LimbGoal::new(leg(&rig), target).with_max_reach(fraction);
+            workspace
+                .solve(
+                    &rig,
+                    &base,
+                    &[IkLayer::new(IkGoal::Limb(goal), 1.0)],
+                    &mut output,
+                )
+                .unwrap_or_else(|error| panic!("lower {lower_length}: {error}"));
+            let reach = (workspace.world_position(3).unwrap()
+                - workspace.world_position(1).unwrap())
+            .length();
+            assert!((reach - (upper - lower).abs()).abs() < TOLERANCE);
+
+            // Clearly below the documented minimum is still rejected.
+            let below = LimbGoal::new(leg(&rig), target)
+                .with_max_reach(fraction - 10.0 * MIN_REACH_FRACTION_TOLERANCE);
+            if below.max_reach > 0.0 {
+                assert_eq!(
+                    workspace.solve(
+                        &rig,
+                        &base,
+                        &[IkLayer::new(IkGoal::Limb(below), 1.0)],
+                        &mut output
+                    ),
+                    Err(IkError::ReachBelowMinimum { layer: 0 })
+                );
+            }
+        }
+        // The sweep must exercise the rounding case the tolerance exists for.
+        assert!(boundary_cases > 0);
     }
 }
