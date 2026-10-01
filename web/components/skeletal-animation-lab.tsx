@@ -12,6 +12,11 @@ import {
   type ModelAssemblyId,
   type TeachingPose,
 } from "@/lib/skeletal-animation";
+import {
+  advanceClipClock,
+  createClipClock,
+  setClipClockTime,
+} from "@/lib/skeletal-animation-clock";
 import styles from "./skeletal-animation-lab.module.css";
 
 type TopicId = "skeleton" | "bind-pose" | "weights" | "pipeline" | "assembly";
@@ -282,6 +287,10 @@ function createRig(initial: LabState): RigRuntime {
   };
 }
 
+function isClipDriven(topic: TopicId, assembly: ModelAssemblyId): boolean {
+  return topic === "pipeline" || (topic === "assembly" && assembly === "clip");
+}
+
 function formatPoint(point: readonly [number, number, number]): string {
   return `(${point.map((value) => value.toFixed(2)).join(", ")})`;
 }
@@ -291,12 +300,15 @@ export function SkeletalAnimationLab() {
   const runtimeRef = useRef<RigRuntime | null>(null);
   const stateRef = useRef<LabState>(DEFAULT_STATE);
   const topicRef = useRef<TopicId>("skeleton");
+  // Renderer-owned clip clock: advanced by the Three.js frame loop, published to React at UI cadence.
+  const clockRef = useRef(createClipClock(DEFAULT_STATE.time));
+  const playingRef = useRef(false);
   const [topicId, setTopicId] = useState<TopicId>("skeleton");
   const [state, setState] = useState<LabState>(DEFAULT_STATE);
 
   const topic = useMemo(() => TOPICS.find((entry) => entry.id === topicId) ?? TOPICS[0], [topicId]);
   const currentPose: TeachingPose = useMemo(
-    () => (topicId === "pipeline" || (topicId === "assembly" && state.assembly === "clip")
+    () => (isClipDriven(topicId, state.assembly)
       ? sampleTeachingPose(state.time)
       : { shoulder: state.shoulder, elbow: state.elbow, wrist: state.wrist }),
     [state.assembly, state.elbow, state.shoulder, state.time, state.wrist, topicId],
@@ -308,31 +320,34 @@ export function SkeletalAnimationLab() {
   const selectedAssembly = MODEL_ASSEMBLY.find((part) => part.id === state.assembly) ?? MODEL_ASSEMBLY[0];
 
   const patchState = (patch: Partial<LabState>) => setState((current) => ({ ...current, ...patch }));
+  const scrubClip = (time: number) => {
+    setClipClockTime(clockRef.current, time);
+    patchState({ time: clockRef.current.time });
+  };
+  const togglePlaying = () => {
+    // Pausing publishes the renderer clock exactly so the readout and scrubber match the rig.
+    if (state.playing) patchState({ playing: false, time: clockRef.current.time });
+    else patchState({ playing: true });
+  };
 
   useEffect(() => {
     stateRef.current = state;
-    runtimeRef.current?.update(state, topicId);
+    runtimeRef.current?.update({ ...state, time: clockRef.current.time }, topicId);
   }, [state, topicId]);
 
   useEffect(() => {
     topicRef.current = topicId;
   }, [topicId]);
 
+  const shouldPlay = state.playing && isClipDriven(topicId, state.assembly);
   useEffect(() => {
-    const shouldPlay = state.playing && (topicId === "pipeline" || (topicId === "assembly" && state.assembly === "clip"));
-    if (!shouldPlay) return;
-
-    let frame = 0;
-    let previous = performance.now();
-    const tick = (now: number) => {
-      const delta = Math.min((now - previous) / 1000, 0.1);
-      previous = now;
-      setState((current) => ({ ...current, time: (current.time + delta) % TEACHING_CLIP_DURATION }));
-      frame = requestAnimationFrame(tick);
-    };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [state.assembly, state.playing, topicId]);
+    playingRef.current = shouldPlay;
+    if (shouldPlay) return;
+    // Playback stopped (pause or topic/assembly change): publish the exact renderer time once.
+    const finalTime = clockRef.current.time;
+    setClipClockTime(clockRef.current, finalTime);
+    setState((current) => (current.time === finalTime ? current : { ...current, time: finalTime }));
+  }, [shouldPlay]);
 
   useEffect(() => {
     const viewport = viewportRef.current;
@@ -362,7 +377,7 @@ export function SkeletalAnimationLab() {
 
     const runtime = createRig(stateRef.current);
     runtimeRef.current = runtime;
-    runtime.update(stateRef.current, topicRef.current);
+    runtime.update({ ...stateRef.current, time: clockRef.current.time }, topicRef.current);
     scene.add(runtime.root);
 
     const resize = () => {
@@ -377,7 +392,20 @@ export function SkeletalAnimationLab() {
     observer.observe(viewport);
 
     let frame = 0;
-    const render = () => {
+    let previousFrame: number | null = null;
+    const render = (now: number) => {
+      if (playingRef.current) {
+        const clock = clockRef.current;
+        const publish = advanceClipClock(clock, previousFrame === null ? 0 : (now - previousFrame) / 1000);
+        previousFrame = now;
+        runtime.update({ ...stateRef.current, time: clock.time }, topicRef.current);
+        if (publish) {
+          const publishedTime = clock.time;
+          setState((current) => ({ ...current, time: publishedTime }));
+        }
+      } else {
+        previousFrame = null;
+      }
       controls.update();
       renderer.render(scene, camera);
       frame = requestAnimationFrame(render);
@@ -451,8 +479,8 @@ export function SkeletalAnimationLab() {
               <div className={styles.playbackControls}>
                 <PrecisionRange label="Clip time" value={state.time} min={0}
                   max={TEACHING_CLIP_DURATION} step={0.01} unit="s" disabled={state.playing}
-                  onChange={(time) => patchState({ time })} />
-                <button type="button" onClick={() => patchState({ playing: !state.playing })}>
+                  onChange={scrubClip} />
+                <button type="button" onClick={togglePlaying}>
                   {state.playing ? "Pause clip" : "Play clip"}
                 </button>
               </div>
@@ -485,8 +513,8 @@ export function SkeletalAnimationLab() {
                 <div className={styles.playbackControls}>
                   <PrecisionRange label="Animation time" value={state.time} min={0}
                     max={TEACHING_CLIP_DURATION} step={0.01} unit="s" disabled={state.playing}
-                    onChange={(time) => patchState({ time })} />
-                  <button type="button" onClick={() => patchState({ playing: !state.playing })}>
+                    onChange={scrubClip} />
+                  <button type="button" onClick={togglePlaying}>
                     {state.playing ? "Pause" : "Play"}
                   </button>
                 </div>
