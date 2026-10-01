@@ -151,6 +151,50 @@ describe("editor scene snapshots", () => {
     expect(() => serializeEditorSceneSnapshot({ nodes })).toThrow("file size");
   });
 
+  test("serializer applies the same node and geometry budgets the decoder enforces", () => {
+    const transform = { translation: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] } as const;
+    const flatNode = (index: number) => ({
+      id: `node-${index}`,
+      name: `Node ${index}`,
+      parent: null,
+      transform: {
+        translation: [...transform.translation],
+        rotation: [...transform.rotation],
+        scale: [...transform.scale],
+      },
+    }) as EditorScene["nodes"][number];
+    const meshNode = (id: string, vertexCount: number) => ({
+      ...flatNode(0),
+      id,
+      name: id,
+      mesh: {
+        vertices: Array.from({ length: vertexCount }, (_, index) => [index, 0, 0] as [number, number, number]),
+        indices: [0, 1, 2],
+      },
+    }) as EditorScene["nodes"][number];
+
+    const tooManyNodes: EditorScene = {
+      nodes: Array.from({ length: MAX_EDITOR_SCENE_SNAPSHOT_NODES + 1 }, (_, index) => flatNode(index)),
+    };
+    expect(() => serializeEditorSceneSnapshot(tooManyNodes)).toThrow("node count");
+
+    const oversizedMesh: EditorScene = {
+      nodes: [meshNode("oversized", MAX_EDITOR_SCENE_SNAPSHOT_VERTICES_PER_MESH + 1)],
+    };
+    expect(() => serializeEditorSceneSnapshot(oversizedMesh)).toThrow("vertices count");
+
+    const half = MAX_EDITOR_SCENE_SNAPSHOT_TOTAL_VERTICES / 2;
+    const overAggregate: EditorScene = {
+      nodes: [meshNode("a", half), meshNode("b", half), meshNode("c", 3)],
+    };
+    expect(() => serializeEditorSceneSnapshot(overAggregate)).toThrow("total vertex limit");
+
+    const atLimit: EditorScene = {
+      nodes: Array.from({ length: MAX_EDITOR_SCENE_SNAPSHOT_NODES }, (_, index) => flatNode(index)),
+    };
+    expect(parseEditorSceneSnapshot(serializeEditorSceneSnapshot(atLimit))).toEqual(atLimit);
+  });
+
   test("rejects empty scenes, malformed tuples, and invalid JSON explicitly", () => {
     expect(() => decodeEditorSceneSnapshot({ schema: EDITOR_SCENE_SNAPSHOT_SCHEMA, nodes: [] }))
       .toThrow("at least one node");

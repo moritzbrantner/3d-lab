@@ -207,6 +207,9 @@ function parseNode(value: unknown, index: number, budget: SnapshotGeometryBudget
 
 function requireSnapshotScene(scene: EditorScene): void {
   if (scene.nodes.length === 0) throw new Error("scene snapshot must contain at least one node");
+  if (scene.nodes.length > MAX_EDITOR_SCENE_SNAPSHOT_NODES) {
+    throw new Error(`scene snapshot node count ${scene.nodes.length} exceeds limit ${MAX_EDITOR_SCENE_SNAPSHOT_NODES}`);
+  }
   validateEditorScene(scene);
 
   const geometryBudget: SnapshotGeometryBudget = { vertices: 0, indices: 0 };
