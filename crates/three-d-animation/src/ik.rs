@@ -35,6 +35,8 @@ pub const MAX_WORLD_PASSES_PER_LAYER: usize = MAX_LOOK_AT_JOINTS + 2;
 
 const EPSILON: f32 = 1.0e-6;
 const REACH_TOLERANCE: f32 = 1.0e-4;
+/// Remaining aim angle (radians) below which a look-at layer counts as reached.
+const LOOK_AT_ANGLE_TOLERANCE: f32 = 1.0e-3;
 /// Slack applied to the inclusive minimum reach fraction so a fraction
 /// computed exactly as `|upper - lower| / (upper + lower)` still solves despite
 /// `f32` rounding.
@@ -454,8 +456,9 @@ pub enum IkStatus {
     Skipped,
     /// The full-strength solution reaches the target.
     Reached,
-    /// The target was out of reach or beyond the angle limit; the solution
-    /// was clamped to the closest permitted pose.
+    /// The target was out of reach or beyond the angle limit, or the chain's
+    /// joint weights left part of the aim unapplied; the solution was clamped
+    /// to the closest permitted pose.
     Clamped,
 }
 
@@ -761,6 +764,16 @@ impl IkWorkspace {
             stats.world_nodes_updated += self.refresh(rig, pose, joint);
         }
         if clamped {
+            return IkStatus::Clamped;
+        }
+        // Joint weights below one can leave part of the permitted aim unapplied
+        // (e.g. a single joint with weight 0); only a full aim counts as reached.
+        let Some(desired) = (goal.target - self.position(aim)).normalized() else {
+            return IkStatus::Clamped;
+        };
+        let (desired, _) = clamp_direction(initial, desired, goal.max_angle);
+        let forward = rotate(self.world_rotation[aim], chain.forward);
+        if angle_between(forward, desired) > LOOK_AT_ANGLE_TOLERANCE {
             IkStatus::Clamped
         } else {
             IkStatus::Reached
@@ -1234,6 +1247,25 @@ mod tests {
         assert!(workspace.outcomes()[0].residual < TOLERANCE);
         assert_ne!(output[4].rotation, Quat::IDENTITY);
         assert_ne!(output[5].rotation, Quat::IDENTITY);
+    }
+
+    #[test]
+    fn partially_weighted_look_at_within_max_angle_reports_clamped() {
+        let rig = rig();
+        let target = Vec3::new(2.0, 1.6, 2.0);
+        for weights in [&[(5, 0.0)][..], &[(5, 0.5)][..], &[(4, 0.5), (5, 0.5)][..]] {
+            let chain = LookAtChain::new(&rig, weights, Vec3::new(0.0, 0.0, 1.0)).unwrap();
+            let goal = LookAtGoal {
+                chain,
+                target,
+                max_angle: FRAC_PI_2,
+            };
+            let (workspace, _, stats) = solve(&[IkLayer::new(IkGoal::LookAt(goal), 1.0)]);
+            let outcome = workspace.outcomes()[0];
+            assert_eq!(outcome.status, IkStatus::Clamped, "{weights:?}");
+            assert!(outcome.residual > TOLERANCE, "{weights:?}");
+            assert_eq!(stats.layers_clamped, 1, "{weights:?}");
+        }
     }
 
     #[test]
