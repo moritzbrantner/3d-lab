@@ -23,3 +23,23 @@ export function effectiveEditorGizmoSpace(
 ): EditorGizmoSpace {
   return mode === "scale" ? "local" : requested;
 }
+
+export interface EditorGizmoDragState {
+  dragging: boolean;
+}
+
+/**
+ * Runtime teardown removes gizmo listeners before disposing the controls, so no
+ * final `dragging-changed` event can reach the editor. End any in-flight drag
+ * explicitly and publish the idle state so the UI matches the replacement
+ * controls, which always start idle. Returns whether a drag was interrupted.
+ */
+export function endEditorGizmoDragForTeardown(
+  controls: EditorGizmoDragState,
+  publishDragging: (dragging: false) => void,
+): boolean {
+  const wasDragging = controls.dragging;
+  controls.dragging = false;
+  publishDragging(false);
+  return wasDragging;
+}

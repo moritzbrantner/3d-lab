@@ -34,19 +34,26 @@ Normalization remains deterministic and idempotent. Re-normalizing an already-no
 `ThreeSceneRenderer.render` returns a `RendererWorkObservations` value after each frame. The report is descriptive work evidence, not a timing result. It records:
 
 - scene nodes visited;
-- Three.js mesh objects created, reused, and removed;
+- instance batches visited, instances submitted, and batches whose instance data was uploaded;
+- Three.js mesh objects (including one instanced mesh per batch) created, reused, and removed;
 - geometry resources created, reused, and evicted;
 - material resources created, reused, and evicted; and
-- live object, geometry, and material cache sizes after the frame.
+- live object, geometry, material, and instance-batch cache sizes after the frame. The live object count includes one instanced mesh per live batch, so it stays consistent with the object create/remove counts; the live instance-batch count is the batch-specific subset.
 
-Creation/reuse counts describe cache acquisitions performed by the renderer. They intentionally do not claim GPU allocation cost or exclusive CPU time. Chromium/runtime timing remains owned by `runtime-profiler`.
+Creation/reuse counts describe cache acquisitions performed by the renderer; each scene node and each instance batch performs exactly one object, geometry, and material acquisition. They intentionally do not claim GPU allocation cost or exclusive CPU time. Chromium/runtime timing remains owned by `runtime-profiler`.
 
 `ThreeSceneRenderer.renderCamera` is the explicit unchanged-scene fast path. It validates and applies the new camera, issues the draw, and reports zero scene-node/resource visits while retaining the current live-cache counts. It deliberately does not infer unchanged scene state from object or array identity: callers must choose the method only when node geometry, materials, visibility, transforms, and the frame environment (background, sky, sun, fog, and shadow frame) are unchanged. `renderCamera` never applies an environment, so animating time of day or moving the shadow focus with the viewer requires `render(frame)` on every frame that changes them. Any scene or environment mutation must go through full `render(frame)`, preserving the existing validation and reconciliation contract.
+
+### Instance batches
+
+`RendererFrame.instanceBatches` draws many copies of one geometry with one Three.js `InstancedMesh`, so repeated content such as vegetation or props costs one draw call per batch instead of one per copy. Each instance supplies either a model matrix or a transform plus an optional color override; the batch supplies geometry, default color, opacity, and visibility. Batches use the default lit material in white from the shared material cache (see [`browser-renderer.md`](browser-renderer.md#scene-node-materials)); batches sharing opacity, wireframe mode, and vertex-color use of their geometry share one material because color is applied per instance. Batch meshes follow the renderer `shadows` option and the frame environment's shadow frame exactly like node meshes.
+
+A batch may carry a `revision` string. When it is unchanged since the previous frame (and the batch geometry is unchanged), the renderer still validates the batch but skips re-uploading instance matrices and colors; `instanceUploadCount` makes that observable. As with mesh `resourceKey`, the revision is the caller's identity claim for the exact instance payload: callers must change it whenever instances or the batch color change, and omit it for batches that change every frame. Instanced meshes grow capacity by doubling and are replaced, not resized, when capacity is exceeded.
 
 
 The resource cache helpers expose creation-versus-reuse and eviction counts directly, so the observations are produced by the same code path that owns the actual cache. The performance fixture does not maintain a second shadow cache model.
 
-`environmentUpdateCount` reports how many frame-environment components (background, sky light, sun light, sun placement, fog) had Three.js state rewritten. It is produced by the same change-tracking code that decides whether to write, so an unchanged environment reports 0 (see [`browser-renderer.md`](browser-renderer.md#change-tracking)).
+`environmentUpdateCount` reports how many frame-environment components (background, sky light, sun light, sun placement, fog) had Three.js state rewritten. It is produced by the same change-tracking code that decides whether to write, so an unchanged environment reports 0, with or without instance batches (see [`browser-renderer.md`](browser-renderer.md#change-tracking)).
 
 ## Editor mutation boundary
 

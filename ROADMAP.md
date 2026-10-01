@@ -49,6 +49,7 @@
 - [x] Preserve encoded image/texture data and glTF normal-texture bindings through `three-d-assets`.
 - [x] Preserve paired glTF `JOINTS_0`/`WEIGHTS_0` as validated vertex-aligned skin influences without moving scene/skin-instance ownership into the asset model.
 - [x] Restore deterministic level-of-detail and mesh simplification through `three-d-lod`, preserving the source vertex/attribute buffers while deriving index buffers with explicit target/error/border semantics.
+- [x] Add renderer-independent screen-space LOD selection with projected pixel error and hysteresis, plus an interactive lab that presents committed Rust-generated evidence.
 - [x] Keep the asset-tooling process adapter outside `three-d-lod`, using a narrow canonical mesh JSON integration envelope so the domain crate does not depend on workflow/provenance infrastructure.
 
 ### Slice 6 — authoring and inspection
@@ -57,7 +58,7 @@
 - [x] Add drag gizmos for node transforms and selected vertices with explicit local/world coordinate modes and one semantic command per completed drag.
 - [x] Add face and edge selection plus bounded split, inset, and extrude operations backed by deterministic topology deltas.
 - [x] Add undo/redo as a deterministic semantic edit-command log instead of renderer or scene snapshots.
-- [ ] Add format-neutral scene snapshot import/export before teaching glTF authoring round-trips.
+- [x] Add format-neutral scene snapshot import/export before teaching glTF authoring round-trips.
 
 ### Slice 7 — procedural character animation
 
