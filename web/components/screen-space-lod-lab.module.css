@@ -15,9 +15,10 @@
 
 .canvas {
   display: block;
-  width: 100%;
-  height: min(72vh, 680px);
-  min-height: 360px;
+  width: calc(100% - 2px);
+  /* Height is set inline to a Rust-evaluated viewport height (see fitViewportHeight);
+     content-box keeps the drawn area exactly that tall, excluding the border. */
+  box-sizing: content-box;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: #0c111a;
@@ -239,9 +240,5 @@
   .teaser {
     grid-template-columns: 1fr;
     align-items: start;
-  }
-
-  .canvas {
-    height: 60vh;
   }
 }

@@ -4,10 +4,14 @@
  * `three-d-lod` owns simplification and selection. This module only validates
  * the committed evidence document and looks decisions up in it; it never
  * projects errors or applies hysteresis itself.
+ *
+ * Projected error scales with viewport height, so Rust emits one set of tables
+ * per offered viewport height. The lab sizes its canvas to exactly one of
+ * those heights (see `fitViewportHeight`) instead of rescaling errors here.
  */
 import rawEvidence from "../../fixtures/lod/screen-space-lod.json";
 
-export const SCREEN_SPACE_LOD_SCHEMA = "3d-lab.screen-space-lod-evidence.v1";
+export const SCREEN_SPACE_LOD_SCHEMA = "3d-lab.screen-space-lod-evidence.v2";
 
 export type LodSwitch = { distanceIndex: number; from: number; to: number };
 export type SelectionReason = "kept" | "coarsened" | "refined";
@@ -31,6 +35,13 @@ export type LodPolicyEvidence = {
   inboundSwitches: LodSwitch[];
 };
 
+export type LodViewportEvidence = {
+  /** Viewport height in CSS pixels that these projections and decisions assume. */
+  heightPixels: number;
+  projectedErrorPixels: number[][];
+  policies: LodPolicyEvidence[];
+};
+
 export type ScreenSpaceLodEvidence = {
   schema: string;
   generator: string;
@@ -39,11 +50,10 @@ export type ScreenSpaceLodEvidence = {
   positions: number[];
   normals: number[];
   levels: LodLevelEvidence[];
-  view: { viewportHeightPixels: number; verticalFovDegrees: number; distanceFrom: string };
+  view: { verticalFovDegrees: number; distanceFrom: string; heightUnit: string };
   distances: { min: number; step: number; count: number };
-  projectedErrorPixels: number[][];
   reasonCodes: Record<string, SelectionReason>;
-  policies: LodPolicyEvidence[];
+  viewports: LodViewportEvidence[];
 };
 
 export type LodDecision = {
@@ -73,14 +83,23 @@ export function parseScreenSpaceLodEvidence(raw: unknown): ScreenSpaceLodEvidenc
       fail(`level ${index} references a missing vertex`);
     }
   });
-  if (evidence.projectedErrorPixels.length !== count) fail("projected error sample count");
-  if (evidence.projectedErrorPixels.some((row) => row.length !== levelCount)) fail("projected error level count");
-  for (const policy of evidence.policies) {
-    const rows = [policy.idealLevel, ...policy.selectedLevelByPrevious, ...policy.reasonByPrevious];
-    if (policy.selectedLevelByPrevious.length !== levelCount || policy.reasonByPrevious.length !== levelCount) {
-      fail("policy tables must cover every previous level");
+  if (!Array.isArray(evidence.viewports) || evidence.viewports.length === 0) fail("expected viewport tables");
+  const policyKey = (policy: LodPolicyEvidence) => `${policy.maxPixelError}/${policy.hysteresisPercent}`;
+  const policyKeys = evidence.viewports[0].policies.map(policyKey).join();
+  let previousHeight = 0;
+  for (const viewport of evidence.viewports) {
+    if (!(viewport.heightPixels > previousHeight)) fail("viewport heights must be positive and ascending");
+    previousHeight = viewport.heightPixels;
+    if (viewport.projectedErrorPixels.length !== count) fail("projected error sample count");
+    if (viewport.projectedErrorPixels.some((row) => row.length !== levelCount)) fail("projected error level count");
+    if (viewport.policies.map(policyKey).join() !== policyKeys) fail("every viewport must offer the same policies");
+    for (const policy of viewport.policies) {
+      const rows = [policy.idealLevel, ...policy.selectedLevelByPrevious, ...policy.reasonByPrevious];
+      if (policy.selectedLevelByPrevious.length !== levelCount || policy.reasonByPrevious.length !== levelCount) {
+        fail("policy tables must cover every previous level");
+      }
+      if (rows.some((row) => row.length !== count)) fail("policy tables must cover every distance sample");
     }
-    if (rows.some((row) => row.length !== count)) fail("policy tables must cover every distance sample");
   }
   return evidence;
 }
@@ -88,22 +107,44 @@ export function parseScreenSpaceLodEvidence(raw: unknown): ScreenSpaceLodEvidenc
 export const screenSpaceLodEvidence = parseScreenSpaceLodEvidence(rawEvidence);
 
 export function pixelBudgets(evidence: ScreenSpaceLodEvidence): number[] {
-  return [...new Set(evidence.policies.map((policy) => policy.maxPixelError))];
+  return [...new Set(evidence.viewports[0].policies.map((policy) => policy.maxPixelError))];
 }
 
 export function hysteresisPercents(evidence: ScreenSpaceLodEvidence): number[] {
-  return [...new Set(evidence.policies.map((policy) => policy.hysteresisPercent))];
+  return [...new Set(evidence.viewports[0].policies.map((policy) => policy.hysteresisPercent))];
+}
+
+export function viewportHeights(evidence: ScreenSpaceLodEvidence): number[] {
+  return evidence.viewports.map((viewport) => viewport.heightPixels);
+}
+
+/**
+ * Picks the canvas height for the available space: the tallest Rust-evaluated
+ * height that fits, or the shortest one when nothing fits. The canvas is then
+ * rendered at exactly that CSS height, so the selected tables match what is drawn.
+ */
+export function fitViewportHeight(evidence: ScreenSpaceLodEvidence, availableHeight: number): number {
+  const heights = viewportHeights(evidence);
+  return heights.filter((height) => height <= availableHeight).at(-1) ?? heights[0];
+}
+
+export function findViewport(evidence: ScreenSpaceLodEvidence, heightPixels: number): LodViewportEvidence {
+  const viewport = evidence.viewports.find((candidate) => candidate.heightPixels === heightPixels);
+  if (!viewport) throw new Error(`No Rust evidence for a ${heightPixels} px viewport`);
+  return viewport;
 }
 
 export function findPolicy(
-  evidence: ScreenSpaceLodEvidence,
+  viewport: LodViewportEvidence,
   maxPixelError: number,
   hysteresisPercent: number,
 ): LodPolicyEvidence {
-  const policy = evidence.policies.find(
+  const policy = viewport.policies.find(
     (candidate) => candidate.maxPixelError === maxPixelError && candidate.hysteresisPercent === hysteresisPercent,
   );
-  if (!policy) throw new Error(`No Rust evidence for ${maxPixelError} px / ${hysteresisPercent}%`);
+  if (!policy) {
+    throw new Error(`No Rust evidence for ${maxPixelError} px / ${hysteresisPercent}% at ${viewport.heightPixels} px`);
+  }
   return policy;
 }
 
@@ -163,6 +204,8 @@ export function replayDecisions(
 }
 
 export type LodLabState = {
+  /** Canvas height in CSS pixels; always one of the Rust-evaluated heights. */
+  viewportHeight: number;
   distanceIndex: number;
   maxPixelError: number;
   hysteresisPercent: number;
@@ -175,18 +218,22 @@ export type LodLabState = {
 
 export type LodLabAction =
   | { type: "distance"; distance: number }
+  | { type: "viewport"; availableHeight: number }
   | { type: "policy"; maxPixelError?: number; hysteresisPercent?: number }
   | { type: "override"; level: number | null };
 
 export function initialLodLabState(
   evidence: ScreenSpaceLodEvidence,
+  viewportHeight: number,
   distance: number,
   maxPixelError: number,
   hysteresisPercent: number,
 ): LodLabState {
   const index = distanceIndex(evidence, distance);
-  const decision = lookupDecision(evidence, findPolicy(evidence, maxPixelError, hysteresisPercent), 0, index);
+  const viewport = findViewport(evidence, viewportHeight);
+  const decision = lookupDecision(evidence, findPolicy(viewport, maxPixelError, hysteresisPercent), 0, index);
   return {
+    viewportHeight,
     distanceIndex: index,
     maxPixelError,
     hysteresisPercent,
@@ -204,12 +251,17 @@ export function reduceLodLab(
 ): LodLabState {
   const next = { ...state };
   if (action.type === "distance") next.distanceIndex = distanceIndex(evidence, action.distance);
+  if (action.type === "viewport") {
+    const height = fitViewportHeight(evidence, action.availableHeight);
+    if (height === state.viewportHeight) return state;
+    next.viewportHeight = height;
+  }
   if (action.type === "policy") {
     next.maxPixelError = action.maxPixelError ?? state.maxPixelError;
     next.hysteresisPercent = action.hysteresisPercent ?? state.hysteresisPercent;
   }
   if (action.type === "override") next.overrideLevel = action.level;
-  const policy = findPolicy(evidence, next.maxPixelError, next.hysteresisPercent);
+  const policy = findPolicy(findViewport(evidence, next.viewportHeight), next.maxPixelError, next.hysteresisPercent);
   next.decision = lookupDecision(evidence, policy, state.shownLevel, next.distanceIndex);
   next.shownLevel = next.overrideLevel ?? next.decision.level;
   return next;

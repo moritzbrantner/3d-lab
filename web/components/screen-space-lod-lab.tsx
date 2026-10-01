@@ -6,11 +6,13 @@ import {
   distanceAt,
   distanceRange,
   findPolicy,
+  findViewport,
   hysteresisPercents,
   initialLodLabState,
   pixelBudgets,
   reduceLodLab,
   screenSpaceLodEvidence as evidence,
+  viewportHeights,
   type LodLabAction,
   type LodLabState,
   type LodSwitch,
@@ -22,6 +24,9 @@ const range = distanceRange(evidence);
 const budgets = pixelBudgets(evidence);
 const hysteresisOptions = hysteresisPercents(evidence);
 const reduce = (state: LodLabState, action: LodLabAction) => reduceLodLab(evidence, state, action);
+const tallestViewport = viewportHeights(evidence).at(-1)!;
+/** Space the canvas may take; the canvas then snaps to a Rust-evaluated height within it. */
+const availableViewportHeight = () => Math.round(window.innerHeight * 0.72);
 const formatPixels = (value: number) => (value < 10 ? value.toFixed(2) : value.toFixed(1));
 
 function SwitchList({ label, switches, onJump }: { label: string; switches: LodSwitch[]; onJump: (distance: number) => void }) {
@@ -43,15 +48,25 @@ function SwitchList({ label, switches, onJump }: { label: string; switches: LodS
 
 export function ScreenSpaceLodLab() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [state, dispatch] = useReducer(reduce, undefined, () => initialLodLabState(evidence, 6, 2, 25));
+  const [state, dispatch] = useReducer(reduce, undefined, () => initialLodLabState(evidence, tallestViewport, 6, 2, 25));
   const [wireframe, setWireframe] = useState(true);
   const [compare, setCompare] = useState(false);
   const distance = distanceAt(evidence, state.distanceIndex);
   const viewRef = useRef({ distance, level: state.shownLevel, wireframe, compare });
   viewRef.current = { distance, level: state.shownLevel, wireframe, compare };
-  const policy = findPolicy(evidence, state.maxPixelError, state.hysteresisPercent);
-  const projected = evidence.projectedErrorPixels[state.distanceIndex];
+  const viewport = findViewport(evidence, state.viewportHeight);
+  const policy = findPolicy(viewport, state.maxPixelError, state.hysteresisPercent);
+  const projected = viewport.projectedErrorPixels[state.distanceIndex];
   const shown = evidence.levels[state.shownLevel];
+
+  // The canvas is rendered at exactly the Rust-evaluated height in state, so the
+  // projected errors and decisions shown describe the pixels actually drawn.
+  useEffect(() => {
+    const fit = () => dispatch({ type: "viewport", availableHeight: availableViewportHeight() });
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -165,6 +180,8 @@ export function ScreenSpaceLodLab() {
       // Browser evidence: which index buffers and camera distance the GPU actually drew.
       const evidenceText = `${drawn.join(",")}@${view.distance}`;
       if (canvas.dataset.rendered !== evidenceText) canvas.dataset.rendered = evidenceText;
+      const drawnHeight = String(canvas.clientHeight);
+      if (canvas.dataset.drawnHeight !== drawnHeight) canvas.dataset.drawnHeight = drawnHeight;
       frame = requestAnimationFrame(render);
     };
     render();
@@ -190,6 +207,7 @@ export function ScreenSpaceLodLab() {
       <div className={styles.viewportPanel}>
         <h2 id="lod-lab-heading" className={styles.srOnly}>Screen-space LOD viewport</h2>
         <canvas ref={canvasRef} className={styles.canvas} tabIndex={0}
+          style={{ height: state.viewportHeight }} data-evidence-height={state.viewportHeight}
           aria-label={`Displaced sphere at distance ${distance}, showing LOD ${state.shownLevel}. Drag to orbit, scroll or press plus and minus to change distance.`} />
         <p className={styles.viewportHint}>
           {compare ? <><span>Left: source L0</span><span>Right: shown L{state.shownLevel}</span></> : <span>Drag to orbit · scroll or +/− to dolly</span>}
@@ -254,8 +272,8 @@ export function ScreenSpaceLodLab() {
         </div>
 
         <p className={styles.provenance}>
-          Levels and decisions come from <code>three-d-lod</code> ({evidence.simplifierId}), sampled every {range.step} units for a{" "}
-          {evidence.view.viewportHeightPixels} px tall, {evidence.view.verticalFovDegrees}° view. Errors are in object units.
+          Levels and decisions come from <code>three-d-lod</code> ({evidence.simplifierId}), sampled every {range.step} units for this {state.viewportHeight} px tall, {evidence.view.verticalFovDegrees}° view
+          (Rust tables exist for {viewportHeights(evidence).join(", ")} px; the canvas snaps to the tallest that fits). Errors are in object units.
         </p>
       </aside>
     </section>

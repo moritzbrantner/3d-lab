@@ -15,7 +15,7 @@ use three_d_lod::{
     mesh_extent, projected_error_pixels,
 };
 
-pub const SCHEMA: &str = "3d-lab.screen-space-lod-evidence.v1";
+pub const SCHEMA: &str = "3d-lab.screen-space-lod-evidence.v2";
 const RINGS: u32 = 24;
 const SEGMENTS: u32 = 48;
 const LOD_SPECS: [LodSpec; 3] = [
@@ -23,7 +23,10 @@ const LOD_SPECS: [LodSpec; 3] = [
     LodSpec::new(0.15, 1.0),
     LodSpec::new(0.05, 1.0),
 ];
-const VIEWPORT_HEIGHT_PIXELS: f32 = 720.0;
+/// Viewport heights, in CSS pixels, that the lab may render at. Projected error
+/// scales with viewport height, so each height gets its own decision tables and
+/// the lab sizes its canvas to exactly one of them.
+pub const VIEWPORT_HEIGHTS_PIXELS: [f32; 3] = [360.0, 540.0, 720.0];
 const VERTICAL_FOV_DEGREES: f32 = 45.0;
 /// Distances are sampled at `DISTANCE_MIN_TENTHS / 10 + i * 0.1`.
 const DISTANCE_MIN_TENTHS: u32 = 20;
@@ -84,12 +87,8 @@ fn distance_at(index: u32) -> f32 {
     (DISTANCE_MIN_TENTHS + index) as f32 / 10.0
 }
 
-fn view(distance: f32) -> LodView {
-    LodView::new(
-        distance,
-        VIEWPORT_HEIGHT_PIXELS,
-        VERTICAL_FOV_DEGREES.to_radians(),
-    )
+fn view(distance: f32, viewport_height: f32) -> LodView {
+    LodView::new(distance, viewport_height, VERTICAL_FOV_DEGREES.to_radians())
 }
 
 fn flatten(points: &[Vec3]) -> Vec<f32> {
@@ -108,6 +107,7 @@ fn reason_code(reason: SelectionReason) -> char {
 fn sweep(
     policy: ScreenSpaceLodPolicy,
     errors: &[f32],
+    viewport_height: f32,
     start_level: usize,
     order: impl Iterator<Item = u32>,
 ) -> (usize, Vec<Value>) {
@@ -116,7 +116,7 @@ fn sweep(
     for index in order {
         let distance = distance_at(index);
         let selection = policy
-            .select_level(errors, level, view(distance))
+            .select_level(errors, level, view(distance, viewport_height))
             .expect("evidence inputs are valid");
         if selection.level != level {
             switches.push(json!({
@@ -128,6 +128,79 @@ fn sweep(
         level = selection.level;
     }
     (level, switches)
+}
+
+/// Projected errors and decision tables for one viewport height.
+fn viewport_evidence(geometric_errors: &[f32], viewport_height: f32, sample_count: u32) -> Value {
+    let level_count = geometric_errors.len();
+    let projected = (0..sample_count)
+        .map(|index| {
+            let view = view(distance_at(index), viewport_height);
+            geometric_errors
+                .iter()
+                .map(|error| projected_error_pixels(*error, view))
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let mut policies = Vec::new();
+    for budget in PIXEL_BUDGETS {
+        for hysteresis_percent in HYSTERESIS_PERCENTS {
+            let policy = ScreenSpaceLodPolicy::new(budget, hysteresis_percent as f32 / 100.0);
+            let mut by_previous = Vec::with_capacity(level_count);
+            let mut reasons_by_previous = Vec::with_capacity(level_count);
+            let mut ideal = String::with_capacity(sample_count as usize);
+            for previous in 0..level_count {
+                let mut selected = String::with_capacity(sample_count as usize);
+                let mut reasons = String::with_capacity(sample_count as usize);
+                for index in 0..sample_count {
+                    let selection = policy
+                        .select_level(
+                            geometric_errors,
+                            previous,
+                            view(distance_at(index), viewport_height),
+                        )
+                        .expect("evidence inputs are valid");
+                    selected.push(char::from_digit(selection.level as u32, 10).expect("< 10"));
+                    reasons.push(reason_code(selection.reason));
+                    if previous == 0 {
+                        ideal.push(
+                            char::from_digit(selection.ideal_level as u32, 10).expect("< 10"),
+                        );
+                    }
+                }
+                by_previous.push(selected);
+                reasons_by_previous.push(reasons);
+            }
+            let (far_level, outbound) = sweep(
+                policy,
+                geometric_errors,
+                viewport_height,
+                0,
+                0..sample_count,
+            );
+            let (_, inbound) = sweep(
+                policy,
+                geometric_errors,
+                viewport_height,
+                far_level,
+                (0..sample_count).rev(),
+            );
+            policies.push(json!({
+                "maxPixelError": budget,
+                "hysteresisPercent": hysteresis_percent,
+                "idealLevel": ideal,
+                "selectedLevelByPrevious": by_previous,
+                "reasonByPrevious": reasons_by_previous,
+                "outboundSwitches": outbound,
+                "inboundSwitches": inbound,
+            }));
+        }
+    }
+    json!({
+        "heightPixels": viewport_height,
+        "projectedErrorPixels": projected,
+        "policies": policies,
+    })
 }
 
 pub fn evidence() -> Value {
@@ -167,59 +240,10 @@ pub fn evidence() -> Value {
     );
 
     let sample_count = DISTANCE_MAX_TENTHS - DISTANCE_MIN_TENTHS + 1;
-    let level_count = geometric_errors.len();
-    let projected = (0..sample_count)
-        .map(|index| {
-            let view = view(distance_at(index));
-            geometric_errors
-                .iter()
-                .map(|error| projected_error_pixels(*error, view))
-                .collect::<Vec<_>>()
-        })
+    let viewports = VIEWPORT_HEIGHTS_PIXELS
+        .iter()
+        .map(|&height| viewport_evidence(&geometric_errors, height, sample_count))
         .collect::<Vec<_>>();
-    let mut policies = Vec::new();
-    for budget in PIXEL_BUDGETS {
-        for hysteresis_percent in HYSTERESIS_PERCENTS {
-            let policy = ScreenSpaceLodPolicy::new(budget, hysteresis_percent as f32 / 100.0);
-            let mut by_previous = Vec::with_capacity(level_count);
-            let mut reasons_by_previous = Vec::with_capacity(level_count);
-            let mut ideal = String::with_capacity(sample_count as usize);
-            for previous in 0..level_count {
-                let mut selected = String::with_capacity(sample_count as usize);
-                let mut reasons = String::with_capacity(sample_count as usize);
-                for index in 0..sample_count {
-                    let selection = policy
-                        .select_level(&geometric_errors, previous, view(distance_at(index)))
-                        .expect("evidence inputs are valid");
-                    selected.push(char::from_digit(selection.level as u32, 10).expect("< 10"));
-                    reasons.push(reason_code(selection.reason));
-                    if previous == 0 {
-                        ideal.push(
-                            char::from_digit(selection.ideal_level as u32, 10).expect("< 10"),
-                        );
-                    }
-                }
-                by_previous.push(selected);
-                reasons_by_previous.push(reasons);
-            }
-            let (far_level, outbound) = sweep(policy, &geometric_errors, 0, 0..sample_count);
-            let (_, inbound) = sweep(
-                policy,
-                &geometric_errors,
-                far_level,
-                (0..sample_count).rev(),
-            );
-            policies.push(json!({
-                "maxPixelError": budget,
-                "hysteresisPercent": hysteresis_percent,
-                "idealLevel": ideal,
-                "selectedLevelByPrevious": by_previous,
-                "reasonByPrevious": reasons_by_previous,
-                "outboundSwitches": outbound,
-                "inboundSwitches": inbound,
-            }));
-        }
-    }
 
     json!({
         "schema": SCHEMA,
@@ -230,18 +254,17 @@ pub fn evidence() -> Value {
         "normals": flatten(source.attributes().normals.as_deref().expect("mesh has normals")),
         "levels": levels,
         "view": {
-            "viewportHeightPixels": VIEWPORT_HEIGHT_PIXELS,
             "verticalFovDegrees": VERTICAL_FOV_DEGREES,
             "distanceFrom": "camera to mesh bounds centre",
+            "heightUnit": "CSS pixels",
         },
         "distances": {
             "min": distance_at(0),
             "step": 0.1,
             "count": sample_count,
         },
-        "projectedErrorPixels": projected,
         "reasonCodes": { "k": "kept", "c": "coarsened", "r": "refined" },
-        "policies": policies,
+        "viewports": viewports,
     })
 }
 

@@ -3,6 +3,8 @@ import {
   distanceAt,
   distanceIndex,
   findPolicy,
+  findViewport,
+  fitViewportHeight,
   hysteresisPercents,
   initialLodLabState,
   lookupDecision,
@@ -11,7 +13,10 @@ import {
   reduceLodLab,
   replayDecisions,
   screenSpaceLodEvidence as evidence,
+  viewportHeights,
 } from "./screen-space-lod";
+
+const tall = findViewport(evidence, 720);
 
 const allIndices = Array.from({ length: evidence.distances.count }, (_, index) => index);
 
@@ -37,17 +42,22 @@ describe("Rust screen-space LOD evidence", () => {
   test("covers every budget and hysteresis combination the lab offers", () => {
     for (const budget of pixelBudgets(evidence)) {
       for (const hysteresis of hysteresisPercents(evidence)) {
-        expect(findPolicy(evidence, budget, hysteresis).maxPixelError).toBe(budget);
+        for (const viewport of evidence.viewports) {
+          expect(findPolicy(viewport, budget, hysteresis).maxPixelError).toBe(budget);
+        }
       }
     }
-    expect(() => findPolicy(evidence, 3, 0)).toThrow();
+    expect(() => findPolicy(tall, 3, 0)).toThrow();
   });
 
   test("rejects documents with a different schema or truncated tables", () => {
     expect(() => parseScreenSpaceLodEvidence({ ...evidence, schema: "other" })).toThrow();
-    const [first, ...rest] = evidence.policies;
+    const [firstViewport, ...otherViewports] = evidence.viewports;
+    const [first, ...rest] = firstViewport.policies;
     const truncated = { ...first, idealLevel: first.idealLevel.slice(1) };
-    expect(() => parseScreenSpaceLodEvidence({ ...evidence, policies: [truncated, ...rest] })).toThrow();
+    const broken = { ...firstViewport, policies: [truncated, ...rest] };
+    expect(() => parseScreenSpaceLodEvidence({ ...evidence, viewports: [broken, ...otherViewports] })).toThrow();
+    expect(() => parseScreenSpaceLodEvidence({ ...evidence, viewports: [...otherViewports, firstViewport] })).toThrow();
   });
 
   test("snaps arbitrary distances onto the evidence grid", () => {
@@ -59,7 +69,7 @@ describe("Rust screen-space LOD evidence", () => {
   });
 
   test("replaying the Rust tables reproduces the Rust sweep switch distances", () => {
-    for (const policy of evidence.policies) {
+    for (const policy of evidence.viewports.flatMap((viewport) => viewport.policies)) {
       const outbound = replayDecisions(evidence, policy, 0, allIndices);
       const outSwitches = outbound.flatMap((decision, index) => {
         const previous = index === 0 ? 0 : outbound[index - 1].level;
@@ -79,28 +89,63 @@ describe("Rust screen-space LOD evidence", () => {
   });
 
   test("hysteresis keeps a level while jittering across its ideal threshold", () => {
-    const threshold = findPolicy(evidence, 2, 0).outboundSwitches[0];
+    const threshold = findPolicy(tall, 2, 0).outboundSwitches[0];
     const jitter = Array.from({ length: 20 }, (_, frame) => threshold.distanceIndex + (frame % 2 === 0 ? 2 : -2));
-    const withoutBand = replayDecisions(evidence, findPolicy(evidence, 2, 0), threshold.from, jitter);
-    const withBand = replayDecisions(evidence, findPolicy(evidence, 2, 25), threshold.from, jitter);
+    const withoutBand = replayDecisions(evidence, findPolicy(tall, 2, 0), threshold.from, jitter);
+    const withBand = replayDecisions(evidence, findPolicy(tall, 2, 25), threshold.from, jitter);
     expect(new Set(withoutBand.map((decision) => decision.level)).size).toBe(2);
     expect(new Set(withBand.map((decision) => decision.level))).toEqual(new Set([threshold.from]));
     expect(withBand.some((decision) => decision.idealLevel !== decision.level)).toBe(true);
   });
 
   test("exposes Rust reason codes for every decision", () => {
-    const policy = findPolicy(evidence, 1, 10);
+    const policy = findPolicy(tall, 1, 10);
     const decision = lookupDecision(evidence, policy, evidence.levels.length - 1, 0);
     expect(decision).toEqual({ level: 0, idealLevel: 0, reason: "refined" });
     expect(() => lookupDecision(evidence, policy, evidence.levels.length, 0)).toThrow();
   });
 });
 
+describe("viewport height", () => {
+  test("Rust evaluates several canvas heights, and the lab snaps to the tallest that fits", () => {
+    expect(viewportHeights(evidence)).toEqual([360, 540, 720]);
+    expect(fitViewportHeight(evidence, 1000)).toBe(720);
+    expect(fitViewportHeight(evidence, 720)).toBe(720);
+    expect(fitViewportHeight(evidence, 719)).toBe(540);
+    expect(fitViewportHeight(evidence, 400)).toBe(360);
+    expect(fitViewportHeight(evidence, 200)).toBe(360);
+    expect(() => findViewport(evidence, 600)).toThrow();
+  });
+
+  test("a shorter canvas reads its own Rust tables, so switches happen nearer the camera", () => {
+    const short = findViewport(evidence, 360);
+    const shortSwitch = findPolicy(short, 2, 25).outboundSwitches[0];
+    const tallSwitch = findPolicy(tall, 2, 25).outboundSwitches[0];
+    expect(shortSwitch.distanceIndex).toBeLessThan(tallSwitch.distanceIndex);
+    // Projected error at 360 px is half of the 720 px value (Rust-computed, only compared here).
+    expect(short.projectedErrorPixels[100][1]).toBeCloseTo(tall.projectedErrorPixels[100][1] / 2, 4);
+  });
+
+  test("resizing re-looks up the decision in the matching table, carrying the shown level", () => {
+    const tallSwitch = findPolicy(tall, 2, 25).outboundSwitches[0];
+    const between = distanceAt(evidence, tallSwitch.distanceIndex - 1);
+    let state = initialLodLabState(evidence, 720, between, 2, 25);
+    expect(state.shownLevel).toBe(tallSwitch.from);
+    state = reduceLodLab(evidence, state, { type: "viewport", availableHeight: 500 });
+    expect(state.viewportHeight).toBe(360);
+    const short = findPolicy(findViewport(evidence, 360), 2, 25);
+    expect(state.decision).toEqual(lookupDecision(evidence, short, tallSwitch.from, state.distanceIndex));
+    expect(state.shownLevel).toBeGreaterThan(tallSwitch.from);
+    const unchanged = reduceLodLab(evidence, state, { type: "viewport", availableHeight: 530 });
+    expect(unchanged).toBe(state);
+  });
+});
+
 describe("LOD lab state", () => {
   test("carries the shown level so hysteresis holds while dollying back", () => {
-    const policy = findPolicy(evidence, 2, 25);
+    const policy = findPolicy(tall, 2, 25);
     const [coarsen] = policy.outboundSwitches;
-    let state = initialLodLabState(evidence, distanceAt(evidence, coarsen.distanceIndex - 1), 2, 25);
+    let state = initialLodLabState(evidence, 720, distanceAt(evidence, coarsen.distanceIndex - 1), 2, 25);
     expect(state.shownLevel).toBe(coarsen.from);
     state = reduceLodLab(evidence, state, { type: "distance", distance: distanceAt(evidence, coarsen.distanceIndex) });
     expect(state.shownLevel).toBe(coarsen.to);
@@ -111,11 +156,11 @@ describe("LOD lab state", () => {
   });
 
   test("manual override pins the level and auto resumes from it", () => {
-    let state = initialLodLabState(evidence, 3, 2, 25);
+    let state = initialLodLabState(evidence, 720, 3, 2, 25);
     state = reduceLodLab(evidence, state, { type: "override", level: 3 });
     expect(state.shownLevel).toBe(3);
     state = reduceLodLab(evidence, state, { type: "override", level: null });
-    expect(state.decision).toEqual(lookupDecision(evidence, findPolicy(evidence, 2, 25), 3, state.distanceIndex));
+    expect(state.decision).toEqual(lookupDecision(evidence, findPolicy(tall, 2, 25), 3, state.distanceIndex));
     expect(state.shownLevel).toBe(state.decision.level);
   });
 });
