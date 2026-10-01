@@ -32,10 +32,32 @@ fn assert_close(left: Transform, right: Transform, context: &str) {
 fn committed_playback_evidence_matches_three_d_playback() {
     let committed = std::fs::read_to_string(evidence::fixture_path())
         .expect("fixtures/playback/playback-timing.json is committed");
-    assert!(
-        committed == evidence::evidence_text(),
-        "playback timing evidence drifted; run `cargo run -p three-d-playback --example playback_timing_evidence`"
-    );
+    if let Some(difference) = evidence::drift(&committed) {
+        panic!(
+            "playback timing evidence drifted ({difference}); run `cargo run -p three-d-playback --example playback_timing_evidence`"
+        );
+    }
+}
+
+#[test]
+fn drift_check_tolerates_libm_rounding_flips_but_not_real_changes() {
+    let committed = std::fs::read_to_string(evidence::fixture_path()).unwrap();
+    let mut value: serde_json::Value = serde_json::from_str(&committed).unwrap();
+    let original = value["crossFades"][3]["pose"][173].as_f64().unwrap();
+
+    // A sixth-decimal flip, as produced by a one-ulp libm difference.
+    value["crossFades"][3]["pose"][173] = serde_json::json!(original + 1.0e-6);
+    assert_eq!(evidence::drift(&value.to_string()), None);
+
+    // A real change, a structural change, and a string change all drift.
+    value["crossFades"][3]["pose"][173] = serde_json::json!(original + 1.0e-4);
+    assert!(evidence::drift(&value.to_string()).is_some());
+    value["crossFades"][3]["pose"][173] = serde_json::json!(original);
+    value["crossFades"][3]["pose"].as_array_mut().unwrap().pop();
+    assert!(evidence::drift(&value.to_string()).is_some());
+    let mut value: serde_json::Value = serde_json::from_str(&committed).unwrap();
+    value["schema"] = serde_json::json!("other");
+    assert!(evidence::drift(&value.to_string()).is_some());
 }
 
 #[test]

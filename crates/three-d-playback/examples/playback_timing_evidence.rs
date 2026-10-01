@@ -31,6 +31,14 @@ pub const TARGET_SPEED: f64 = 1.5;
 /// Values are rounded to this many decimals for the presentation fixture only;
 /// the tests check partition invariance against the unrounded clocks.
 const DECIMALS: f64 = 1.0e6;
+/// How far a regenerated number may sit from the committed one before the
+/// fixture counts as drifted. Poses go through `f32` `sin`/`acos`, whose last
+/// bit differs between libm implementations (for example glibc 2.39 versus the
+/// correctly rounded CORE-MATH functions in glibc 2.41+). A one-ulp difference
+/// that lands next to a rounding boundary flips the sixth decimal, so the check
+/// allows one rounding step plus slack while every structural field, string,
+/// and array length must match exactly.
+pub const DRIFT_TOLERANCE: f64 = 2.0e-6;
 
 pub struct Scenario {
     pub id: &'static str,
@@ -421,6 +429,49 @@ pub fn evidence_text() -> String {
     text
 }
 
+fn first_drift(committed: &Value, current: &Value, path: &str) -> Option<String> {
+    match (committed, current) {
+        (Value::Number(left), Value::Number(right)) => {
+            let (left, right) = (left.as_f64()?, right.as_f64()?);
+            ((left - right).abs() > DRIFT_TOLERANCE)
+                .then(|| format!("{path}: committed {left}, current {right}"))
+        }
+        (Value::Array(left), Value::Array(right)) => {
+            if left.len() != right.len() {
+                return Some(format!(
+                    "{path}: committed {} entries, current {}",
+                    left.len(),
+                    right.len()
+                ));
+            }
+            left.iter()
+                .zip(right)
+                .enumerate()
+                .find_map(|(index, (left, right))| {
+                    first_drift(left, right, &format!("{path}[{index}]"))
+                })
+        }
+        (Value::Object(left), Value::Object(right)) => {
+            if !left.keys().eq(right.keys()) {
+                return Some(format!("{path}: keys differ"));
+            }
+            left.iter()
+                .find_map(|(key, value)| first_drift(value, &right[key], &format!("{path}.{key}")))
+        }
+        _ => (committed != current).then(|| format!("{path}: {committed} != {current}")),
+    }
+}
+
+/// The first place the committed fixture disagrees with freshly generated
+/// evidence beyond [`DRIFT_TOLERANCE`], or `None` when it is current.
+pub fn drift(committed_text: &str) -> Option<String> {
+    let committed: Value = match serde_json::from_str(committed_text) {
+        Ok(value) => value,
+        Err(error) => return Some(format!("committed evidence is not JSON: {error}")),
+    };
+    first_drift(&committed, &evidence(), "$")
+}
+
 pub fn fixture_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/playback/playback-timing.json")
 }
@@ -431,11 +482,12 @@ fn main() {
     let text = evidence_text();
     if std::env::args().any(|arg| arg == "--check") {
         let committed = std::fs::read_to_string(&path).expect("committed evidence is readable");
-        assert!(
-            committed == text,
-            "{} drifted from three-d-playback; rerun the example without --check",
-            path.display()
-        );
+        if let Some(difference) = drift(&committed) {
+            panic!(
+                "{} drifted from three-d-playback ({difference}); rerun the example without --check",
+                path.display()
+            );
+        }
         return;
     }
     std::fs::create_dir_all(path.parent().expect("fixture has a parent"))

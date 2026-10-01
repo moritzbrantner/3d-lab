@@ -22,7 +22,13 @@ time from that total:
 - `Clamp` holds the end pose (the start pose when reversed); `Loop` wraps.
 - `Forward` runs `0 → duration`; `Reverse` runs `duration → 0`. Reverse is a
   policy, not a negative delta. Negative or non-finite deltas, negative or
-  non-finite speeds, and non-positive durations fail closed.
+  non-finite speeds, and non-positive durations fail closed. A delta whose
+  accumulated total (or cycle count) would overflow returns `TimeOverflow` and
+  leaves the clock, or the whole cross-fade, unchanged.
+- The clock is the only wrap authority. `sample` uses
+  `AnimationClip::sample_resolved`, which clamps but never re-applies the
+  clip's `LoopMode`, so a reverse loop at `duration` shows the end pose even
+  on a `Repeat` clip.
 - `PlaybackClock::from_clip` adopts the clip's `LoopMode`, so the clip and the
   clock never disagree about wrapping.
 - Positions within `BOUNDARY_EPSILON_CYCLES` (1e-6 cycles) of a cycle boundary
@@ -38,7 +44,7 @@ changes how long a transition takes.
 
 `CrossFade` advances three separate clocks by the same wall delta: the outgoing
 clip clock, the incoming clip clock, and the transition clock. It samples both
-clips and blends them through `ClipBlendWorkspace::sample_crossfade`, so the
+clips and blends them through `ClipBlendWorkspace::sample_resolved_crossfade`, so the
 same deltas always produce bit-identical poses.
 
 ## Partition invariance
@@ -60,7 +66,11 @@ Each series also has a `fixedStep` companion: the same Rust clocks fed a fixed
 1/60 s per frame instead of the measured delta. This is the anti-pattern the
 `/animation-timing/` lab shows, labelled as intentionally wrong.
 
-`tests/playback_timing_evidence.rs` fails if the committed fixture drifts. The
+`tests/playback_timing_evidence.rs` (and `-- --check`) fails if the committed
+fixture drifts. Values are rounded to six decimals; the comparison requires
+identical structure and strings and allows numbers to differ by at most
+`DRIFT_TOLERANCE` (2e-6), because `f32` `sin`/`acos` differ in the last bit
+between libm versions and such a bit can flip the sixth decimal. The
 lab only looks up the frame presented at a wall-clock instant;
 `scripts/playback-timing-browser-smoke.mjs` checks in Chromium that exact
 wall-time input and timeline scrubbing share one state.

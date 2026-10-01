@@ -570,6 +570,23 @@ impl AnimationClip {
 
     pub fn sample(&self, time: f32, pose: &mut [Transform]) -> Result<(), ClipError> {
         let time = self.sample_time(time)?;
+        self.sample_tracks(time, pose)
+    }
+
+    /// Samples at a clip-local time that an external playback clock has already
+    /// resolved into `0..=duration`.
+    ///
+    /// The clip's own [`LoopMode`] is not applied: the time is only clamped, so
+    /// `duration` yields the final pose even for a [`LoopMode::Repeat`] clip
+    /// (where [`Self::sample`] would wrap it to the first pose).
+    pub fn sample_resolved(&self, time: f32, pose: &mut [Transform]) -> Result<(), ClipError> {
+        if !time.is_finite() {
+            return Err(ClipError::NonFiniteTime);
+        }
+        self.sample_tracks(time.clamp(0.0, self.duration), pose)
+    }
+
+    fn sample_tracks(&self, time: f32, pose: &mut [Transform]) -> Result<(), ClipError> {
         let node_count = pose.len();
         for track in &self.tracks {
             let node = track.node();
@@ -707,10 +724,49 @@ impl ClipBlendWorkspace {
         base_pose: &[Transform],
         output: &mut [Transform],
     ) -> Result<(), BlendError> {
+        self.crossfade_with(
+            left,
+            right,
+            weight,
+            base_pose,
+            output,
+            AnimationClip::sample,
+        )
+    }
+
+    /// Like [`Self::sample_crossfade`], but both times were already resolved by
+    /// external playback clocks; see [`AnimationClip::sample_resolved`].
+    pub fn sample_resolved_crossfade(
+        &mut self,
+        left: ClipSample<'_>,
+        right: ClipSample<'_>,
+        weight: f32,
+        base_pose: &[Transform],
+        output: &mut [Transform],
+    ) -> Result<(), BlendError> {
+        self.crossfade_with(
+            left,
+            right,
+            weight,
+            base_pose,
+            output,
+            AnimationClip::sample_resolved,
+        )
+    }
+
+    fn crossfade_with(
+        &mut self,
+        left: ClipSample<'_>,
+        right: ClipSample<'_>,
+        weight: f32,
+        base_pose: &[Transform],
+        output: &mut [Transform],
+        sample: fn(&AnimationClip, f32, &mut [Transform]) -> Result<(), ClipError>,
+    ) -> Result<(), BlendError> {
         self.left.reset_from(base_pose)?;
         self.right.reset_from(base_pose)?;
-        left.clip.sample(left.time, self.left.as_mut_slice())?;
-        right.clip.sample(right.time, self.right.as_mut_slice())?;
+        sample(left.clip, left.time, self.left.as_mut_slice())?;
+        sample(right.clip, right.time, self.right.as_mut_slice())?;
         blend_poses(self.left.as_slice(), self.right.as_slice(), weight, output)
     }
 }
@@ -1042,6 +1098,21 @@ mod tests {
         assert_vec3_close(pose[0].translation, Vec3::new(0.5, 0.0, 0.0));
         assert_eq!(
             clip.sample(f32::NAN, &mut pose),
+            Err(ClipError::NonFiniteTime)
+        );
+
+        // Externally resolved times are clamped, never wrapped: the end of a
+        // repeating clip is its final pose, not the first one.
+        clip.sample(2.0, &mut pose).unwrap();
+        assert_vec3_close(pose[0].translation, Vec3::ZERO);
+        clip.sample_resolved(2.0, &mut pose).unwrap();
+        assert_vec3_close(pose[0].translation, Vec3::new(2.0, 0.0, 0.0));
+        clip.sample_resolved(2.5, &mut pose).unwrap();
+        assert_vec3_close(pose[0].translation, Vec3::new(2.0, 0.0, 0.0));
+        clip.sample_resolved(0.5, &mut pose).unwrap();
+        assert_vec3_close(pose[0].translation, Vec3::new(0.5, 0.0, 0.0));
+        assert_eq!(
+            clip.sample_resolved(f32::INFINITY, &mut pose),
             Err(ClipError::NonFiniteTime)
         );
     }

@@ -57,6 +57,9 @@ pub enum PlaybackError {
     InvalidSpeed,
     /// A frame delta was not finite and non-negative.
     InvalidDelta,
+    /// Accepting the delta would overflow the accumulated time; the clock is
+    /// left unchanged.
+    TimeOverflow,
 }
 
 impl fmt::Display for PlaybackError {
@@ -67,6 +70,7 @@ impl fmt::Display for PlaybackError {
             }
             Self::InvalidSpeed => "playback speed must be finite and non-negative",
             Self::InvalidDelta => "frame delta must be finite and non-negative seconds",
+            Self::TimeOverflow => "frame delta would overflow the accumulated playback time",
         })
     }
 }
@@ -78,6 +82,18 @@ fn validate_delta(delta_seconds: f64) -> Result<(), PlaybackError> {
         Ok(())
     } else {
         Err(PlaybackError::InvalidDelta)
+    }
+}
+
+/// The accumulated total after adding `step`, or [`PlaybackError::TimeOverflow`]
+/// when the total (or its cycle count over `duration_seconds`) is no longer
+/// finite. Callers commit the result only on success.
+fn accumulate(total: f64, step: f64, duration_seconds: f64) -> Result<f64, PlaybackError> {
+    let next = total + step;
+    if step.is_finite() && next.is_finite() && (next / duration_seconds).is_finite() {
+        Ok(next)
+    } else {
+        Err(PlaybackError::TimeOverflow)
     }
 }
 
@@ -173,7 +189,11 @@ impl PlaybackClock {
     /// Advances by one measured frame delta and returns the resolved clip time.
     pub fn advance(&mut self, delta_seconds: f64) -> Result<f32, PlaybackError> {
         validate_delta(delta_seconds)?;
-        self.travelled_seconds += self.speed * delta_seconds;
+        self.travelled_seconds = accumulate(
+            self.travelled_seconds,
+            self.speed * delta_seconds,
+            self.duration_seconds,
+        )?;
         Ok(self.clip_time())
     }
 
@@ -214,12 +234,16 @@ impl PlaybackClock {
     }
 
     /// Samples `clip` at this clock's time into `pose`.
+    ///
+    /// The clock has already resolved clamping and wrapping, so the clip's own
+    /// loop mode is not applied again: a reverse loop that reports `duration`
+    /// presents the final pose, not the wrapped first pose.
     pub fn sample(
         &self,
         clip: &AnimationClip,
         pose: &mut [Transform],
     ) -> Result<(), three_d_animation::ClipError> {
-        clip.sample(self.clip_time(), pose)
+        clip.sample_resolved(self.clip_time(), pose)
     }
 }
 
@@ -262,7 +286,8 @@ impl TransitionClock {
 
     pub fn advance(&mut self, delta_seconds: f64) -> Result<f32, PlaybackError> {
         validate_delta(delta_seconds)?;
-        self.elapsed_seconds += delta_seconds;
+        self.elapsed_seconds =
+            accumulate(self.elapsed_seconds, delta_seconds, self.duration_seconds)?;
         Ok(self.weight())
     }
 
@@ -350,15 +375,20 @@ impl CrossFade {
     }
 
     pub fn advance(&mut self, delta_seconds: f64) -> Result<CrossFadeFrame, PlaybackError> {
-        validate_delta(delta_seconds)?;
-        self.from.advance(delta_seconds)?;
-        self.to.advance(delta_seconds)?;
-        self.transition.advance(delta_seconds)?;
+        // Advance copies and commit only if all three clocks accept the delta,
+        // so a rejected frame leaves the whole cross-fade untouched.
+        let mut next = *self;
+        next.from.advance(delta_seconds)?;
+        next.to.advance(delta_seconds)?;
+        next.transition.advance(delta_seconds)?;
+        *self = next;
         Ok(self.frame())
     }
 
     /// Samples both clips from `base_pose` and blends them by the transition
-    /// weight through `three-d-animation`'s cross-fade.
+    /// weight through `three-d-animation`'s cross-fade. Like
+    /// [`PlaybackClock::sample`], each clip is sampled at its clock-resolved
+    /// time without re-applying the clip's loop mode.
     pub fn sample(
         &self,
         from_clip: &AnimationClip,
@@ -367,7 +397,7 @@ impl CrossFade {
         base_pose: &[Transform],
         output: &mut [Transform],
     ) -> Result<(), BlendError> {
-        workspace.sample_crossfade(
+        workspace.sample_resolved_crossfade(
             ClipSample {
                 clip: from_clip,
                 time: self.from.clip_time(),

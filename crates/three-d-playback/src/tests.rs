@@ -446,3 +446,98 @@ fn invalid_runtime_inputs_fail_closed() {
         "a rejected delta leaves every clock untouched"
     );
 }
+
+#[test]
+fn reverse_loop_boundaries_present_the_end_pose() {
+    let looped = target_clip();
+    let mut end_pose = [Transform::IDENTITY];
+    let mut start_pose = [Transform::IDENTITY];
+    let clamped = target_clip().with_loop_mode(LoopMode::Clamp);
+    clamped.sample(looped.duration(), &mut end_pose).unwrap();
+    clamped.sample(0.0, &mut start_pose).unwrap();
+
+    let mut clock = PlaybackClock::from_clip(&looped)
+        .unwrap()
+        .with_direction(PlaybackDirection::Reverse);
+    let mut pose = [Transform::IDENTITY];
+    for _ in 0..3 {
+        assert_eq!(clock.clip_time(), looped.duration());
+        clock.sample(&looped, &mut pose).unwrap();
+        assert_transform_close(pose[0], end_pose[0]);
+        // A small step later the pose is still next to the end pose, never a
+        // jump from the first pose.
+        let mut later = clock;
+        later.advance(0.001).unwrap();
+        let mut later_pose = [Transform::IDENTITY];
+        later.sample(&looped, &mut later_pose).unwrap();
+        assert!(
+            (later_pose[0].translation - end_pose[0].translation).length()
+                < (later_pose[0].translation - start_pose[0].translation).length()
+        );
+        clock.advance(f64::from(looped.duration())).unwrap();
+    }
+
+    // The cross-fade samples its clocks the same way: at full weight a
+    // reverse-looping target on a cycle boundary shows its end pose.
+    let from = PlaybackClock::new(1.2, PlaybackMode::Loop).unwrap();
+    let to = PlaybackClock::from_clip(&looped)
+        .unwrap()
+        .with_direction(PlaybackDirection::Reverse);
+    let mut fade = CrossFade::new(
+        from,
+        to,
+        TransitionClock::new(0.4, TransitionCurve::Linear).unwrap(),
+    );
+    fade.advance(f64::from(looped.duration())).unwrap();
+    assert!(fade.transition().is_complete());
+    assert_eq!(fade.to_clock().clip_time(), looped.duration());
+    let mut workspace = ClipBlendWorkspace::new(1);
+    fade.sample(
+        &clip(),
+        &looped,
+        &mut workspace,
+        &[Transform::IDENTITY],
+        &mut pose,
+    )
+    .unwrap();
+    assert_transform_close(pose[0], end_pose[0]);
+}
+
+#[test]
+fn arithmetic_overflow_is_rejected_without_poisoning_clocks() {
+    let mut clock = PlaybackClock::new(1.0, PlaybackMode::Loop)
+        .unwrap()
+        .with_speed(f64::MAX)
+        .unwrap();
+    let before = clock;
+    assert_eq!(clock.advance(2.0), Err(PlaybackError::TimeOverflow));
+    assert_eq!(clock, before, "a rejected delta leaves the clock untouched");
+    assert!(clock.clip_time().is_finite());
+    clock.sample(&clip(), &mut [Transform::IDENTITY]).unwrap();
+
+    // The accumulated total can also overflow across frames.
+    assert!(clock.advance(1.0).is_ok());
+    let before = clock;
+    assert_eq!(clock.advance(1.0), Err(PlaybackError::TimeOverflow));
+    assert_eq!(clock, before);
+    assert!(clock.clip_time().is_finite());
+
+    // A finite total over a tiny duration must not produce infinite cycles.
+    let mut tiny = PlaybackClock::new(f32::from_bits(1), PlaybackMode::Loop).unwrap();
+    assert_eq!(tiny.advance(1.0e300), Err(PlaybackError::TimeOverflow));
+    assert_eq!(tiny.travelled_seconds(), 0.0);
+
+    let mut transition = TransitionClock::new(1.0, TransitionCurve::Linear).unwrap();
+    transition.advance(f64::MAX).unwrap();
+    assert_eq!(
+        transition.advance(f64::MAX),
+        Err(PlaybackError::TimeOverflow)
+    );
+    assert_eq!(transition.elapsed_seconds(), f64::MAX);
+
+    // One overflowing clock rejects the whole cross-fade frame atomically.
+    let mut fade = crossfade(f64::MAX, 0.5);
+    let before = fade;
+    assert_eq!(fade.advance(2.0), Err(PlaybackError::TimeOverflow));
+    assert_eq!(fade, before);
+}
