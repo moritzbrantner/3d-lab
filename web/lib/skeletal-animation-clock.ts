@@ -14,10 +14,18 @@ export const CLIP_UI_PUBLISH_INTERVAL = 0.1;
 export type ClipClock = {
   time: number;
   sinceLastPublish: number;
+  /** Set when a non-looping clip reached the end of its playback range. */
+  finished: boolean;
 };
+
+export type PlaybackRange = { start: number; end: number };
 
 export type ClipClockOptions = {
   duration?: number;
+  /** Playback window inside the clip; defaults to the whole clip. */
+  range?: PlaybackRange;
+  /** Wrap at the range end (default) or stop there and report `finished`. */
+  loop?: boolean;
   publishInterval?: number;
   maxFrameDelta?: number;
 };
@@ -37,7 +45,7 @@ function clampClipTime(time: number, duration: number): number {
 }
 
 export function createClipClock(time: number, duration = TEACHING_CLIP_DURATION): ClipClock {
-  return { time: clampClipTime(time, duration), sinceLastPublish: 0 };
+  return { time: clampClipTime(time, duration), sinceLastPublish: 0, finished: false };
 }
 
 /**
@@ -47,6 +55,21 @@ export function createClipClock(time: number, duration = TEACHING_CLIP_DURATION)
 export function setClipClockTime(clock: ClipClock, time: number, duration = TEACHING_CLIP_DURATION): void {
   clock.time = clampClipTime(time, duration);
   clock.sinceLastPublish = 0;
+  clock.finished = false;
+}
+
+/**
+ * Prepares the clock for playback: a time outside the playback range, or the
+ * end of a finished non-looping clip, restarts at the range start.
+ */
+export function prepareClipPlayback(clock: ClipClock, options: ClipClockOptions = {}): void {
+  const duration = options.duration ?? TEACHING_CLIP_DURATION;
+  const { start, end } = options.range ?? { start: 0, end: duration };
+  const loop = options.loop ?? true;
+  if (clock.time < start || clock.time > end || (!loop && clock.time >= end)) {
+    setClipClockTime(clock, start, duration);
+  }
+  clock.finished = false;
 }
 
 /**
@@ -59,7 +82,22 @@ export function advanceClipClock(clock: ClipClock, frameDeltaSeconds: number, op
   const maxFrameDelta = options.maxFrameDelta ?? MAX_CLIP_FRAME_DELTA;
   const delta = Math.min(Math.max(Number.isFinite(frameDeltaSeconds) ? frameDeltaSeconds : 0, 0), maxFrameDelta);
 
-  clock.time = wrapClipTime(clock.time + delta, duration);
+  const { start, end } = options.range ?? { start: 0, end: duration };
+  const span = end - start;
+  if (!(span > 0)) return false;
+  // Playback always lives inside the range; an explicit scrub outside it rejoins at the start.
+  const from = clock.time < start || clock.time > end ? start : clock.time;
+  const next = from + delta;
+  if (options.loop ?? true) {
+    clock.time = start + wrapClipTime(next - start, span);
+  } else if (next >= end) {
+    clock.time = end;
+    clock.finished = true;
+    clock.sinceLastPublish = 0;
+    return true;
+  } else {
+    clock.time = next;
+  }
   clock.sinceLastPublish += delta;
   if (clock.sinceLastPublish < publishInterval) return false;
   clock.sinceLastPublish = 0;

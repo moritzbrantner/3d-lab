@@ -124,6 +124,12 @@ cargo run -p three-d-playback --example playback_timing_evidence
 bun scripts/playback-timing-browser-smoke.mjs http://127.0.0.1:4173/animation-timing/
 ```
 
+The skeletal animation lab has an "Inspect rig, clip & weights" topic (joint picking, exact transforms, clip range and weight views). Run its Chromium smoke against a served build:
+
+```bash
+bun scripts/skeletal-inspection-browser-smoke.mjs http://127.0.0.1:4173/skeletal-animation/
+```
+
 ## Architecture
 
 See [`docs/contracts/mesh-model.md`](docs/contracts/mesh-model.md) for the mesh and tangent-space parity contract.
