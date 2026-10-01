@@ -48,6 +48,7 @@
 - [x] Preserve glTF `TANGENT` attributes and teach tangent-space normal-map shading interactively.
 - [x] Preserve encoded image/texture data and glTF normal-texture bindings through `three-d-assets`.
 - [x] Restore deterministic level-of-detail and mesh simplification through `three-d-lod`, preserving the source vertex/attribute buffers while deriving index buffers with explicit target/error/border semantics.
+- [x] Add renderer-independent screen-space LOD selection with projected pixel error and hysteresis, plus an interactive lab that presents committed Rust-generated evidence.
 - [x] Keep the asset-tooling process adapter outside `three-d-lod`, using a narrow canonical mesh JSON integration envelope so the domain crate does not depend on workflow/provenance infrastructure.
 
 ### Slice 6 — authoring and inspection
