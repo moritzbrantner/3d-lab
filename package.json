@@ -18,6 +18,10 @@
     "./weighted-skin": {
       "types": "./packages/renderer/weighted-skin.d.ts",
       "import": "./packages/renderer/weighted-skin.js"
+    },
+    "./static-glb": {
+      "types": "./packages/renderer/static-glb.d.ts",
+      "import": "./packages/renderer/static-glb.js"
     }
   },
   "scripts": {

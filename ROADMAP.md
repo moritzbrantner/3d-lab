@@ -44,6 +44,8 @@
 - [x] Expand glTF anatomy from animation-only to meshes/materials/assets.
 - [x] Add OBJ and glTF mesh loading and validation.
 - [x] Let the reusable browser renderer consume content-identified indexed mesh geometry without becoming a file-format or provenance authority.
+- [x] Lower validated static GLBs (hierarchy, transforms, UV0/vertex-color geometry, factor materials) once into shared renderer resources through a public `static-glb` adapter that rejects textures, alpha, skins, animations, and morph targets.
+- [ ] Add textured PBR materials (#86) and imported skinned/animated assets (#87) to the static GLB path, and a native static-asset path through `three-d-formats` plus a scene-layer hierarchy.
 - [x] Add renderer-independent tangent attributes and deterministic tangent derivation.
 - [x] Preserve glTF `TANGENT` attributes and teach tangent-space normal-map shading interactively.
 - [x] Preserve encoded image/texture data and glTF normal-texture bindings through `three-d-assets`.

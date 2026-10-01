@@ -31,6 +31,9 @@ export function createIndexedMeshGeometry(geometry) {
   } else {
     meshGeometry.computeVertexNormals()
   }
+  if (geometry.uvs !== undefined) {
+    meshGeometry.setAttribute("uv", new THREE.Float32BufferAttribute(geometry.uvs.flat(), 2))
+  }
   if (geometry.colors !== undefined) {
     meshGeometry.setAttribute("color", new THREE.BufferAttribute(workingColorBuffer(geometry.colors), 3))
   }

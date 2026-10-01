@@ -17,6 +17,8 @@ on:
       - "scripts/renderer-presentation-smoke.mjs"
       - "scripts/sync-web-animation-fixtures.mjs"
       - "fixtures/catalog/khronos-simpleskin-embedded.*"
+      - "fixtures/static-glb/**"
+      - "scripts/static-glb-fixtures.mjs"
       - "profiles/runtime-profiler/renderer-browser.json"
       - "profiles/runtime-profiler/renderer-browser.mjs"
       - ".github/workflows/renderer-runtime-evidence.yml"

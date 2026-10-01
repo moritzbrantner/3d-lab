@@ -97,6 +97,8 @@ bun install
 
 The renderer receives explicit view/projection and model matrices. It must not become an alternate authority for camera, transform, simulation, placement, or physics semantics.
 
+Validated static GLB assets (for example asset-tooling rocks and trees) are lowered once through `@moritzbrantner/three-d-renderer/static-glb` into shared, content-identified renderer geometry; see [`docs/contracts/browser-renderer.md`](docs/contracts/browser-renderer.md#static-glb-assets).
+
 Repeated content can be submitted as instance batches (one draw call per batch); see [`docs/contracts/performance-observability.md`](docs/contracts/performance-observability.md#instance-batches).
 
 ### Web

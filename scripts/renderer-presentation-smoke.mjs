@@ -1,6 +1,7 @@
 // Chromium acceptance for the reusable renderer's presentation semantics:
 // frame environment defaults, vertex color space, emissive/unlit shading, fog, shadow focus and
-// caster reach, and material sharing across nodes and reused geometry keys.
+// caster reach, material sharing across nodes and reused geometry keys, and static GLB assets
+// adapted in the page and rendered as nodes and instance batches with exact resource reuse.
 // bun scripts/renderer-presentation-smoke.mjs [OUTPUT_DIR]
 // Functional pixel checks on SwiftShader, never a wall-clock performance gate.
 import assert from "node:assert/strict";
@@ -10,6 +11,7 @@ import path from "node:path";
 import * as THREE from "three";
 import { chromium } from "playwright";
 import { projectWorldPoint } from "../packages/renderer/index.js";
+import { adaptStaticGlb, staticGlbInstanceBatches, staticGlbSceneNodes } from "../packages/renderer/static-glb.js";
 
 const SIZE = 64;
 const repository = path.resolve(import.meta.dir, "..");
@@ -22,7 +24,9 @@ const entry = path.join(buildDirectory, "entry.js");
 await writeFile(
   entry,
   `import { createThreeSceneRenderer } from ${JSON.stringify(path.join(repository, "packages/renderer/index.js"))};\n` +
-    "window.createThreeSceneRenderer = createThreeSceneRenderer;\n",
+    "window.createThreeSceneRenderer = createThreeSceneRenderer;\n" +
+    `import { adaptStaticGlb } from ${JSON.stringify(path.join(repository, "packages/renderer/static-glb.js"))};\n` +
+    "window.adaptStaticGlb = adaptStaticGlb;\n",
 );
 const build = await Bun.build({ entrypoints: [entry], target: "browser", format: "iife" });
 await rm(buildDirectory, { recursive: true, force: true });
@@ -403,6 +407,85 @@ try {
     shadow: pixelAt(batchFocused.pixels, topCamera, occluded),
   };
   checks.push("instance batches share the lit material path, fog, and shadow frame with nodes");
+
+  // 10. Static GLB assets: the adapter runs in Chromium and lowers the committed rock/tree GLBs to
+  //     the same descriptors as under Bun; repeated placements and transform-only frames reuse every
+  //     geometry and material; batches render the rock like equal nodes.
+  const glbBytes = {
+    rock: await readFile(path.join(repository, "fixtures/static-glb/rock.glb")),
+    tree: await readFile(path.join(repository, "fixtures/static-glb/tree.glb")),
+  };
+  const [rock, tree] = [await adaptStaticGlb(glbBytes.rock), await adaptStaticGlb(glbBytes.tree)];
+  const inPage = await page.evaluate(async (sources) => {
+    const assets = {};
+    for (const [name, bytes] of Object.entries(sources)) assets[name] = await window.adaptStaticGlb(new Uint8Array(bytes));
+    return assets;
+  }, { rock: Array.from(glbBytes.rock), tree: Array.from(glbBytes.tree) });
+  assert.deepEqual(inPage.rock, JSON.parse(JSON.stringify(rock)), "rock adapts identically in Chromium and Bun");
+  assert.deepEqual(inPage.tree, JSON.parse(JSON.stringify(tree)), "tree adapts identically in Chromium and Bun");
+
+  const glbCamera = camera([0, 3, 9], [0, 1.4, 0]);
+  const rockSpots = [[-2.4, 0, 1], [2.4, 0, 1], [0, 0, 2.5]];
+  const placeRocks = (offset) =>
+    rockSpots.flatMap((spot, index) =>
+      staticGlbSceneNodes(rock, { id: `rock-${index}`, transform: { translation: [spot[0], spot[1] + offset, spot[2]] } }),
+    );
+  const placeTree = (offset) => staticGlbSceneNodes(tree, { id: "oak", transform: { translation: [0, offset, -1] } });
+  const [glbFirst, glbMoved] = await draw({}, [
+    { camera: glbCamera, nodes: [...placeRocks(0), ...placeTree(0)] },
+    { camera: glbCamera, nodes: [...placeRocks(0.2), ...placeTree(0.1)] },
+  ]);
+  const resourceCounts = (o) => ({
+    objectCreateCount: o.objectCreateCount,
+    geometryCreateCount: o.geometryCreateCount,
+    geometryReuseCount: o.geometryReuseCount,
+    materialCreateCount: o.materialCreateCount,
+    liveGeometryCount: o.liveGeometryCount,
+    liveMaterialCount: o.liveMaterialCount,
+  });
+  // 3 rock nodes + 4 tree drawables; 1 rock + 3 tree geometries; rock, bark, and foliage materials.
+  assert.deepEqual(
+    resourceCounts(glbFirst.observations),
+    { objectCreateCount: 7, geometryCreateCount: 4, geometryReuseCount: 3, materialCreateCount: 3, liveGeometryCount: 4, liveMaterialCount: 3 },
+    "repeated rock placements and the tree's shared trunk mesh reuse geometry and materials",
+  );
+  assert.deepEqual(
+    resourceCounts(glbMoved.observations),
+    { objectCreateCount: 0, geometryCreateCount: 0, geometryReuseCount: 7, materialCreateCount: 0, liveGeometryCount: 4, liveMaterialCount: 3 },
+    "a transform-only frame recreates no GLB resources",
+  );
+  const canopy = pixelAt(glbFirst.pixels, glbCamera, [0, 2.5, -1]);
+  const trunkPixel = pixelAt(glbFirst.pixels, glbCamera, [0, 0.6, -0.8]);
+  const rockPixel = pixelAt(glbFirst.pixels, glbCamera, [2.4, 0.5, 1.5]);
+  const sky = pixelAt(glbFirst.pixels, glbCamera, [-3, 4.5, -1]);
+  assert.deepEqual(sky, [0x0c, 0x11, 0x1a, 255], "the sky stays background");
+  assert(canopy[1] > canopy[0] && canopy[1] > canopy[2], `vertex-colored canopy renders green: ${canopy}`);
+  assert(trunkPixel[0] > trunkPixel[2] && trunkPixel[0] > trunkPixel[1], `bark trunk renders brown: ${trunkPixel}`);
+  assert(luminance(rockPixel) > luminance(sky) + 30, `rock renders lit: ${rockPixel}`);
+
+  const rockBatches = staticGlbInstanceBatches(rock, {
+    id: "rocks",
+    revision: "rocks-v1",
+    instances: rockSpots.map((spot) => ({ transform: { translation: spot } })),
+  });
+  const [rockNodesOnly, rockBatched] = await draw({}, [
+    { camera: glbCamera, nodes: placeRocks(0) },
+    { camera: glbCamera, nodes: [], instanceBatches: rockBatches },
+  ]);
+  assert(maxChannelDifference(rockBatched.pixels, rockNodesOnly.pixels) <= 1, "batched rocks render like rock nodes");
+  assert.deepEqual(
+    [rockBatched.observations.instanceBatchCount, rockBatched.observations.instanceCount, rockBatched.observations.liveGeometryCount],
+    [1, 3, 1],
+    "three rock placements are one batch over one geometry",
+  );
+  evidence.staticGlb = {
+    first: resourceCounts(glbFirst.observations),
+    moved: resourceCounts(glbMoved.observations),
+    canopy,
+    trunk: trunkPixel,
+    rock: rockPixel,
+  };
+  checks.push("static GLB assets adapt in Chromium, render, and reuse geometry/materials across placements and transform-only frames");
 
   assert.deepEqual(errors, [], "page must not report errors or warnings");
 } finally {
