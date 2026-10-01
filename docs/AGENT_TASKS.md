@@ -34,7 +34,7 @@ An implementer run (Codex: the `implementer-loop` skill in `.agents/skills/`; So
    - a Codex review finding is neither fixed nor answered;
    - the loop driver posted a "changes needed" comment newer than your last push.
 
-   Fix it on the same branch, push, and reply to each finding. After substantial fixes, comment `@codex review`. After three failed attempts on the same failure, comment what blocks you on the PR and stop touching it.
+   Fix it on the same branch, push, and reply to each finding. After substantial fixes, comment `@codex review`. After three failed attempts on the same failure, comment `Blocked:` followed by what blocks you on the PR and stop touching it; the loop driver then stops re-dispatching and escalates the PR to the owner.
 2. **Otherwise, wait if your PR is still in review.** If a PR of yours is open and only waiting on CI, Codex or the loop driver's merge, do nothing. One task in flight per implementer.
 3. **Otherwise, start the next task** per "Picking up a task". Work in a fresh worktree from `origin/main`. Commit in small steps. Run the focused checks plus what the issue lists that CI does not run. Push, then open the PR with `Closes #N`. Wait for CI and the first Codex review, and handle them as in step 1 within the same run.
 4. **Otherwise, exit.** Do not invent work: no new issues, no tooling, foundation or cleanup tasks.
