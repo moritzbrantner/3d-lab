@@ -9,6 +9,7 @@ members = [
     "crates/three-d-rigged-assets",
     "crates/three-d-formats",
     "crates/three-d-lod",
+    "crates/three-d-playback",
     "crates/three-d-scene",
     "crates/three-d-export",
     "examples/wgpu-native",
