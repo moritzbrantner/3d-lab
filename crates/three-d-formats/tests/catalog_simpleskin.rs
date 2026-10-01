@@ -1,34 +1,48 @@
 use three_d_animation::Transform;
-use three_d_formats::{FormatError, load_gltf, load_gltf_animation_clips};
+use three_d_formats::{load_gltf, load_gltf_animation_clips};
 
 const KHRONOS_SIMPLE_SKIN: &[u8] =
     include_bytes!("../../../fixtures/catalog/khronos-simpleskin-embedded.gltf");
 
 #[test]
-fn canonical_khronos_simple_skin_fails_closed_on_unrepresented_skinning_attributes() {
+fn canonical_khronos_simple_skin_preserves_per_vertex_skin_influences() {
     assert_eq!(
         KHRONOS_SIMPLE_SKIN.len(),
         3566,
         "pinned catalog fixture byte length drifted"
     );
 
-    let error = load_gltf(KHRONOS_SIMPLE_SKIN)
-        .expect_err("skinning attributes must not be silently discarded");
+    let asset = load_gltf(KHRONOS_SIMPLE_SKIN)
+        .expect("canonical SimpleSkin mesh and skin attributes should load");
+    let primitive = &asset.meshes()[0].primitives()[0];
+    let influences = primitive
+        .skin_influences()
+        .expect("SimpleSkin must preserve JOINTS_0 and WEIGHTS_0");
 
-    match error {
-        FormatError::UnsupportedVertexAttribute {
-            mesh_index,
-            primitive_index,
-            semantic,
-        } => {
-            assert_eq!(mesh_index, 0);
-            assert_eq!(primitive_index, 0);
-            assert!(
-                semantic.starts_with("Joints") || semantic.starts_with("Weights"),
-                "unexpected unsupported semantic: {semantic}"
-            );
+    assert_eq!(primitive.mesh().vertices().len(), 10);
+    assert_eq!(influences.len(), primitive.mesh().vertices().len());
+    assert!(
+        influences.iter().any(|influence| {
+            influence
+                .weights
+                .iter()
+                .filter(|weight| **weight > 0.0)
+                .count()
+                > 1
+        }),
+        "fixture must exercise blended skinning rather than only rigid weights"
+    );
+    for influence in influences {
+        let total: f32 = influence.weights.iter().sum();
+        assert!((total - 1.0).abs() < 1.0e-5);
+        for (&joint, &weight) in influence.joints.iter().zip(&influence.weights) {
+            if weight > 0.0 {
+                assert!(
+                    joint < 2,
+                    "SimpleSkin references only its two authored joints"
+                );
+            }
         }
-        other => panic!("expected unsupported skinning attribute, got {other}"),
     }
 }
 
