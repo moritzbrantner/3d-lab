@@ -1,6 +1,7 @@
 // Chromium acceptance for the reusable renderer's presentation semantics:
 // frame environment defaults, vertex color space, emissive/unlit shading, fog, shadow focus and
-// caster reach, and material sharing across nodes and reused geometry keys.
+// caster reach, material sharing across nodes and reused geometry keys, instance batches, and
+// cosmetic flipbook effects (frame selection, tint, opacity, billboarding, and resource release).
 // bun scripts/renderer-presentation-smoke.mjs [OUTPUT_DIR]
 // Functional pixel checks on SwiftShader, never a wall-clock performance gate.
 import assert from "node:assert/strict";
@@ -10,6 +11,7 @@ import path from "node:path";
 import * as THREE from "three";
 import { chromium } from "playwright";
 import { projectWorldPoint } from "../packages/renderer/index.js";
+import { PUFF_FRAME_COLORS, createPuffAtlas } from "./fixtures/cosmetic-puff-atlas.mjs";
 
 const SIZE = 64;
 const repository = path.resolve(import.meta.dir, "..");
@@ -70,7 +72,17 @@ async function draw(options, frames) {
       renderer.setSize(size, size, 1);
       const gl = canvas.getContext("webgl2");
       const results = frames.map((frame) => {
-        const observations = renderer.render(frame);
+        // Typed arrays cross the page boundary as plain arrays; effect atlases need RGBA bytes.
+        const prepared = frame.effects
+          ? {
+              ...frame,
+              effects: {
+                ...frame.effects,
+                atlases: frame.effects.atlases.map((atlas) => ({ ...atlas, pixels: Uint8Array.from(atlas.pixels) })),
+              },
+            }
+          : frame;
+        const observations = frame.cameraOnly ? renderer.renderCamera(frame.camera) : renderer.render(prepared);
         const pixels = new Uint8Array(size * size * 4);
         gl.readPixels(0, 0, size, size, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
         return { pixels: Array.from(pixels), observations };
@@ -403,6 +415,80 @@ try {
     shadow: pixelAt(batchFocused.pixels, topCamera, occluded),
   };
   checks.push("instance batches share the lit material path, fog, and shadow frame with nodes");
+
+  // 10. Cosmetic flipbook effects: the frame drawn at each age is the one sampled from the atlas,
+  //     pending/expired effects draw nothing, color and opacity apply, the quad faces any camera
+  //     (including a camera-only redraw with zero buffer uploads), and disabling releases resources.
+  const puffAtlas = createPuffAtlas();
+  const atlasPayload = { ...puffAtlas, pixels: Array.from(puffAtlas.pixels) };
+  const puffAt = (time, fields = {}, extra = {}) => ({
+    camera: flatCamera,
+    nodes: [],
+    effects: {
+      time,
+      atlases: [atlasPayload],
+      instances: [
+        { id: "impact", atlas: puffAtlas.resourceKey, space: "world", origin: [0, 0, 0], startTime: 1, duration: 0.4, scale: 2, ...fields },
+      ],
+      ...extra,
+    },
+  });
+  const sideCamera = camera([5, 0.5, 0], [0, 0, 0]);
+  const obliqueCamera = camera([3, 3, 3], [0, 0, 0]);
+  const clearColor = [0x0c, 0x11, 0x1a, 255];
+  const effectFrames = await draw({}, [
+    puffAt(0.5),
+    puffAt(1.05),
+    puffAt(1.15),
+    puffAt(1.25),
+    { ...puffAt(1.25), camera: sideCamera },
+    { camera: obliqueCamera, cameraOnly: true },
+    puffAt(1.35),
+    puffAt(1.45),
+    puffAt(1.0, { color: "#808080" }),
+    puffAt(1.0, { opacity: 0.5 }),
+    puffAt(1.25, {}, { enabled: false }),
+  ]);
+  const [pending, f0, f1, f2, side, oblique, f3, expired, effectTinted, effectFaded, disabled] = effectFrames;
+  assert.deepEqual(pixelAt(pending.pixels, flatCamera, middle), clearColor, "a pending effect draws nothing");
+  assert.equal(pending.observations.effectPendingCount, 1);
+  for (const [index, sample] of [f0, f1, f2, f3].entries()) {
+    assertNear(pixelAt(sample.pixels, flatCamera, middle), [...PUFF_FRAME_COLORS[index], 255], 1, `atlas frame ${index} at its age`);
+  }
+  assert.deepEqual(pixelAt(expired.pixels, flatCamera, middle), clearColor, "an expired effect draws nothing");
+  assert.equal(expired.observations.effectExpiredCount, 1);
+  assertNear(pixelAt(effectTinted.pixels, flatCamera, middle), [128, 0, 0, 255], 2, "effect color multiplies the atlas in linear space");
+  assertNear(
+    pixelAt(effectFaded.pixels, flatCamera, middle),
+    [(255 + 0x0c) / 2, 0x11 / 2, 0x1a / 2, 255],
+    2,
+    "effect opacity blends over the background",
+  );
+  assertNear(pixelAt(side.pixels, sideCamera, middle), [...PUFF_FRAME_COLORS[2], 255], 1, "the quad faces a side camera");
+  assertNear(pixelAt(oblique.pixels, obliqueCamera, middle), [...PUFF_FRAME_COLORS[2], 255], 1, "camera-only redraw keeps facing the camera");
+  assert.equal(oblique.observations.effectBufferUploadCount, 0, "camera changes upload no effect buffers");
+  assert.equal(side.observations.effectBufferUploadCount, 0, "same-age redraw from a new camera uploads nothing");
+  assert.deepEqual(effectFrames.slice(0, -1).map((sample) => sample.observations.effectAtlasCreateCount ?? 0), [1, 0, 0, 0, 0, 0, 0, 0, 0, 0], "the atlas is created once, while still pending");
+  assert.equal(f3.observations.effectAtlasReuseCount, 1, "later frames reuse the atlas");
+  assert.deepEqual(pixelAt(disabled.pixels, flatCamera, middle), clearColor, "disabled effects draw nothing");
+  assert.deepEqual(
+    [disabled.observations.effectAtlasDisposeCount, disabled.observations.liveEffectAtlasCount],
+    [1, 0],
+    "disabling effects disposes the atlas resources",
+  );
+  evidence.cosmeticEffects = {
+    frames: [f0, f1, f2, f3].map((sample) => pixelAt(sample.pixels, flatCamera, middle)),
+    effectTinted: pixelAt(effectTinted.pixels, flatCamera, middle),
+    effectFaded: pixelAt(effectFaded.pixels, flatCamera, middle),
+    side: pixelAt(side.pixels, sideCamera, middle),
+    observations: effectFrames.map((sample) => ({
+      effectActiveCount: sample.observations.effectActiveCount,
+      effectBufferUploadCount: sample.observations.effectBufferUploadCount,
+      liveEffectAtlasCount: sample.observations.liveEffectAtlasCount,
+    })),
+  };
+  await writeFile(path.join(output, "cosmetic-effect-frames.json"), `${JSON.stringify(evidence.cosmeticEffects, null, 2)}\n`);
+  checks.push("cosmetic flipbook effects sample frames by age, tint, fade, face the camera, and release resources");
 
   assert.deepEqual(errors, [], "page must not report errors or warnings");
 } finally {

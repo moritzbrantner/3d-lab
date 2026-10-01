@@ -100,6 +100,8 @@ The renderer receives explicit view/projection and model matrices. It must not b
 
 Repeated content can be submitted as instance batches (one draw call per batch); see [`docs/contracts/performance-observability.md`](docs/contracts/performance-observability.md#instance-batches).
 
+Cosmetic impact/puff effects can be submitted as bounded baked flipbooks (`frame.effects`); fixed-time frame sampling is also available renderer-independently from `@moritzbrantner/three-d-renderer/flipbook`. See [`docs/contracts/browser-renderer.md`](docs/contracts/browser-renderer.md#cosmetic-flipbook-effects).
+
 ### Web
 
 ```bash

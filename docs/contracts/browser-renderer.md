@@ -8,8 +8,9 @@
 
 - `camera` — explicit view and WebGPU-depth projection matrices;
 - `nodes` — every scene node to draw, identified by stable ids. A node missing from the frame is removed;
-- `instanceBatches` (optional) — many copies of one geometry drawn through one instanced mesh per batch, identified by batch ids (see [`performance-observability.md`](performance-observability.md#instance-batches)). A batch missing from the frame is removed; and
-- `environment` (optional) — background, lights, fog, and the sun's shadow frame.
+- `instanceBatches` (optional) — many copies of one geometry drawn through one instanced mesh per batch, identified by batch ids (see [`performance-observability.md`](performance-observability.md#instance-batches)). A batch missing from the frame is removed;
+- `environment` (optional) — background, lights, fog, and the sun's shadow frame; and
+- `effects` (optional) — cosmetic baked-flipbook effects (see [Cosmetic flipbook effects](#cosmetic-flipbook-effects)). Omitting it releases every effect resource.
 
 Nodes and instance batch instances share one transform composition (a `modelMatrix`, or a translation/rotation/scale `transform`), so both place geometry identically. The environment applies to batches exactly as to nodes: they are lit by the same sky and sun, fogged by the same fog, and cast and receive shadows inside the same shadow frame whenever the renderer `shadows` option is on.
 
@@ -67,7 +68,51 @@ A `kind: "mesh"` geometry carries positions, triangle indices, optional aligned 
 
 `colors` are per-vertex sRGB components in `0..1`, the same color space as `#RRGGBB` node colors: the vertex color `[0x5a/255, 0x8f/255, 0x3c/255]` renders like the node color `#5a8f3c`. They are converted to the linear Three.js working color space once at materialization. Interpolation across triangles and multiplication by the node color both happen in that linear space, like all Three.js shading. Terrain or props colored per vertex therefore normally use the neutral node color `#ffffff`, while any other node color tints the whole mesh (`#808080` times `#339966` renders as `#144a2f`, not the sRGB-space product `#1a4d33`).
 
+## Cosmetic flipbook effects
+
+`frame.effects` draws short cosmetic effects such as an impact puff as camera-facing quads that play a baked atlas. Effects are presentation only: the consumer supplies triggers, origins, and its cosmetic clock; the renderer never performs hit detection, owns game randomness, or feeds anything back into simulation. Dropping, disabling, or failing to draw an effect never changes a game outcome. The renderer had no sprite or billboard path before this; effects reuse the instanced-mesh and resource-observation patterns of instance batches instead of adding a particle engine.
+
+```ts
+effects: {
+  time: number                 // cosmetic clock, same units as startTime/duration
+  enabled?: boolean            // false: draw nothing and dispose every effect resource
+  maxInstances?: number        // caller budget (e.g. reduced intensity), capped by the renderer option
+  atlases: RendererEffectAtlas[]       // {resourceKey, width, height, pixels, columns, rows, frameCount?, filter?}
+  instances: RendererEffectInstance[]  // {id, atlas, space: "world", origin, startTime, duration, loops?, scale, color?, opacity?}
+}
+```
+
+### Atlas identity and resources
+
+An atlas is RGBA sRGB `pixels` (top row first, `width * height * 4` bytes) divided into `columns x rows` cells; frames are numbered row-major from the top-left cell and `frameCount` (default `columns * rows`) may leave trailing cells unused. `resourceKey` identifies the exact pixels and layout, like a mesh `resourceKey`: the renderer uploads one texture per key and never compares pixels again. Per declared atlas it owns one texture, one unlit transparent material (no depth writes; fog applies), one quad geometry with per-instance frame and opacity attributes, and one instanced mesh with fixed capacity `maxEffectInstances`. These are shared by every effect on that atlas and kept while the atlas stays declared, even with no active effect (the mesh is then hidden and costs no draw). An atlas missing from `effects.atlases`, an omitted `effects`, or `enabled: false` disposes all four resources in that frame. Consumers release GPU memory after a session or when effects are switched off by no longer declaring the atlas.
+
+### Timing and frame selection
+
+Sampling is stateless and lives in the renderer-independent `flipbook.js` module (package subpath `./flipbook`), which asset tooling can call to bake or check frames:
+
+- `age = effects.time - startTime`. Negative ages are **pending** and draw nothing.
+- `0 <= age < duration * loops` is **active**: `frame = min(frameCount - 1, floor((age mod duration) / duration * frameCount))`. `loops` defaults to 1 and must be a positive integer, so every effect has a bounded lifetime.
+- `age >= duration * loops` is **expired** and draws nothing.
+
+The frame depends only on the submitted time, never on previous frames, so seeking, pausing, replaying, and any partition of updates produce identical output. Replay or reset is a new `startTime`; cancellation is omitting the effect. Ages exactly on a frame boundary follow the IEEE double result of the formula (sample mid-frame in tests). Non-finite time, `startTime`, `duration`, or age are rejected.
+
+### Space, appearance, and culling
+
+`space` must be `"world"`; `origin` is the quad center in world space. Effects attached to a moving node are composed into a world origin by the consumer, which keeps transform authority outside the renderer. The quad is oriented in view space in the vertex shader, so it faces any camera, including a `renderCamera` redraw, with no CPU work or buffer upload per camera change. `scale` is the world-space quad size (one number for a square or `[width, height]`). `color` multiplies the atlas in linear space like instance colors, and `opacity` multiplies atlas alpha. Frustum culling uses each atlas mesh's bounding sphere over live effect origins with the unit quad's circumscribed radius, which bounds every orientation.
+
+### Budget and drop policy
+
+`ThreeSceneRendererOptions.maxEffectInstances` (default 64) caps active effects per frame across all atlases and is each atlas mesh's capacity, so effects never grow GPU buffers. `effects.maxInstances` lowers the cap for one frame, for example for a reduced-intensity setting. When more effects are active than the budget allows, the newest (`startTime` descending, then `id` ascending) are kept and the rest are dropped for that frame; the kept set does not depend on submission order.
+
+### Change tracking and observations
+
+Each frame the renderer writes every active effect into its atlas's instance slots and marks a buffer (matrix, color, frame, opacity) for upload only if a value actually changed, so an unchanged frame or a camera-only change uploads nothing and advancing time usually uploads only the frame attribute. `RendererWorkObservations` reports `effectActiveCount`, `effectPendingCount`, `effectExpiredCount`, `effectDroppedCount`, `effectBufferUploadCount`, `effectAtlasCreateCount`, `effectAtlasReuseCount`, `effectAtlasDisposeCount`, and `liveEffectAtlasCount`. Effect meshes are not counted in the object, geometry, or material counters. `renderCamera` reports zero effect work and the live atlas count; it does not advance effect time.
+
+### Not supported
+
+No seeded burst or independently moving particles yet (add a renderer-independent evaluator only when a consumer needs one), no local/attached space, no image or compressed-texture atlases (pixels only), no additive blending, no soft particles or sorting between effects, and no native `wgpu` path: the native example draws no effects and claims no parity.
+
 ## Evidence
 
-- `packages/renderer/*.test.js` (`bun test packages/renderer`) cover validation, the environment's defaults against a reference built like the pre-environment renderer, change tracking and object reuse, shadow-frame coverage including the caster reach toward the sun, vertex color conversion, material keys (including instance batch materials), and instance batch upload, revision, capacity, and contract behavior.
-- `scripts/renderer-presentation-smoke.mjs` bundles the renderer and checks rendered pixels in Chromium (SwiftShader): omitted, empty, explicit-default, and restored environments are pixel-identical; vertex colors round-trip sRGB and multiply in linear space; emissive and unlit nodes render in darkness; fog, background, and alpha defaults; a shadow focus far from the origin; a `shadowCasterReach` that brings a distant occluder's shadow under a low sun onto the focus; a `resourceKey` reused with colors added or removed keeps rendering its cached payload; equal emissive, unlit, and vertex-colored nodes share materials with exact `materialCreateCount`, `materialReuseCount`, `materialEvictCount`, and `liveMaterialCount`; and instance batches render vertex and batch colors like the equal lit node, never share a material across colored and uncolored meshes, take fog, and cast into a moved shadow focus exactly like a node occluder. The renderer runtime evidence workflow runs it for renderer changes; run it locally with `bun scripts/renderer-presentation-smoke.mjs [OUTPUT_DIR]` after `bunx playwright install chromium`.
+- `packages/renderer/*.test.js` (`bun test packages/renderer`) cover validation, the environment's defaults against a reference built like the pre-environment renderer, change tracking and object reuse, shadow-frame coverage including the caster reach toward the sun, vertex color conversion, material keys (including instance batch materials), and instance batch upload, revision, capacity, and contract behavior, flipbook fixed-time sampling (first/last frames, pending/expired ages, loops, seek/partition independence, replay, invalid input), and cosmetic effect resource create/reuse/dispose, upload tracking, budget drop order, and release on disable/omission.
+- `scripts/renderer-presentation-smoke.mjs` bundles the renderer and checks rendered pixels in Chromium (SwiftShader): omitted, empty, explicit-default, and restored environments are pixel-identical; vertex colors round-trip sRGB and multiply in linear space; emissive and unlit nodes render in darkness; fog, background, and alpha defaults; a shadow focus far from the origin; a `shadowCasterReach` that brings a distant occluder's shadow under a low sun onto the focus; a `resourceKey` reused with colors added or removed keeps rendering its cached payload; equal emissive, unlit, and vertex-colored nodes share materials with exact `materialCreateCount`, `materialReuseCount`, `materialEvictCount`, and `liveMaterialCount`; and instance batches render vertex and batch colors like the equal lit node, never share a material across colored and uncolored meshes, take fog, and cast into a moved shadow focus exactly like a node occluder; and a generated 2x2 puff atlas (`scripts/fixtures/cosmetic-puff-atlas.mjs`) draws each sampled frame at its age, nothing while pending, expired, or disabled, applies color and opacity, faces side and oblique cameras with zero buffer uploads on camera-only changes, and disposes its resources when disabled. It writes the effect pixels and observations to `cosmetic-effect-frames.json`. The renderer runtime evidence workflow runs it for renderer changes; run it locally with `bun scripts/renderer-presentation-smoke.mjs [OUTPUT_DIR]` after `bunx playwright install chromium`.
