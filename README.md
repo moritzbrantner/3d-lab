@@ -13,7 +13,7 @@ The repository deliberately has parallel surfaces:
 - **Rust / `three-d-camera`** — renderer-independent right-handed view plus perspective and orthographic WebGPU-depth camera matrices.
 - **Rust / `three-d-assets`** — renderer-independent asset meshes, PBR material factors, encoded texture resources, normal-map bindings, and cross-resource validation.
 - **Rust / `three-d-formats`** — loss-aware OBJ/glTF decoding adapters that normalize supported file semantics into `three-d-assets`.
-- **Rust / `three-d-lod`** — deterministic mesh simplification and source-based LOD derivation using meshopt while preserving the source vertex/attribute buffers.
+- **Rust / `three-d-lod`** — deterministic mesh simplification and source-based LOD derivation using meshopt while preserving the source vertex/attribute buffers, plus screen-space LOD selection by projected pixel error with hysteresis.
 - **Native / `wgpu` example** — a narrow renderer-comparison adapter that consumes the Rust mesh and camera models without moving GPU ownership into the core crates.
 - **Asset-tooling LOD adapter example** — a narrow process adapter that exposes `three-d-lod` through a canonical position/index mesh JSON envelope without moving asset-tooling ownership into the LOD crate.
 - **Asset-tooling humanoid adapter example** — a narrow process adapter that validates production humanoid hierarchy, semantic bone IDs, Root/Hips separation, rest pose, and attachment sockets through `three-d-animation` without moving those semantics into workflow/provenance tooling.
@@ -54,7 +54,8 @@ The GitHub Pages curriculum currently covers:
 24. OBJ and glTF decoding into one renderer-independent asset model
 25. Tangent derivation, handedness, and tangent-space normal-map shading
 26. Scene hierarchy inspection, mesh picking, vertex selection, and direct vertex/transform authoring
-27. Frame-rate-independent playback timing and cross-fades across uneven frame partitions
+27. Screen-space LOD selection with pixel-error budgets, hysteresis, and wireframe comparison
+28. Frame-rate-independent playback timing and cross-fades across uneven frame partitions
 
 Every topic combines a concise explanation with an interactive scene and a small data inspector. The Rust side mirrors the durable, renderer-independent concepts rather than wrapping Three.js APIs or asset-file structures.
 
@@ -82,6 +83,12 @@ cargo run -p asset-tooling-humanoid-adapter -- probe
 cargo run -p asset-tooling-rigged-collision-adapter -- probe
 ```
 
+Regenerate the screen-space LOD evidence used by the web lab after changing `three-d-lod` (`cargo test` fails on drift):
+
+```bash
+cargo run -p three-d-lod --example screen_space_lod_evidence
+```
+
 ### Reusable browser renderer
 
 The repository root is the reusable package. Downstream consumers should pin an exact accepted repository revision rather than a branch tip.
@@ -91,6 +98,8 @@ bun install
 ```
 
 The renderer receives explicit view/projection and model matrices. It must not become an alternate authority for camera, transform, simulation, placement, or physics semantics.
+
+Repeated content can be submitted as instance batches (one draw call per batch); see [`docs/contracts/performance-observability.md`](docs/contracts/performance-observability.md#instance-batches).
 
 ### Web
 
@@ -121,6 +130,8 @@ See [`docs/contracts/animation-model.md`](docs/contracts/animation-model.md) for
 See [`docs/contracts/animation-playback.md`](docs/contracts/animation-playback.md) for elapsed-time playback, transition timing, and partition invariance.
 
 See [`docs/contracts/rigged-assets.md`](docs/contracts/rigged-assets.md) for rigged-asset composition and automatic collision-proxy fitting.
+
+See [`docs/contracts/screen-space-lod.md`](docs/contracts/screen-space-lod.md) for LOD selection semantics and the Rust-generated web evidence.
 
 See [`docs/contracts/renderer-parity.md`](docs/contracts/renderer-parity.md) for the cross-renderer mesh, matrix, and camera evidence contract.
 
