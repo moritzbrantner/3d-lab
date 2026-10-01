@@ -382,6 +382,8 @@ pub struct LookAtGoal {
     pub chain: LookAtChain,
     pub target: Vec3,
     /// Maximum total deviation from the incoming aim direction, in radians.
+    /// It bounds every weighted step and the final aim after the layer
+    /// weight and joint mask are applied.
     pub max_angle: f32,
 }
 
@@ -573,9 +575,15 @@ impl IkWorkspace {
             for &joint in affected_joints(&layer.goal).as_slice() {
                 snapshot.push(joint, output[joint].rotation);
             }
+            // The look-at limit is measured against the aim before this layer.
+            let mut look_at = None;
             let status = match layer.goal {
                 IkGoal::Limb(goal) => self.solve_limb(rig, output, &goal, index, &mut stats)?,
-                IkGoal::LookAt(goal) => self.solve_look_at(rig, output, &goal, &mut stats),
+                IkGoal::LookAt(goal) => {
+                    let initial = self.aim_direction(&goal.chain);
+                    look_at = Some((goal, initial));
+                    self.solve_look_at(rig, output, &goal, initial, &mut stats)
+                }
             };
 
             let mut first_blended = usize::MAX;
@@ -596,6 +604,9 @@ impl IkWorkspace {
             }
             if first_blended != usize::MAX {
                 stats.world_nodes_updated += self.refresh(rig, output, first_blended);
+                if let Some((goal, initial)) = look_at {
+                    self.limit_blended_look_at(rig, output, &goal, initial, layer, &mut stats);
+                }
             }
 
             if status == IkStatus::Clamped {
@@ -746,19 +757,24 @@ impl IkWorkspace {
         rig: &IkRig,
         pose: &mut [Transform],
         goal: &LookAtGoal,
+        initial: Vec3,
         stats: &mut IkSolveStats,
     ) -> IkStatus {
         let chain = &goal.chain;
         let aim = chain.aim_joint();
-        let initial = rotate(self.world_rotation[aim], chain.forward);
         for (&joint, &weight) in chain.joints().iter().zip(&chain.weights[..chain.len]) {
             let Some(desired) = (goal.target - self.position(aim)).normalized() else {
                 return IkStatus::Clamped;
             };
             let (desired, _) = clamp_direction(initial, desired, goal.max_angle);
-            let current = rotate(self.world_rotation[aim], chain.forward);
-            let delta = Quat::IDENTITY.slerp(from_to(current, desired), weight);
-            self.rotate_world(rig, pose, joint, delta);
+            let current = self.aim_direction(chain);
+            // A partial step follows the great circle from `current` to
+            // `desired`. Both lie inside the permitted cap, but for limits
+            // above pi/2 that arc can leave the cap, so the step's end is
+            // clamped again before it is applied.
+            let partial = Quat::IDENTITY.slerp(from_to(current, desired), weight);
+            let (stepped, _) = clamp_direction(initial, rotate(partial, current), goal.max_angle);
+            self.rotate_world(rig, pose, joint, from_to(current, stepped));
             stats.world_nodes_updated += self.refresh(rig, pose, joint);
         }
         // The status comes from the final state only: an earlier joint may have
@@ -777,6 +793,41 @@ impl IkWorkspace {
         } else {
             IkStatus::Reached
         }
+    }
+
+    fn aim_direction(&self, chain: &LookAtChain) -> Vec3 {
+        rotate(self.world_rotation[chain.aim_joint()], chain.forward)
+    }
+
+    /// Re-enforces `max_angle` after the layer weight and joint mask blended
+    /// each chain joint toward its solved rotation independently. Only the
+    /// fully solved pose is guaranteed to lie inside the permitted cap; a
+    /// per-joint blend of it is not, so any excess is removed by rotating the
+    /// deepest chain joint this layer is allowed to move.
+    fn limit_blended_look_at(
+        &mut self,
+        rig: &IkRig,
+        pose: &mut [Transform],
+        goal: &LookAtGoal,
+        initial: Vec3,
+        layer: &IkLayer<'_>,
+        stats: &mut IkSolveStats,
+    ) {
+        let chain = &goal.chain;
+        let forward = self.aim_direction(chain);
+        let (limited, exceeded) = clamp_direction(initial, forward, goal.max_angle);
+        if !exceeded {
+            return;
+        }
+        let Some(&joint) =
+            chain.joints().iter().rev().find(|&&joint| {
+                layer.weight * layer.mask.map_or(1.0, |mask| mask.weight(joint)) > 0.0
+            })
+        else {
+            return;
+        };
+        self.rotate_world(rig, pose, joint, from_to(forward, limited));
+        stats.world_nodes_updated += self.refresh(rig, pose, joint);
     }
 
     fn residual(&self, goal: &IkGoal) -> f32 {
@@ -1633,5 +1684,111 @@ mod tests {
         }
         // The sweep must exercise the rounding case the tolerance exists for.
         assert!(boundary_cases > 0);
+    }
+
+    /// Deterministic generator for the look-at limit sweep.
+    struct Lcg(u64);
+
+    impl Lcg {
+        fn next(&mut self) -> f32 {
+            self.0 = self
+                .0
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (self.0 >> 40) as f32 / (1u64 << 24) as f32
+        }
+
+        fn signed(&mut self) -> f32 {
+            self.next() * 2.0 - 1.0
+        }
+
+        fn unit_quat(&mut self) -> Quat {
+            Quat::new(self.signed(), self.signed(), self.signed(), self.signed())
+                .normalized()
+                .unwrap_or(Quat::IDENTITY)
+        }
+    }
+
+    #[test]
+    fn look_at_never_exceeds_max_angle_for_any_weights_or_masks() {
+        // root(0) → a(1) → b(2) → c(3): the three-joint look-at chain. Wide
+        // limits (above pi/2) make the permitted cap non-convex along great
+        // circles, so neither a weighted step between two in-cap directions
+        // nor a per-joint layer/mask blend is automatically inside it.
+        let rig = IkRig::new(vec![None, Some(0), Some(1), Some(2)]).unwrap();
+        let forward = Vec3::new(0.0, 0.0, 1.0);
+        let mut rng = Lcg(0x5eed_1234_abcd_0001);
+        let mut workspace = IkWorkspace::new(rig.node_count());
+        let mut output = vec![Transform::IDENTITY; rig.node_count()];
+        let mut wide_limits = 0;
+        let mut unblended_cases = 0;
+        for case in 0..4000 {
+            let mut base = vec![Transform::IDENTITY; rig.node_count()];
+            for transform in base.iter_mut().skip(1) {
+                transform.translation = Vec3::new(rng.signed(), rng.signed(), rng.signed());
+                transform.rotation = rng.unit_quat();
+            }
+            let weights = [rng.next(), rng.next(), rng.next()];
+            let chain = LookAtChain::new(
+                &rig,
+                &[(1, weights[0]), (2, weights[1]), (3, weights[2])],
+                forward,
+            )
+            .unwrap();
+            let max_angle = rng.next() * PI;
+            if max_angle > FRAC_PI_2 {
+                wide_limits += 1;
+            }
+            let goal = LookAtGoal {
+                chain,
+                target: Vec3::new(rng.signed(), rng.signed(), rng.signed()) * 3.0,
+                max_angle,
+            };
+            let mut mask = JointMask::new(rig.node_count(), 1.0).unwrap();
+            for joint in 1..4 {
+                // Mix fully masked, fully applied, and partial joints.
+                let pick = rng.next();
+                let weight = if pick < 0.3 {
+                    0.0
+                } else if pick < 0.6 {
+                    1.0
+                } else {
+                    rng.next()
+                };
+                mask.set(joint, weight).unwrap();
+            }
+            let layer_weight = if rng.next() < 0.5 { 1.0 } else { rng.next() };
+            let masked = rng.next() < 0.5;
+
+            workspace
+                .solve(
+                    &rig,
+                    &base,
+                    &[IkLayer::new(IkGoal::LookAt(goal), 0.0)],
+                    &mut output,
+                )
+                .unwrap();
+            let initial = rotate(workspace.world_rotation(3).unwrap(), forward);
+
+            let mut layer = IkLayer::new(IkGoal::LookAt(goal), layer_weight);
+            if masked {
+                layer = layer.with_mask(&mask);
+            }
+            workspace.solve(&rig, &base, &[layer], &mut output).unwrap();
+            let aimed = rotate(workspace.world_rotation(3).unwrap(), forward);
+            let deviation = angle_between(initial, aimed);
+            assert!(
+                deviation <= max_angle + TOLERANCE,
+                "case {case}: deviation {deviation} > limit {max_angle} \
+                 (weights {weights:?}, layer {layer_weight}, masked {masked})"
+            );
+            if layer_weight >= 1.0 && !masked {
+                // Nothing is blended here, so the post-blend correction never
+                // runs and the solved weighted steps alone must respect the cap.
+                unblended_cases += 1;
+            }
+        }
+        assert!(wide_limits > 1000);
+        assert!(unblended_cases > 500);
     }
 }
