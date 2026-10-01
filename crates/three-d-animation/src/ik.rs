@@ -751,29 +751,28 @@ impl IkWorkspace {
         let chain = &goal.chain;
         let aim = chain.aim_joint();
         let initial = rotate(self.world_rotation[aim], chain.forward);
-        let mut clamped = false;
         for (&joint, &weight) in chain.joints().iter().zip(&chain.weights[..chain.len]) {
             let Some(desired) = (goal.target - self.position(aim)).normalized() else {
                 return IkStatus::Clamped;
             };
-            let (desired, limited) = clamp_direction(initial, desired, goal.max_angle);
-            clamped |= limited;
+            let (desired, _) = clamp_direction(initial, desired, goal.max_angle);
             let current = rotate(self.world_rotation[aim], chain.forward);
             let delta = Quat::IDENTITY.slerp(from_to(current, desired), weight);
             self.rotate_world(rig, pose, joint, delta);
             stats.world_nodes_updated += self.refresh(rig, pose, joint);
         }
-        if clamped {
-            return IkStatus::Clamped;
-        }
-        // Joint weights below one can leave part of the permitted aim unapplied
-        // (e.g. a single joint with weight 0); only a full aim counts as reached.
+        // The status comes from the final state only: an earlier joint may have
+        // hit the angle limit while moving the aim joint to a position from
+        // which the target is within the limit, and a later joint may then
+        // reach it. Joint weights below one can leave part of the permitted aim
+        // unapplied (e.g. a single joint with weight 0); only a full, unlimited
+        // aim from the final aim position counts as reached.
         let Some(desired) = (goal.target - self.position(aim)).normalized() else {
             return IkStatus::Clamped;
         };
-        let (desired, _) = clamp_direction(initial, desired, goal.max_angle);
+        let (desired, limited) = clamp_direction(initial, desired, goal.max_angle);
         let forward = rotate(self.world_rotation[aim], chain.forward);
-        if angle_between(forward, desired) > LOOK_AT_ANGLE_TOLERANCE {
+        if limited || angle_between(forward, desired) > LOOK_AT_ANGLE_TOLERANCE {
             IkStatus::Clamped
         } else {
             IkStatus::Reached
@@ -1266,6 +1265,40 @@ mod tests {
             assert!(outcome.residual > TOLERANCE, "{weights:?}");
             assert_eq!(stats.layers_clamped, 1, "{weights:?}");
         }
+    }
+
+    #[test]
+    fn look_at_reports_reached_when_final_aim_is_within_limit_after_early_clamp() {
+        // The target is 45 degrees above the head's initial forward, beyond the
+        // 0.65 rad limit, so the spine step is clamped. Pitching the spine up
+        // moves the head back and down relative to the target, which leaves it
+        // within the limit from the head's final position; the head then aims
+        // fully, so the solve must report Reached rather than a sticky Clamped.
+        let rig = rig();
+        let chain =
+            LookAtChain::new(&rig, &[(4, 1.0), (5, 1.0)], Vec3::new(0.0, 0.0, 1.0)).unwrap();
+        let goal = LookAtGoal {
+            chain,
+            target: Vec3::new(0.0, 1.75, 0.15),
+            max_angle: 0.65,
+        };
+        let initial_head = Vec3::new(0.0, 1.6, 0.0);
+        let initial_angle = angle_between(
+            Vec3::new(0.0, 0.0, 1.0),
+            (goal.target - initial_head).normalized().unwrap(),
+        );
+        assert!(initial_angle > goal.max_angle);
+
+        let (workspace, _, stats) = solve(&[IkLayer::new(IkGoal::LookAt(goal), 1.0)]);
+        let outcome = workspace.outcomes()[0];
+        assert_eq!(outcome.status, IkStatus::Reached);
+        assert!(outcome.residual < TOLERANCE, "{}", outcome.residual);
+        assert_eq!(stats.layers_clamped, 0);
+        let forward = rotate(
+            workspace.world_rotation(5).unwrap(),
+            Vec3::new(0.0, 0.0, 1.0),
+        );
+        assert!(angle_between(forward, Vec3::new(0.0, 0.0, 1.0)) <= goal.max_angle + TOLERANCE);
     }
 
     #[test]
