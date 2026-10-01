@@ -72,6 +72,27 @@ describe("editor scene snapshots", () => {
     expect(() => decodeEditorSceneSnapshot(invalidMesh)).toThrow("outside the vertex buffer");
   });
 
+  test("rejects finite numbers that overflow f32 on import and export", () => {
+    const overflowVertex = JSON.parse(serializeEditorSceneSnapshot(createEditorScene()));
+    const body = overflowVertex.nodes.find((node: { id: string }) => node.id === "body");
+    body.mesh.vertices[0][1] = 1e100;
+    expect(() => decodeEditorSceneSnapshot(overflowVertex))
+      .toThrow("scene snapshot node 1.mesh.vertices[0][1] must be within the f32 range");
+
+    const overflowTransform = JSON.parse(serializeEditorSceneSnapshot(createEditorScene()));
+    overflowTransform.nodes[0].transform.scale[2] = -1e39;
+    expect(() => decodeEditorSceneSnapshot(overflowTransform))
+      .toThrow("transform.scale[2] must be within the f32 range");
+
+    const atLimit = JSON.parse(serializeEditorSceneSnapshot(createEditorScene()));
+    atLimit.nodes[0].transform.translation[0] = 3.4028234663852886e38;
+    expect(decodeEditorSceneSnapshot(atLimit).nodes[0].transform.translation[0]).toBe(3.4028234663852886e38);
+
+    const scene = updateMeshVertex(createEditorScene(), "body", 0, [1e100, 0, 0]);
+    expect(() => serializeEditorSceneSnapshot(scene))
+      .toThrow("scene snapshot node body.mesh.vertices[0][0] must be within the f32 range");
+  });
+
   test("bounds imported hierarchy size and depth before it reaches recursive UI rendering", () => {
     const node = (index: number, parent: string | null) => ({
       id: `node-${index}`,

@@ -51,10 +51,51 @@ function finiteNumber(value: unknown, label: string): number {
   return value;
 }
 
+/**
+ * Geometry and transform components are consumed as `f32` by the renderer (`Float32BufferAttribute`)
+ * and by the Rust geometry authority, so finite JavaScript numbers that overflow `f32` are rejected.
+ */
+function isF32Representable(value: number): boolean {
+  return Number.isFinite(value) && Number.isFinite(Math.fround(value));
+}
+
+function f32Number(value: unknown, label: string): number {
+  const parsed = finiteNumber(value, label);
+  if (!isF32Representable(parsed)) throw new Error(`${label} must be within the f32 range`);
+  return parsed;
+}
+
 function tuple(value: unknown, length: number, label: string): number[] {
   const values = list(value, label);
   if (values.length !== length) throw new Error(`${label} must contain exactly ${length} numbers`);
-  return values.map((component, index) => finiteNumber(component, `${label}[${index}]`));
+  return values.map((component, index) => f32Number(component, `${label}[${index}]`));
+}
+
+function requireF32Tuples(
+  values: readonly (readonly number[])[] | undefined,
+  label: string,
+): void {
+  if (!values) return;
+  values.forEach((value, index) => {
+    value.forEach((component, componentIndex) => {
+      if (!isF32Representable(component)) {
+        throw new Error(`${label}[${index}][${componentIndex}] must be within the f32 range`);
+      }
+    });
+  });
+}
+
+function requireF32SnapshotValues(node: EditorNode): void {
+  const label = `scene snapshot node ${node.id}`;
+  const { translation, rotation, scale } = node.transform;
+  requireF32Tuples([translation, rotation, scale], `${label}.transform`);
+  if (!node.mesh) return;
+  requireF32Tuples(node.mesh.vertices, `${label}.mesh.vertices`);
+  const attributes = node.mesh.attributes;
+  requireF32Tuples(attributes?.normals, `${label}.mesh.attributes.normals`);
+  requireF32Tuples(attributes?.tangents, `${label}.mesh.attributes.tangents`);
+  requireF32Tuples(attributes?.uvs, `${label}.mesh.attributes.uvs`);
+  requireF32Tuples(attributes?.colors, `${label}.mesh.attributes.colors`);
 }
 
 function vec2(value: unknown, label: string): Vec2 {
@@ -211,6 +252,7 @@ function requireSnapshotScene(scene: EditorScene): void {
     throw new Error(`scene snapshot node count ${scene.nodes.length} exceeds limit ${MAX_EDITOR_SCENE_SNAPSHOT_NODES}`);
   }
   validateEditorScene(scene);
+  for (const node of scene.nodes) requireF32SnapshotValues(node);
 
   const geometryBudget: SnapshotGeometryBudget = { vertices: 0, indices: 0 };
   for (const node of scene.nodes) {
