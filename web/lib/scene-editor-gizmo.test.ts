@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   effectiveEditorGizmoMode,
   effectiveEditorGizmoSpace,
+  endEditorGizmoDragForTeardown,
 } from "./scene-editor-gizmo";
 
 describe("scene editor gizmo semantics", () => {
@@ -22,5 +23,20 @@ describe("scene editor gizmo semantics", () => {
     expect(effectiveEditorGizmoSpace("rotate", "world")).toBe("world");
     expect(effectiveEditorGizmoSpace("translate", "local")).toBe("local");
     expect(effectiveEditorGizmoSpace("scale", "world")).toBe("local");
+  });
+
+  test("runtime teardown ends an in-flight drag and publishes the idle state", () => {
+    const controls = { dragging: true };
+    const published: boolean[] = [];
+    expect(endEditorGizmoDragForTeardown(controls, (dragging) => published.push(dragging))).toBe(true);
+    expect(controls.dragging).toBe(false);
+    expect(published).toEqual([false]);
+  });
+
+  test("runtime teardown still publishes idle when no drag is active", () => {
+    const controls = { dragging: false };
+    const published: boolean[] = [];
+    expect(endEditorGizmoDragForTeardown(controls, (dragging) => published.push(dragging))).toBe(false);
+    expect(published).toEqual([false]);
   });
 });
