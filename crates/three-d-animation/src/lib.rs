@@ -1194,6 +1194,7 @@ mod tests {
 }
 
 pub mod humanoid;
+pub mod ik;
 pub mod retarget;
 
 mod projective;
