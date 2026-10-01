@@ -53,3 +53,24 @@ export function syncInstanceBatch(state, batch, geometry, material, writeMatrix,
     uploaded: upload,
   }
 }
+
+/**
+ * Applies one `syncInstanceBatch` result to the scene and records the object lifecycle.
+ *
+ * A capacity-growth replacement disposes and removes the old mesh (counted as a removal) and adds
+ * the new mesh (counted as a creation), keeping create/remove observations symmetric.
+ */
+export function attachInstanceBatchResult(scene, result, shadows, observations) {
+  if (result.replacedMesh) {
+    scene.remove(result.replacedMesh)
+    result.replacedMesh.dispose()
+    observations.objectRemoveCount += 1
+  }
+  if (result.created) {
+    result.state.mesh.castShadow = shadows
+    result.state.mesh.receiveShadow = shadows
+    scene.add(result.state.mesh)
+    observations.objectCreateCount += 1
+  }
+  if (result.uploaded) observations.instanceUploadCount += 1
+}

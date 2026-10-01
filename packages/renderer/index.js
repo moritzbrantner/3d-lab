@@ -1,7 +1,7 @@
 import * as THREE from "three"
 import {webGpuProjectionToWebGl} from "./depth.js"
 import {projectWorldPointUnchecked} from "./projection.js"
-import {syncInstanceBatch} from "./instance-batches.js"
+import {attachInstanceBatchResult, syncInstanceBatch} from "./instance-batches.js"
 import {acquireResource, evictUnusedResources} from "./resources.js"
 
 const DEFAULT_BACKGROUND = 0x0c111a
@@ -553,17 +553,7 @@ export function createThreeSceneRenderer(canvas, options = {}) {
           writeInstanceMatrix,
           transformScratch,
         )
-        if (result.replacedMesh) {
-          scene.remove(result.replacedMesh)
-          result.replacedMesh.dispose()
-        }
-        if (result.created) {
-          result.state.mesh.castShadow = options.shadows === true
-          result.state.mesh.receiveShadow = options.shadows === true
-          scene.add(result.state.mesh)
-          observations.objectCreateCount += 1
-        }
-        if (result.uploaded) observations.instanceUploadCount += 1
+        attachInstanceBatchResult(scene, result, options.shadows === true, observations)
         instanceBatches.set(batch.id, result.state)
         observations.instanceBatchCount += 1
         observations.instanceCount += batch.instances.length

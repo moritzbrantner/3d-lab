@@ -1,7 +1,7 @@
 import {describe, expect, test} from "bun:test"
 import * as THREE from "three"
 import {ThreeRendererContractError, validateRenderFrame} from "./index.js"
-import {syncInstanceBatch} from "./instance-batches.js"
+import {attachInstanceBatchResult, syncInstanceBatch} from "./instance-batches.js"
 
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 const camera = {viewMatrix: IDENTITY, projectionMatrix: IDENTITY}
@@ -100,6 +100,20 @@ describe("instance batch sync", () => {
     expect(grown.replacedMesh).toBe(first.state.mesh)
     expect(grown.state.mesh.instanceMatrix.count).toBe(4)
     expect(grown.state.mesh.count).toBe(3)
+  })
+
+  test("counts a capacity-growth replacement as one removal and one creation", () => {
+    const scene = new THREE.Scene()
+    const observations = () => ({objectCreateCount: 0, objectRemoveCount: 0, instanceUploadCount: 0})
+    const first = syncInstanceBatch(undefined, batch(2), geometry, material, writeTranslation, scratch())
+    attachInstanceBatchResult(scene, first, false, observations())
+
+    const grownObservations = observations()
+    const grown = syncInstanceBatch(first.state, batch(3), geometry, material, writeTranslation, scratch())
+    attachInstanceBatchResult(scene, grown, false, grownObservations)
+
+    expect(grownObservations).toEqual({objectCreateCount: 1, objectRemoveCount: 1, instanceUploadCount: 1})
+    expect(scene.children).toEqual([grown.state.mesh])
   })
 
   test("re-uploads when geometry changes under an unchanged revision", () => {
