@@ -65,17 +65,12 @@ impl Quat {
     }
 
     pub fn slerp(self, rhs: Self, factor: f32) -> Self {
-        let start = self.normalized().unwrap_or(Self::IDENTITY);
-        let mut end = rhs.normalized().unwrap_or(Self::IDENTITY);
-        let mut cosine = start.dot(end);
-
-        if cosine < 0.0 {
-            cosine = -cosine;
-            end = end.scaled(-1.0);
-        }
+        let SlerpArc {
+            start, end, cosine, ..
+        } = self.slerp_arc(rhs);
 
         let factor = factor.clamp(0.0, 1.0);
-        if cosine > 0.9995 {
+        if cosine > SLERP_LINEAR_COSINE {
             return start
                 .scaled(1.0 - factor)
                 .added(end.scaled(factor))
@@ -96,6 +91,28 @@ impl Quat {
             .unwrap_or(Self::IDENTITY)
     }
 
+    /// The exact endpoints and branch decisions [`Quat::slerp`] uses between
+    /// `self` and `rhs`. Shared with code that must predict SLERP's hemisphere
+    /// and linear-fallback choices bit for bit (e.g. quantized clip
+    /// compression) instead of recomputing them from differently rounded
+    /// values.
+    pub(crate) fn slerp_arc(self, rhs: Self) -> SlerpArc {
+        let start = self.normalized().unwrap_or(Self::IDENTITY);
+        let mut end = rhs.normalized().unwrap_or(Self::IDENTITY);
+        let mut cosine = start.dot(end);
+        let negates_end = cosine < 0.0;
+        if negates_end {
+            cosine = -cosine;
+            end = end.scaled(-1.0);
+        }
+        SlerpArc {
+            start,
+            end,
+            cosine,
+            negates_end,
+        }
+    }
+
     fn scaled(self, scalar: f32) -> Self {
         Self::new(
             self.x * scalar,
@@ -112,6 +129,29 @@ impl Quat {
             self.z + rhs.z,
             self.w + rhs.w,
         )
+    }
+}
+
+/// Above this endpoint cosine [`Quat::slerp`] falls back to normalized linear
+/// interpolation.
+pub(crate) const SLERP_LINEAR_COSINE: f32 = 0.9995;
+
+/// Normalized endpoints and branch decisions of one [`Quat::slerp`] call.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct SlerpArc {
+    pub(crate) start: Quat,
+    /// `rhs` normalized, and negated when SLERP takes the other hemisphere.
+    pub(crate) end: Quat,
+    /// `start.dot(end)` after the hemisphere choice, so never negative.
+    pub(crate) cosine: f32,
+    /// Whether SLERP negated `rhs` to take the shorter arc.
+    pub(crate) negates_end: bool,
+}
+
+impl SlerpArc {
+    /// Whether SLERP uses its normalized-linear fallback for this arc.
+    pub(crate) fn is_linear(self) -> bool {
+        self.cosine > SLERP_LINEAR_COSINE
     }
 }
 

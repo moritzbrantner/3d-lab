@@ -22,7 +22,7 @@ use core::fmt;
 
 use super::{
     AnimationClip, AnimationTrack, ClipError, EPSILON, Interpolate, Interpolation, LoopMode, Quat,
-    Transform,
+    SlerpArc, Transform,
 };
 use three_d_core::Vec3;
 
@@ -392,7 +392,10 @@ impl ValueDecoder for CompiledClip {
 /// up to `1 / cos(Ω / 2)`, where `Ω` is the quaternion-space angle between the
 /// adjacent keys (at most `√2` once SLERP takes the shorter arc). Compression
 /// therefore checks every key and, for each interpolated segment, the derived
-/// bound `max(e0, e1) / cos(Ω / 2)` against `rotation_radians`. The bound is
+/// bound `max(e0, e1) / cos(Ω / 2)` against `rotation_radians`, adding
+/// `1.02e-6` rad when only one of the source and decoded arcs takes SLERP's
+/// normalized-linear fallback. Hemisphere and fallback decisions are taken on
+/// exactly the values [`Quat::slerp`] uses. The bound is
 /// first order in the key errors and holds up to float rounding; it is
 /// conservative, so clips whose actual mid-segment error fits may still be
 /// rejected. Step tracks never sample between keys and only check keys.
@@ -441,7 +444,9 @@ pub enum CompressionError {
         track: usize,
         key: usize,
     },
-    /// Quantization flipped which hemisphere SLERP would pick between two keys.
+    /// Quantization flipped which hemisphere SLERP picks between two keys of
+    /// an interpolated (non-step) track, as decided by [`Quat::slerp`] itself
+    /// on the raw source keys and on the decoded keys.
     AmbiguousRotationHemisphere {
         track: usize,
         key: usize,
@@ -595,21 +600,18 @@ impl QuantizedClip {
                 }
                 AnimationTrack::Rotation { track, .. } => {
                     let interpolates = !matches!(track.interpolation, Interpolation::Step);
+                    // (raw source key, decoded key, key error) of the previous key.
                     let mut previous: Option<(Quat, Quat, f32)> = None;
                     for (key_index, frame) in track.frames().iter().enumerate() {
-                        let source = frame.value;
-                        if ![source.x, source.y, source.z, source.w]
-                            .iter()
-                            .all(|c| c.is_finite())
-                        {
+                        let raw = frame.value;
+                        if ![raw.x, raw.y, raw.z, raw.w].iter().all(|c| c.is_finite()) {
                             return Err(CompressionError::NonFiniteValue {
                                 track: track_index,
                                 key: key_index,
                             });
                         }
                         let source =
-                            source
-                                .normalized()
+                            raw.normalized()
                                 .ok_or(CompressionError::DegenerateRotation {
                                     track: track_index,
                                     key: key_index,
@@ -629,34 +631,40 @@ impl QuantizedClip {
                             });
                         }
                         let mut bound = error;
-                        if let Some((previous_source, previous_decoded, previous_error)) = previous
+                        if let Some((previous_raw, previous_decoded, previous_error)) = previous
+                            && interpolates
                         {
-                            if (previous_source.dot(source) < 0.0)
-                                != (previous_decoded.dot(decoded) < 0.0)
-                            {
+                            // Decide hemisphere and linear fallback exactly as
+                            // the samplers' SLERP will: the reference samples
+                            // the raw keys and this clip the decoded keys, and
+                            // SLERP normalizes both again, so a dot product of
+                            // other (already normalized) values can round to
+                            // the opposite sign near orthogonal keys.
+                            let source_arc = previous_raw.slerp_arc(raw);
+                            let decoded_arc = previous_decoded.slerp_arc(decoded);
+                            if source_arc.negates_end != decoded_arc.negates_end {
                                 return Err(CompressionError::AmbiguousRotationHemisphere {
                                     track: track_index,
                                     key: key_index - 1,
                                 });
                             }
-                            if interpolates {
-                                let segment = segment_rotation_bound(
-                                    (previous_source, previous_decoded, previous_error),
-                                    (source, decoded, error),
-                                );
-                                if segment > budget.rotation_radians {
-                                    return Err(CompressionError::BudgetExceeded {
-                                        track: track_index,
-                                        key: key_index - 1,
-                                        channel: Channel::Rotation,
-                                        error: segment,
-                                        budget: budget.rotation_radians,
-                                    });
-                                }
-                                bound = bound.max(segment);
+                            let segment = segment_rotation_bound(
+                                source_arc,
+                                decoded_arc,
+                                previous_error.max(error),
+                            );
+                            if segment > budget.rotation_radians {
+                                return Err(CompressionError::BudgetExceeded {
+                                    track: track_index,
+                                    key: key_index - 1,
+                                    channel: Channel::Rotation,
+                                    error: segment,
+                                    budget: budget.rotation_radians,
+                                });
                             }
+                            bound = bound.max(segment);
                         }
-                        previous = Some((source, decoded, error));
+                        previous = Some((raw, decoded, error));
                         measured.rotation_radians = measured.rotation_radians.max(bound);
                         values.extend_from_slice(&encoded);
                     }
@@ -792,19 +800,36 @@ fn decode_rotation(q: &[u16; 4]) -> Quat {
 }
 
 /// First-order bound on the rotation error of any SLERP sample between two
-/// adjacent keys, given each key's `(source, decoded, error)`.
+/// adjacent keys, given the arcs SLERP takes between the source keys and
+/// between the decoded keys (with matching hemisphere choices) and the larger
+/// of the two key errors.
 ///
 /// Errors along the arc interpolate between the endpoint errors, while errors
 /// perpendicular to it follow a Jacobi field on the unit 3-sphere, whose
-/// magnitude peaks at `max(e0, e1) / cos(Ω / 2)` for a quaternion-space arc of
+/// magnitude peaks at `key_error / cos(Ω / 2)` for a quaternion-space arc of
 /// `Ω`. `Ω` is half the rotation angle between the keys; the larger of the
-/// source and decoded arcs is used.
-fn segment_rotation_bound(start: (Quat, Quat, f32), end: (Quat, Quat, f32)) -> f32 {
-    let arc = rotation_angle(start.0, end.0).max(rotation_angle(start.1, end.1));
+/// source and decoded arcs is used. The same bound holds for SLERP's
+/// normalized-linear fallback. When only one of the two arcs takes that
+/// fallback, the samples additionally differ by up to
+/// [`LINEAR_FALLBACK_DEVIATION`].
+fn segment_rotation_bound(source: SlerpArc, decoded: SlerpArc, key_error: f32) -> f32 {
+    let arc =
+        rotation_angle(source.start, source.end).max(rotation_angle(decoded.start, decoded.end));
     // rotation angle ≤ π, so the divisor is at least cos(π / 4).
     let amplification = 1.0 / f64::from(arc / 4.0).cos();
-    (f64::from(start.2.max(end.2)) * amplification) as f32
+    let mut bound = f64::from(key_error) * amplification;
+    if source.is_linear() != decoded.is_linear() {
+        bound += f64::from(LINEAR_FALLBACK_DEVIATION);
+    }
+    bound as f32
 }
+
+/// Largest rotation angle in radians between [`Quat::slerp`]'s
+/// normalized-linear fallback and true SLERP over an arc it applies the
+/// fallback to (quaternion cosine above `0.9995`, i.e. `Ω < 0.0316`): about
+/// `1.0145e-6`, rounded up. The deviation grows with `Ω`, so the threshold arc
+/// bounds every fallback arc.
+const LINEAR_FALLBACK_DEVIATION: f32 = 1.02e-6;
 
 fn track_kind(clip: &AnimationClip, track: usize) -> Channel {
     match clip.tracks()[track] {
@@ -846,7 +871,7 @@ pub fn rotation_angle(left: Quat, right: Quat) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Keyframe, KeyframeTrack};
+    use crate::{Keyframe, KeyframeTrack, SLERP_LINEAR_COSINE};
 
     const NODES: usize = 6;
 
@@ -1279,6 +1304,222 @@ mod tests {
             QuantizedClip::compress(&degenerate, 1, BUDGET),
             Err(CompressionError::DegenerateRotation { track: 0, key: 0 })
         );
+    }
+
+    fn two_key_rotation_clip(a: Quat, b: Quat, interpolation: Interpolation) -> AnimationClip {
+        AnimationClip::new(
+            "two-key",
+            vec![AnimationTrack::Rotation {
+                node: 0,
+                track: quat_track(&[(0.0, a), (1.0, b)], interpolation),
+            }],
+        )
+        .unwrap()
+    }
+
+    /// Largest rotation error between reference and quantized samples of a
+    /// two-key clip, densely sampled over the segment.
+    fn max_segment_error(clip: &AnimationClip, quantized: &QuantizedClip) -> f32 {
+        (0..=256)
+            .map(|step| {
+                let time = step as f32 / 256.0;
+                let mut expected = [Transform::IDENTITY];
+                clip.sample(time, &mut expected).unwrap();
+                let mut actual = [Transform::IDENTITY];
+                quantized.sample(time, &mut actual).unwrap();
+                rotation_angle(actual[0].rotation, expected[0].rotation)
+            })
+            .fold(0.0_f32, f32::max)
+    }
+
+    struct Lcg(u32);
+
+    impl Lcg {
+        fn unit(&mut self) -> f32 {
+            self.0 = self.0.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            (self.0 >> 8) as f32 / (1u32 << 24) as f32 * 2.0 - 1.0
+        }
+
+        fn quat(&mut self) -> Quat {
+            loop {
+                let q = Quat::new(self.unit(), self.unit(), self.unit(), self.unit());
+                if let Some(q) = q.normalized() {
+                    return q;
+                }
+            }
+        }
+    }
+
+    /// `b` rotated away from `a` so that their quaternion cosine is `cosine`.
+    fn quat_at_cosine(a: Quat, direction: Quat, cosine: f32) -> Quat {
+        let along = a.dot(direction);
+        let perpendicular = Quat::new(
+            direction.x - along * a.x,
+            direction.y - along * a.y,
+            direction.z - along * a.z,
+            direction.w - along * a.w,
+        )
+        .normalized()
+        .unwrap();
+        let sine = (1.0 - cosine * cosine).max(0.0).sqrt();
+        a.scaled(cosine).added(perpendicular.scaled(sine))
+    }
+
+    #[test]
+    fn hemisphere_check_uses_the_values_slerp_normalizes() {
+        // Near-180° keys (quaternion cosine ≈ 0): the hemisphere SLERP picks
+        // depends on the sign of a dot product that rounds differently for
+        // the raw keys the reference samples, the normalized source keys, the
+        // stored decoded keys and the decoded keys SLERP normalizes again.
+        // Compression must decide on exactly SLERP's values.
+        let budget = QuantizationBudget::new(1.0, 1.0e-3, 1.0);
+        let decode = |q: Quat| {
+            let q = q.normalized().unwrap();
+            decode_rotation(
+                &[q.x, q.y, q.z, q.w]
+                    .map(|c| quantize(c, ROTATION_DEQUANT.offset[0], ROTATION_DEQUANT.step[0])),
+            )
+        };
+        let mut rng = Lcg(0x0bad_cafe);
+        let mut near_orthogonal = || {
+            let a = rng.quat();
+            let direction = rng.quat();
+            let scale = 0.5 + (rng.unit() + 1.0);
+            // Unnormalized keys exercise SLERP's own normalization.
+            (
+                a,
+                quat_at_cosine(a, direction, rng.unit() * 1.0e-6).scaled(scale),
+            )
+        };
+
+        // Find keys where a check on the already normalized source and stored
+        // decoded keys agrees, but SLERP takes opposite hemispheres for the
+        // reference and the quantized samples (the reported failure mode).
+        let mut misses = Vec::new();
+        for _ in 0..2_000_000 {
+            let (a, b) = near_orthogonal();
+            let (decoded_a, decoded_b) = (decode(a), decode(b));
+            let stale_source = a.normalized().unwrap().dot(b.normalized().unwrap()) < 0.0;
+            let stale_decoded = decoded_a.dot(decoded_b) < 0.0;
+            if stale_source == stale_decoded
+                && a.slerp_arc(b).negates_end != decoded_a.slerp_arc(decoded_b).negates_end
+            {
+                misses.push((a, b));
+                if misses.len() == 4 {
+                    break;
+                }
+            }
+        }
+        assert!(!misses.is_empty(), "sweep never reached a hemisphere miss");
+        for (a, b) in misses {
+            // Unchecked, the quantized midpoint would be about π away.
+            let midpoint = rotation_angle(a.slerp(b, 0.5), decode(a).slerp(decode(b), 0.5));
+            assert!(midpoint > 1.0, "{midpoint}");
+            let clip = two_key_rotation_clip(a, b, Interpolation::Linear);
+            assert_eq!(
+                QuantizedClip::compress(&clip, 1, budget),
+                Err(CompressionError::AmbiguousRotationHemisphere { track: 0, key: 0 }),
+                "{a:?} {b:?}"
+            );
+        }
+
+        // Every near-orthogonal track is either rejected because the
+        // hemispheres differ, or accepted with samples inside the bound.
+        for index in 0..2_000 {
+            let (a, b) = near_orthogonal();
+            let source_flips = a.slerp_arc(b).negates_end;
+            let decoded_flips = decode(a).slerp_arc(decode(b)).negates_end;
+            let clip = two_key_rotation_clip(a, b, Interpolation::Linear);
+            match QuantizedClip::compress(&clip, 1, budget) {
+                Ok(quantized) => {
+                    assert_eq!(source_flips, decoded_flips, "case {index}");
+                    let bound = quantized.measured_error().rotation_radians;
+                    let actual = max_segment_error(&clip, &quantized);
+                    assert!(
+                        actual <= bound + 5.0e-7,
+                        "case {index}: sampled {actual} > bound {bound}"
+                    );
+                }
+                Err(CompressionError::AmbiguousRotationHemisphere { track: 0, key: 0 }) => {
+                    assert_ne!(source_flips, decoded_flips, "case {index}");
+                }
+                Err(error) => panic!("case {index}: unexpected {error:?}"),
+            }
+
+            // A step track never interpolates, so its hemisphere is irrelevant.
+            if index % 64 == 0 {
+                let step = two_key_rotation_clip(a, b, Interpolation::Step);
+                let quantized = QuantizedClip::compress(&step, 1, budget).unwrap();
+                assert!(max_segment_error(&step, &quantized) <= 1.0e-3);
+            }
+        }
+    }
+
+    #[test]
+    fn accepted_rotation_tracks_stay_within_reported_bound_near_branch_edges() {
+        // Seeded sweep over adjacent keys at SLERP's knife edges: quaternion
+        // cosines around 0 (hemisphere choice) and around 0.9995 (linear
+        // fallback). Every accepted track must keep dense samples within the
+        // reported bound; mismatched hemispheres must be rejected, never
+        // accepted with a ~π error.
+        const ROUNDING_SLACK: f32 = 5.0e-7;
+        let budget = QuantizationBudget::new(1.0, 1.0e-3, 1.0);
+        let mut rng = Lcg(0x5eed_1234);
+        let mut rejected_hemisphere = 0;
+        let mut mixed_fallback = 0;
+        for index in 0..4_000 {
+            let a = rng.quat();
+            let direction = rng.quat();
+            let jitter = rng.unit();
+            let cosine = if index % 2 == 0 {
+                jitter * 2.0e-4
+            } else {
+                SLERP_LINEAR_COSINE + jitter * 2.0e-5
+            };
+            // Unnormalized keys exercise SLERP's own normalization.
+            let scale = 0.5 + (rng.unit() + 1.0);
+            let b = quat_at_cosine(a, direction, cosine).scaled(scale);
+            let clip = two_key_rotation_clip(a, b, Interpolation::Linear);
+            match QuantizedClip::compress(&clip, 1, budget) {
+                Ok(quantized) => {
+                    let decoded = quantized.quat(0, &quantized.layout.tracks[0], 0);
+                    let decoded_end = quantized.quat(0, &quantized.layout.tracks[0], 1);
+                    if a.slerp_arc(b).is_linear() != decoded.slerp_arc(decoded_end).is_linear() {
+                        mixed_fallback += 1;
+                    }
+                    let bound = quantized.measured_error().rotation_radians;
+                    let actual = max_segment_error(&clip, &quantized);
+                    assert!(
+                        actual <= bound + ROUNDING_SLACK,
+                        "case {index}: sampled {actual} > bound {bound} ({a:?}, {b:?})"
+                    );
+                }
+                Err(CompressionError::AmbiguousRotationHemisphere { .. }) => {
+                    rejected_hemisphere += 1;
+                }
+                Err(error) => panic!("case {index}: unexpected {error:?}"),
+            }
+        }
+        // The sweep actually reaches both knife edges.
+        assert!(rejected_hemisphere > 0);
+        assert!(mixed_fallback > 0);
+    }
+
+    #[test]
+    fn linear_fallback_deviation_bounds_nlerp_against_slerp() {
+        let threshold = f64::from(SLERP_LINEAR_COSINE).acos();
+        let mut largest = 0.0_f64;
+        for arc_step in 1..=64 {
+            let arc = threshold * f64::from(arc_step) / 64.0;
+            for step in 0..=1_000 {
+                let t = f64::from(step) / 1_000.0;
+                let nlerp = (t * arc.sin()).atan2(1.0 - t + t * arc.cos());
+                // Rotation angles are twice the quaternion-space angles.
+                largest = largest.max(2.0 * (nlerp - t * arc).abs());
+            }
+        }
+        assert!(largest > 1.0e-6, "{largest}");
+        assert!(largest <= f64::from(LINEAR_FALLBACK_DEVIATION), "{largest}");
     }
 
     #[test]
