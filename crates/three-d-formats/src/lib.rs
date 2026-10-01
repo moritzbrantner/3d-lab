@@ -13,7 +13,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use gltf::animation::{Interpolation as GltfInterpolation, Property as AnimationProperty};
 use gltf::mesh::{Mode, Semantic};
 use three_d_animation::{
-    AnimationClip, AnimationTrack, Interpolation, Keyframe, KeyframeTrack, Quat,
+    AnimationClip, AnimationTrack, Interpolation, Keyframe, KeyframeTrack, Quat, SkinInfluence,
 };
 use three_d_assets::{Asset, AssetError, AssetMesh, BaseColorFactor, Material, MeshPrimitive};
 use three_d_core::{Color3, Mesh, MeshError, Tangent4, Vec2, Vec3, VertexAttributes};
@@ -53,6 +53,23 @@ pub enum FormatError {
         mesh_index: usize,
         primitive_index: usize,
         semantic: String,
+    },
+    IncompleteSkinningAttributes {
+        mesh_index: usize,
+        primitive_index: usize,
+    },
+    SkinningAttributeCountMismatch {
+        mesh_index: usize,
+        primitive_index: usize,
+        vertex_count: usize,
+        joint_count: usize,
+        weight_count: usize,
+    },
+    InvalidSkinInfluence {
+        mesh_index: usize,
+        primitive_index: usize,
+        vertex_index: usize,
+        reason: String,
     },
     UnsupportedMorphTargets {
         mesh_index: usize,
@@ -152,6 +169,32 @@ impl fmt::Display for FormatError {
             } => write!(
                 formatter,
                 "glTF mesh {mesh_index} primitive {primitive_index} uses unsupported attribute {semantic}"
+            ),
+            Self::IncompleteSkinningAttributes {
+                mesh_index,
+                primitive_index,
+            } => write!(
+                formatter,
+                "glTF mesh {mesh_index} primitive {primitive_index} must provide JOINTS_0 and WEIGHTS_0 together"
+            ),
+            Self::SkinningAttributeCountMismatch {
+                mesh_index,
+                primitive_index,
+                vertex_count,
+                joint_count,
+                weight_count,
+            } => write!(
+                formatter,
+                "glTF mesh {mesh_index} primitive {primitive_index} has {vertex_count} positions, {joint_count} joint tuples, and {weight_count} weight tuples"
+            ),
+            Self::InvalidSkinInfluence {
+                mesh_index,
+                primitive_index,
+                vertex_index,
+                reason,
+            } => write!(
+                formatter,
+                "glTF mesh {mesh_index} primitive {primitive_index} has invalid skin influence at vertex {vertex_index}: {reason}"
             ),
             Self::UnsupportedMorphTargets {
                 mesh_index,
@@ -535,7 +578,9 @@ fn convert_gltf_primitive(
             | Semantic::Normals
             | Semantic::Tangents
             | Semantic::Colors(0)
-            | Semantic::TexCoords(0) => {}
+            | Semantic::TexCoords(0)
+            | Semantic::Joints(0)
+            | Semantic::Weights(0) => {}
             other => {
                 return Err(FormatError::UnsupportedVertexAttribute {
                     mesh_index,
@@ -583,6 +628,49 @@ fn convert_gltf_primitive(
             .map(|[r, g, b]| Color3::new(r, g, b))
             .collect()
     });
+    let joints = reader
+        .read_joints(0)
+        .map(|values| values.into_u16().collect::<Vec<_>>());
+    let weights = reader
+        .read_weights(0)
+        .map(|values| values.into_f32().collect::<Vec<_>>());
+    let skin_influences = match (joints, weights) {
+        (None, None) => None,
+        (Some(_), None) | (None, Some(_)) => {
+            return Err(FormatError::IncompleteSkinningAttributes {
+                mesh_index,
+                primitive_index,
+            });
+        }
+        (Some(joints), Some(weights)) => {
+            if joints.len() != vertices.len() || weights.len() != vertices.len() {
+                return Err(FormatError::SkinningAttributeCountMismatch {
+                    mesh_index,
+                    primitive_index,
+                    vertex_count: vertices.len(),
+                    joint_count: joints.len(),
+                    weight_count: weights.len(),
+                });
+            }
+            Some(
+                joints
+                    .into_iter()
+                    .zip(weights)
+                    .enumerate()
+                    .map(|(vertex_index, (joints, weights))| {
+                        SkinInfluence::new(joints, weights).map_err(|error| {
+                            FormatError::InvalidSkinInfluence {
+                                mesh_index,
+                                primitive_index,
+                                vertex_index,
+                                reason: error.to_string(),
+                            }
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+            )
+        }
+    };
     let mesh = Mesh::with_attributes(
         vertices,
         indices,
@@ -594,7 +682,13 @@ fn convert_gltf_primitive(
         },
     )?;
 
-    Ok(MeshPrimitive::new(mesh, primitive.material().index()))
+    let primitive = MeshPrimitive::new(mesh, primitive.material().index());
+    match skin_influences {
+        Some(influences) => primitive
+            .with_skin_influences(influences)
+            .map_err(Into::into),
+        None => Ok(primitive),
+    }
 }
 
 fn convert_obj_model(model_index: usize, model: tobj::Model) -> Result<AssetMesh, FormatError> {
@@ -678,6 +772,7 @@ fn convert_obj_model(model_index: usize, model: tobj::Model) -> Result<AssetMesh
 #[cfg(test)]
 mod tests {
     use super::*;
+    use three_d_animation::SkeletonError;
 
     const OBJ_TRIANGLE: &[u8] = br#"
 o Triangle
@@ -756,6 +851,48 @@ f 1//1 2//1 3//1
         assert!(matches!(
             load_gltf(source),
             Err(FormatError::UnsupportedGltfBufferUri(uri)) if uri == "triangle.bin"
+        ));
+    }
+
+    #[test]
+    fn gltf_rejects_skin_weights_whose_total_overflows() {
+        // Vertex 1 carries WEIGHTS_0 = [f32::MAX, f32::MAX, 0, 0]: each component
+        // is finite, but the sum overflows and would normalize to all zeros.
+        let source = br#"{
+          "asset": { "version": "2.0" },
+          "meshes": [{
+            "primitives": [{
+              "attributes": { "POSITION": 0, "JOINTS_0": 2, "WEIGHTS_0": 3 },
+              "indices": 1,
+              "mode": 4
+            }]
+          }],
+          "buffers": [{
+            "byteLength": 116,
+            "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAABAAIAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAAAA//9/f///f38AAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAA="
+          }],
+          "bufferViews": [
+            { "buffer": 0, "byteOffset": 0, "byteLength": 36 },
+            { "buffer": 0, "byteOffset": 36, "byteLength": 6 },
+            { "buffer": 0, "byteOffset": 44, "byteLength": 24 },
+            { "buffer": 0, "byteOffset": 68, "byteLength": 48 }
+          ],
+          "accessors": [
+            { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [0.0, 0.0, 0.0], "max": [1.0, 1.0, 0.0] },
+            { "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" },
+            { "bufferView": 2, "componentType": 5123, "count": 3, "type": "VEC4" },
+            { "bufferView": 3, "componentType": 5126, "count": 3, "type": "VEC4" }
+          ]
+        }"#;
+
+        assert!(matches!(
+            load_gltf(source),
+            Err(FormatError::InvalidSkinInfluence {
+                mesh_index: 0,
+                primitive_index: 0,
+                vertex_index: 1,
+                reason,
+            }) if reason == SkeletonError::NonFiniteTotalWeight.to_string()
         ));
     }
 

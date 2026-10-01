@@ -18,6 +18,7 @@ on:
       - "web/lib/imported-skin*"
       - "scripts/character-browser-smoke.mjs"
       - "scripts/editor-snapshot-browser-smoke.mjs"
+      - "scripts/renderer-presentation-smoke.mjs"
       - "scripts/sync-web-animation-fixtures.mjs"
       - "fixtures/catalog/khronos-simpleskin-embedded.*"
       - "profiles/runtime-profiler/renderer-browser.json"
@@ -96,6 +97,12 @@ jobs:
           (cd reference/web && bun install)
           (cd candidate/web && bun install)
           (cd candidate && bunx playwright install --with-deps chromium)
+
+      - name: Check renderer presentation semantics in Chromium
+        # Functional pixel acceptance for environment, vertex colors, and node shading;
+        # it bundles the candidate renderer directly and is not part of the timing capture.
+        working-directory: candidate
+        run: bun scripts/renderer-presentation-smoke.mjs "$RUNNER_TEMP/renderer-presentation-smoke"
 
       - name: Build static benchmark sites
         run: |
@@ -183,6 +190,7 @@ jobs:
             ${{ runner.temp }}/renderer-browser-comparison.json
             ${{ runner.temp }}/character-browser-smoke
             ${{ runner.temp }}/editor-snapshot-browser-smoke
+            ${{ runner.temp }}/renderer-presentation-smoke
             ${{ runner.temp }}/reference-renderer-server.log
             ${{ runner.temp }}/candidate-renderer-server.log
           if-no-files-found: warn

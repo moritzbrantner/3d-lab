@@ -7,6 +7,7 @@
 mod resources;
 
 use core::fmt;
+use three_d_animation::{SkeletonError, SkinInfluence};
 use three_d_core::Mesh;
 
 pub use resources::{
@@ -140,11 +141,46 @@ impl Material {
 pub struct MeshPrimitive {
     mesh: Mesh,
     material: Option<usize>,
+    skin_influences: Option<Vec<SkinInfluence>>,
 }
 
 impl MeshPrimitive {
     pub const fn new(mesh: Mesh, material: Option<usize>) -> Self {
-        Self { mesh, material }
+        Self {
+            mesh,
+            material,
+            skin_influences: None,
+        }
+    }
+
+    /// Attaches one skin influence per mesh vertex.
+    ///
+    /// `SkinInfluence` exposes public fields, so every entry is rebuilt through
+    /// [`SkinInfluence::new`] and stored in its validated, normalized form.
+    pub fn with_skin_influences(
+        mut self,
+        skin_influences: Vec<SkinInfluence>,
+    ) -> Result<Self, AssetError> {
+        if skin_influences.len() != self.mesh.vertices().len() {
+            return Err(AssetError::SkinInfluenceCountMismatch {
+                vertex_count: self.mesh.vertices().len(),
+                influence_count: skin_influences.len(),
+            });
+        }
+        let validated = skin_influences
+            .into_iter()
+            .enumerate()
+            .map(|(vertex_index, influence)| {
+                SkinInfluence::new(influence.joints, influence.weights).map_err(|source| {
+                    AssetError::InvalidSkinInfluence {
+                        vertex_index,
+                        source,
+                    }
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        self.skin_influences = Some(validated);
+        Ok(self)
     }
 
     pub const fn mesh(&self) -> &Mesh {
@@ -153,6 +189,10 @@ impl MeshPrimitive {
 
     pub const fn material(&self) -> Option<usize> {
         self.material
+    }
+
+    pub fn skin_influences(&self) -> Option<&[SkinInfluence]> {
+        self.skin_influences.as_deref()
     }
 }
 
@@ -256,6 +296,14 @@ pub enum AssetError {
     EmptyEncodedImage,
     InvalidNormalTextureScale,
     EmptyAssetMesh,
+    SkinInfluenceCountMismatch {
+        vertex_count: usize,
+        influence_count: usize,
+    },
+    InvalidSkinInfluence {
+        vertex_index: usize,
+        source: SkeletonError,
+    },
     TextureImageIndexOutOfBounds {
         texture_index: usize,
         image_index: usize,
@@ -300,6 +348,20 @@ impl fmt::Display for AssetError {
             Self::EmptyAssetMesh => {
                 formatter.write_str("an asset mesh must contain at least one primitive")
             }
+            Self::SkinInfluenceCountMismatch {
+                vertex_count,
+                influence_count,
+            } => write!(
+                formatter,
+                "mesh has {vertex_count} vertices but {influence_count} skin influences"
+            ),
+            Self::InvalidSkinInfluence {
+                vertex_index,
+                source,
+            } => write!(
+                formatter,
+                "skin influence for vertex {vertex_index} is invalid: {source}"
+            ),
             Self::TextureImageIndexOutOfBounds {
                 texture_index,
                 image_index,
@@ -337,7 +399,14 @@ impl fmt::Display for AssetError {
     }
 }
 
-impl std::error::Error for AssetError {}
+impl std::error::Error for AssetError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::InvalidSkinInfluence { source, .. } => Some(source),
+            _ => None,
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -378,6 +447,71 @@ mod tests {
 
         assert_eq!(asset.meshes()[0].primitives()[0].material(), Some(0));
         assert_eq!(asset.materials()[0].name(), Some("Blue PBR"));
+    }
+
+    #[test]
+    fn primitive_skin_influences_must_align_with_mesh_vertices() {
+        let influence = SkinInfluence::new([0, 1, 0, 0], [0.75, 0.25, 0.0, 0.0]).unwrap();
+        let primitive = MeshPrimitive::new(triangle(), None)
+            .with_skin_influences(vec![influence; 3])
+            .unwrap();
+
+        assert_eq!(primitive.skin_influences(), Some(&[influence; 3][..]));
+        assert_eq!(
+            MeshPrimitive::new(triangle(), None).with_skin_influences(vec![influence; 2]),
+            Err(AssetError::SkinInfluenceCountMismatch {
+                vertex_count: 3,
+                influence_count: 2,
+            })
+        );
+    }
+
+    #[test]
+    fn primitive_revalidates_field_constructed_skin_influences() {
+        let valid = SkinInfluence::new([0, 0, 0, 0], [1.0, 0.0, 0.0, 0.0]).unwrap();
+        let cases = [
+            (
+                [-0.5, 1.5, 0.0, 0.0],
+                SkeletonError::InvalidWeight { slot: 0 },
+            ),
+            (
+                [0.5, f32::NAN, 0.0, 0.0],
+                SkeletonError::InvalidWeight { slot: 1 },
+            ),
+            ([0.0; 4], SkeletonError::ZeroTotalWeight),
+            (
+                [f32::MAX, f32::MAX, 0.0, 0.0],
+                SkeletonError::NonFiniteTotalWeight,
+            ),
+        ];
+        for (weights, expected) in cases {
+            let invalid = SkinInfluence {
+                joints: [0, 1, 0, 0],
+                weights,
+            };
+            assert_eq!(
+                MeshPrimitive::new(triangle(), None)
+                    .with_skin_influences(vec![valid, invalid, valid]),
+                Err(AssetError::InvalidSkinInfluence {
+                    vertex_index: 1,
+                    source: expected,
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn primitive_normalizes_field_constructed_skin_influences() {
+        let unnormalized = SkinInfluence {
+            joints: [0, 1, 0, 0],
+            weights: [3.0, 1.0, 0.0, 0.0],
+        };
+        let primitive = MeshPrimitive::new(triangle(), None)
+            .with_skin_influences(vec![unnormalized; 3])
+            .unwrap();
+
+        let expected = SkinInfluence::new([0, 1, 0, 0], [0.75, 0.25, 0.0, 0.0]).unwrap();
+        assert_eq!(primitive.skin_influences(), Some(&[expected; 3][..]));
     }
 
     #[test]

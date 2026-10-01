@@ -114,6 +114,8 @@ See [`docs/contracts/rigged-assets.md`](docs/contracts/rigged-assets.md) for rig
 
 See [`docs/contracts/renderer-parity.md`](docs/contracts/renderer-parity.md) for the cross-renderer mesh, matrix, and camera evidence contract.
 
+See [`docs/contracts/browser-renderer.md`](docs/contracts/browser-renderer.md) for the reusable browser renderer's frame, environment, and material contract.
+
 See [`docs/contracts/asset-model.md`](docs/contracts/asset-model.md) for asset/material ownership and the glTF/OBJ adapter boundary.
 
 See [`docs/contracts/editor-model.md`](docs/contracts/editor-model.md) for the authoring-state, hierarchy, vertex-edit, and Three.js adapter boundary.
