@@ -1,38 +1,70 @@
 ---
 name: orchestrate
-description: Orchestrate the 3d-lab agents for one pass — review open agent PRs, promote drafted issues to ready specs, queue the next roadmap items and consumer requests, implement Opus tasks, dispatch Sonnet tasks and keep a backlog for Sol, which runs separately and occasionally. Use when the user says "start/run the loop", "orchestrate" or invokes /orchestrate; run it under /goal for continuous work (or /loop for timer-paced runs).
+description: Work through every open 3d-lab issue until only Sol tasks (or nothing) remain — classify each issue for Opus, Sonnet or Sol, write the missing specs from consumer requests and the roadmap, implement Opus and Sonnet tasks with those models, review and merge their PRs, and continue with the next issue. Use when the user says "orchestrate", "start/run the loop" or invokes /orchestrate.
 ---
 
 # Orchestrate
 
-You are the orchestrator (Claude Opus). The contract for issues, labels and roles is `docs/AGENT_TASKS.md`; the rules every implementer follows are `AGENTS.md`. Read both at the start of every run, and `ROADMAP.md` plus the relevant `docs/contracts/` before writing a new spec.
+You are the orchestrator (Claude Opus). The contract for issues, labels and roles is `docs/AGENT_TASKS.md`; the rules every implementer follows are `AGENTS.md`. Read both at the start, and `ROADMAP.md` plus the relevant `docs/contracts/` before writing a new spec.
 
-**Sol is offline by default.** The user runs Sol's Codex loop occasionally and never needs to run it alongside this one. Never wait for Sol: keep 3d-lab moving with Opus and Sonnet, and treat `agent:sol` issues as a backlog Sol works through whenever it is started. The `agent:*` label partitions issues, so the orchestrator (Opus/Sonnet) and Sol never pick up the same issue; `in-progress` only marks a started task and is not the ownership mechanism. Never touch `in-progress` on an `agent:sol` issue or push to a Sol branch.
+**One `/orchestrate` runs to completion.** Repeat passes (steps 0–5) until the end condition holds. Do not stop after one pass, and do not use timers (`ScheduleWakeup`, `/loop`).
 
-One pass = the steps below, in order, then a short report. Keep chat output to the report; put spec content into issues and review content into PR comments.
+**End condition.** Every open issue is in one of these states:
+- merged and closed;
+- `agent:sol`;
+- a tracker whose children are all in one of these states;
+- blocked, with the blocker reported: an owner decision (`spec:needs-input`), a consumer or sibling repo, or a Sol task.
+
+Then write the step 6 report and stop.
+
+**Sol is offline by default.** The user runs Sol's Codex loop occasionally, never alongside this one. Never wait for Sol. The `agent:*` label partitions issues, so the orchestrator (Opus/Sonnet) and Sol never pick up the same issue; `in-progress` only marks a started task. Never touch `in-progress` on a Sol issue or push to a Sol branch.
+
+Keep chat output to short progress lines and the final report. Spec content goes into issues and review content into PR comments.
 
 ## 0. Baseline
 
 - `git fetch` and work from `origin/main`. Never edit the user's checked-out branch; use a worktree for any change you make yourself.
 - Make sure the labels in `docs/AGENT_TASKS.md` exist (`gh label create … || true`).
-- Recover stale locks: an `agent:opus` or `agent:sonnet` issue loses `in-progress`, with a one-line comment, so it becomes dispatchable again, only when all of these hold:
+- Collect state:
+  - `gh pr list --state open --limit 200 --json number,title,headRefName,author,labels,isDraft,url`
+  - `gh issue list --state open --limit 200 --json number,title,labels,body` (all open issues, not only `agent-task`, so consumer requests are included)
+- **Recover stale locks.** Clear `in-progress` on an `agent:opus` or `agent:sonnet` issue, with a one-line comment, only when all of these hold:
   - no open PR references it;
   - the label was added more than 6 hours ago (issue timeline);
   - the issue's branch has no push in the last 6 hours, or does not exist;
   - no background agent from this session is working on it.
 
-  Another session's agent may be invisible, so age and branch activity are the evidence. Never touch `in-progress` on `agent:sol` issues; report a Sol issue that has been `in-progress` for over 48 hours with no PR or branch push.
-- Collect state:
-  - `gh pr list --state open --limit 200 --json number,title,headRefName,author,labels,isDraft,url`
-  - `gh issue list --label agent-task --state open --limit 200 --json number,title,labels,body`
-  - `gh issue list --state open --limit 200 --json number,title,labels,body` for request issues that are not yet specs.
+  Another session's agent may be invisible, so age and branch activity are the evidence. Report a Sol issue that has been `in-progress` for over 48 hours with no PR or branch push.
 
-## 1. Review open PRs
+## 1. Classify every open issue
+
+Give each open issue without an `agent:*` label exactly one classification, using the roles table in `docs/AGENT_TASKS.md`:
+
+- **Tracker:** a parent or roadmap issue whose work lives in child issues, or a bot dashboard. Leave it unlabelled. Close a tracker once all its children are merged.
+- **`agent:opus`:** critical-path or cross-cutting work: public renderer API, contract changes, anything a downstream consumer is blocked on, and anything an Opus or Sonnet task waits on.
+- **`agent:sonnet`:** lessons, authoring UI, docs or mechanical follow-ups.
+- **`agent:sol`:** narrow, technically deep work that nothing queued waits on.
+- **Blocked:** it needs an owner decision, or an unmerged change in a consumer or sibling repo. Comment the blocker once, and label `spec:needs-input` only for owner decisions.
+
+Add the `agent:*` label.
+
+A Sol issue that an Opus or Sonnet task waits on, and that is not `in-progress`, moves to `agent:opus`: swap the label, update the header's "Intended implementer" line, and comment why.
+
+Issues that are not yet specs (no `agent-task` label) become specs when they come up in step 4.
+
+## 2. Review open PRs
 
 For each open, non-draft PR that closes an `agent-task` issue:
 
-1. **CI:** `gh pr checks <n>`. If pending, skip it this run. If a check was cancelled (for example by the `pages` concurrency group cancelling an older run), it is an infrastructure event, not a failure: rerun it (`gh run rerun <run-id>`) and skip the PR this run; never request code changes for a cancelled check. If a check failed, treat it as a "changes needed" verdict: comment the failing check and log excerpt, then re-dispatch the owning agent with that list as in the verdict below (for Sol, leave the comment; Sol's next run fixes its own PRs first).
-2. **Codex:** read the review comments and threads from `chatgpt-codex-connector` (`gh api repos/{owner}/{repo}/pulls/<n>/comments`, `.../reviews`, and the issue comments). Require a completed connector review covering the current head commit; the review-summary issue comment may record completion even when there are no findings. Skip this PR while that review is absent or running. Every finding must be fixed or answered in the thread. If the head changed after the completed review, comment `@codex review` when no current-head review is running and skip until it completes.
+1. **CI:** `gh pr checks <n>`.
+   - Pending: move on to other work this pass.
+   - A check that concluded `cancelled` (for example, superseded by the `pages` concurrency group) is not a failure: re-run it (`gh run rerun <run-id>`) and treat the PR as pending.
+   - Any other non-success conclusion means "changes needed": comment the failing check and log excerpt, then re-dispatch the owning agent with that list (step 5).
+   - For a Sol PR, leave the comment; Sol's next run fixes its own PRs first.
+2. **Codex:** read the review comments and threads from `chatgpt-codex-connector` (`gh api repos/{owner}/{repo}/pulls/<n>/comments`, `.../reviews`, and the issue comments).
+   - Require a completed connector review covering the current head commit. The review-summary issue comment may record completion even when there are no findings.
+   - Every finding must be fixed or answered in its thread.
+   - If the head changed after the completed review, comment `@codex review` when no current-head review is running.
 3. **Spec:** compare the diff with the issue's Decisions, Acceptance and Out of scope:
    - contract changes (renderer exports, `docs/contracts/`, fixture/envelope fields, versions) match exactly;
    - nothing out of scope slipped in;
@@ -41,78 +73,61 @@ For each open, non-draft PR that closes an `agent-task` issue:
 
    Also check the `AGENTS.md` boundaries: Rust crates own the semantics, the renderer only adapts them, lessons create no second semantic model, and consumer scene composition/gameplay stays out.
 4. **Verdict:**
-   - **Ready:** record the head SHA that CI, Codex and the spec review covered, then `gh pr merge <n> --merge --delete-branch --match-head-commit <sha>`. If the head moved, do not merge; re-review next run. This repository's own reviewed, green agent PRs may be merged by this loop. If auto mode denies the merge, do not work around it; list the PR as "ready for you to merge" in the report.
-   - **Changes needed:** one PR comment with a numbered, concrete list. For a PR by Sonnet, dispatch Sonnet again with that list (step 4). For a PR by Opus, re-dispatch the Opus agent with that list (step 4); never fix it inline as well. For Sol, leave the comment; Sol's next run fixes its own PRs first.
+   - **Ready:** merge with `gh pr merge <n> --merge --delete-branch --match-head-commit <sha>`, using the head SHA that CI, Codex and the spec review covered. If the head moved, re-review. If auto mode denies the merge, do not work around it; list the PR as "ready for you to merge".
+   - **Changes needed:** one PR comment with a numbered, concrete list, then re-dispatch the owning Opus or Sonnet agent with it (step 5). Never fix it inline as well.
+   - **Retry limit:** after three rounds on the same failure, stop re-dispatching and report the PR as blocked.
 
-When a merged PR resolves a request from a downstream consumer (moritzbrantner/mmorpg, zoo, raid-defense, asset-tooling, …), say so in the report with the merge commit so the consumer can bump its pinned 3d-lab revision. Never merge PRs in other repositories; list them for the user. PRs that close no `agent-task` issue (the user's or Renovate's) are not reviewed or merged here.
+When a merged PR resolves a request from a downstream consumer (moritzbrantner/mmorpg, zoo, raid-defense, asset-tooling, …), note it with the merge commit so the final report's "Consumers" line can say the consumer can bump its pinned 3d-lab revision. Never merge PRs in other repositories; list them for the user. PRs that close no `agent-task` issue (the user's or Renovate's) are not reviewed or merged here.
 
-## 2. Promote drafts
+## 3. Promote drafts and answered questions
 
-For each `spec:draft` issue (often drafted in a ChatGPT chat or by a consumer's agent):
+For each `spec:draft` issue (often drafted in a ChatGPT chat or by a consumer's agent), and each `spec:needs-input` issue whose question has been answered:
 
-- Check it against the current code on `origin/main`: crate and module names, renderer exports, contract versions, budgets, open parallel tasks and PRs.
-- Check it against `docs/AGENT_TASKS.md`: sizing, one change per versioned format, the implementer label, every section present.
-- If you can complete it by deciding things yourself, edit the body (`gh issue edit <n> --body-file …`), summarise what you changed in a comment, and swap `spec:draft` for `spec:ready` (exactly one `spec:*` label remains).
-- If a decision belongs to the owner (scope, public API shape for consumers, anything touching an authority boundary), ask in a comment and swap `spec:draft` for `spec:needs-input` (never both). Every run re-checks `spec:needs-input` issues for answers; once answered, complete the spec and swap `spec:needs-input` for `spec:ready`, so exactly one `spec:*` label remains.
+- **Check against the code** on `origin/main`: crate and module names, renderer exports, contract versions, budgets, open parallel tasks and PRs.
+- **Check against `docs/AGENT_TASKS.md`:** sizing, one change per versioned format, the implementer label, every section present.
+- **If you can complete it** by deciding things yourself: edit the body (`gh issue edit <n> --body-file …`), summarise what you changed in a comment, and swap its `spec:*` label for `spec:ready`.
+- **If a decision belongs to the owner** (scope, public API shape for consumers, anything touching an authority boundary): ask in a comment and swap to `spec:needs-input`. Exactly one `spec:*` label remains either way.
 
-## 3. Refresh and fill the queues
+## 4. Pick the next Opus and Sonnet task
 
-**Refresh the Sol backlog.** For each `agent:sol` + `spec:ready` issue not `in-progress`, re-check it against current `origin/main`: names, versions, exports and "Parallel work". Edit the body when merges have moved them, with a one-line comment.
+For Opus and for Sonnet separately, when that agent has nothing in flight:
 
-**Fill the queues.** A startable task is an open `spec:ready` issue whose "Start after" dependencies are merged.
-- **Opus and Sonnet:** each keeps exactly one startable task.
-- **Sol:** keeps up to three. Give Sol only work that nothing else will depend on soon. Examples: deterministic animation/geometry algorithms with fixtures, performance work with existing evidence, or isolated lesson-independent Rust models. Put critical-path work (whatever a consumer or the next renderer/web task needs) on `agent:opus`.
-- Never make an Opus or Sonnet task "Start after" an unstarted Sol task.
-- If a Sol task already blocks queued work and has not been started for 24 hours, reassign it to `agent:opus`: swap the label, update the header's "Intended implementer" line in the issue body, and comment why.
+1. Take the next startable issue with its label. Startable means:
+   - `spec:ready`;
+   - not `in-progress`;
+   - every "Start after" dependency is merged;
+   - no conflict with work in flight: no two tasks change the same public contract, versioned format, crate module, renderer file or web route at the same time, including Sol tasks that are `in-progress` or may start at any time.
 
-For each agent below its target, pick the next unfinished work in this order:
+   Prefer, in order:
+   1. **Consumer-blocking requests:** issues that a downstream consumer is waiting on (bodies or links naming moritzbrantner/mmorpg or another sibling repository, or the words "consumer", "first consumer", "mmorpg" or "dogfood"), oldest or already-blocked consumer issue first;
+   2. **the roadmap:** unchecked items in `ROADMAP.md`, in slice order, then the remaining request issues.
 
-1. **Consumer-blocking requests first.** Open issues in this repository that a downstream consumer is waiting on: issue bodies or links naming moritzbrantner/mmorpg or another sibling repository, or the words "consumer", "first consumer", "mmorpg" or "dogfood". Prefer the one whose consumer issue is oldest or is already blocked on it.
-2. **Then the roadmap:** unchecked items in `ROADMAP.md`, in slice order, and the remaining open request issues.
+   A renderer/web task waits for its Rust-model or contract task.
+2. If none is startable but a classified issue for that agent has no spec yet, write the spec now. Follow `docs/AGENT_TASKS.md` "Writing an issue":
+   - Either convert the issue in place (edit its body, add `agent-task` and `spec:ready`; reference it in the header as `Part of #N` when splitting), or file a new `agent-task` issue linked from it when it must be split.
+   - Verify every name, export and number against the current code first.
+   - Write specs just in time: a spec whose versions depend on unmerged work waits until that work merges.
+   - Comment one line on the source issue (the request here, or the consumer's issue) linking the new spec.
+3. Keep `agent:sol` + `spec:ready` issues current against `origin/main` (names, versions, exports, "Parallel work"). Edit the body when merges have moved them, with a one-line comment. Keep up to three Sol tasks queued, only work that nothing else will depend on soon; put critical-path work on `agent:opus`. Never make an Opus or Sonnet task "Start after" an unstarted Sol task.
 
-Then:
+## 5. Implement
 
-- Respect dependencies: a renderer/web task waits for its Rust-model or contract task. Queue only work whose own dependencies are already merged; if no such work exists for that agent, queue nothing and say so in the report.
-- Avoid conflicts: never queue two tasks that change the same public contract or edit the same crate module, renderer file or web route concurrently, including Sol backlog tasks that may start at any time and open non-agent PRs.
-- Write the issue exactly per `docs/AGENT_TASKS.md` "Writing an issue", with labels `agent-task`, `spec:ready` and the `agent:*` label. Verify every name, export and number you cite against the code first. When the source is an existing request issue here, reference it in the header (`Part of #N`) and have the PR close it too when it delivers the whole request.
-- Comment one line on the source issue (the request here, or the consumer's issue) linking the new spec.
+- **Sonnet** (one task at a time): add `in-progress`, then launch a background Agent with `model: "sonnet"` and `isolation: "worktree"`. The prompt:
 
-Write at most three new specs per run.
+  > Implement issue #N of moritzbrantner/3d-lab. Read AGENTS.md, docs/AGENT_TASKS.md and the issue. Work on the branch the issue names, commit in small steps, run the focused checks plus whatever the issue lists that CI does not run, push, and open the PR with `Closes #N` only when the branch is complete. Report the PR URL and anything you could not verify.
 
-## 4. Dispatch
+  For a "changes needed" re-dispatch, give the PR number and the numbered list instead.
+- **Opus** (one task at a time): add `in-progress`, then launch a background Agent with `model: "opus"`, `isolation: "worktree"` and the same prompt.
+  - If the spec turns out to need an owner decision, the agent comments on the issue, swaps to `spec:needs-input` and stops. Ask the user (AskUserQuestion) when the session is interactive, record the answer on the issue, and resume the agent.
+- **`agent:sol`:** never dispatched from here. Sol runs the Codex `implementer-loop` skill (`.agents/skills/implementer-loop/`) whenever the user starts it.
 
-- **`agent:sonnet`** (ready, not in progress, and every "Start after" issue closed by a merged PR): add `in-progress`, then launch a background Agent:
-  - `model: "sonnet"`, `isolation: "worktree"`;
-  - prompt: "Implement issue #N of moritzbrantner/3d-lab. Read AGENTS.md, docs/AGENT_TASKS.md and the issue. Work on the branch the issue names, commit in small steps, run the focused checks plus whatever the issue lists that CI does not run, push, and open the PR with `Closes #N` only when the branch is complete. Report the PR URL and anything you could not verify."
+## 6. Continue, or finish
 
-  For a "changes needed" re-dispatch, give the PR number and the numbered list instead. Run at most one Sonnet task at a time.
-- **`agent:opus`** (startable, not in progress): add `in-progress` and launch a background Agent so this loop keeps running:
-  - `model: "opus"`, `isolation: "worktree"`;
-  - the same prompt as for Sonnet.
-
-  Run at most one Opus implementation at a time. For "changes needed" on an Opus PR, re-dispatch with the list.
-- **`agent:sol`**: never dispatched from here. Sol runs the Codex `implementer-loop` skill (`.agents/skills/implementer-loop/`) whenever the user starts it. It fixes its own PRs first, then works through the backlog. Do not nag: mention the Sol backlog in the report only when it changed this run.
-
-## 5. Report
-
-End with a compact table: each PR (merged / changes requested / waiting for CI or Codex / ready for the user to merge), each issue (promoted / needs input / newly queued / dispatched), a "Consumers" line naming merged PRs that unblock a downstream repository (with the commit to pin), and a "For you" list naming only the user's actions (merges auto mode refused, questions, and the Sol backlog when it changed).
-
-## Pacing
-
-Preferred: run `/orchestrate` under `/goal`, for example:
-
-```
-/goal Run /orchestrate until every startable Opus and Sonnet task is merged and nothing is in flight, or every remaining item is blocked on an owner decision, a consumer or sibling repo or Sol, and that blocker is reported.
-```
-
-`/goal` keeps the session working until its condition holds. So:
-- **No timers.** Run one loop iteration after another without `ScheduleWakeup`.
-- **Never wait idle.** While a PR waits on CI or Codex, do the next useful step: promote a draft, write the next spec, or review another PR. When nothing else is left, block on the event in the foreground with a bounded command, then continue from step 1 for that PR. Use `gh pr checks <n> --watch --interval 60` for CI, or a short poll of the Codex summary comment for the current head, with a Bash timeout of up to 10 minutes.
-- **Implementing Opus tasks.** Opus tasks may be implemented directly in this session in a worktree, rather than in a background agent, when nothing else needs the orchestrator meanwhile. Sonnet tasks stay background agents; a finished one re-invokes you, and you continue from step 1 for its PR.
-- **Ending a goal.** A goal is met only when the condition above holds. End with the step 5 report and its "For you" list. If the only remaining blocker is an owner decision, ask it (`spec:needs-input` comment plus the report) and stop rather than spin.
-
-Alternative: `/loop /orchestrate`, one run per invocation.
-- **Wakeups.** Schedule the next wakeup around 1800 s while PRs wait on CI or Codex. While an unstarted Sol task blocks queued work, keep waking hourly until its 24-hour reassignment deadline.
-- **Stopping.** Stop when no Opus or Sonnet work is in flight or startable and no roadmap items or consumer requests remain for them.
-
-Either way, a non-empty Sol backlog alone is not a reason to keep going, but a Sol task that blocks queued work is.
+- **Keep going.** After each pass, start the next one immediately while there is work this session can do: a PR to review, a draft to promote, a spec to write or a task to dispatch.
+- **Waiting.** When everything left waits on CI, Codex or a running agent:
+  - End the turn only if something will wake you: a running background agent re-invokes you when it finishes, and a Monitor reports CI or Codex completion for open PRs. Arm one Monitor (`timeout_ms` 1800000) that prints a line when a watched PR's checks finish or its Codex review for the current head completes, and re-arm it when it expires.
+  - Otherwise block in the foreground with a bounded command, for example `gh pr checks <n> --watch --interval 60` with a Bash timeout of up to 10 minutes.
+- **Finish** when the end condition holds. Stop any Monitor you armed, then report:
+  - a compact table of PRs (merged / changes requested / ready for the user to merge) and issues (classified / spec written / implemented / blocked / left for Sol);
+  - a "Consumers" line naming merged PRs that unblock a downstream repository, with the commit to pin ("consumers can bump");
+  - a "For you" list naming only the user's actions: questions, merges auto mode refused, other repos' PRs to merge, blocked consumer or sibling work, and the Sol backlog.
