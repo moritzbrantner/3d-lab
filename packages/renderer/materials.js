@@ -24,6 +24,23 @@ function shadingKey(node) {
   return node.emissive === undefined ? "lit" : `emissive=${String(node.emissive)}`
 }
 
+/**
+ * Writes the material node for an instance batch into `target` (reused to avoid allocation).
+ * Batches always use the default lit material in white: the batch color and per-instance color
+ * overrides are uploaded as instance colors and multiply it, so batches that differ only in color
+ * share one material (and share it with equally configured white lit nodes). Batches take no
+ * `emissive` or `unlit` shading.
+ *
+ * @param {{opacity?: number, wireframe?: boolean}} batch
+ * @param {object} [target]
+ */
+export function instanceBatchMaterialNode(batch, target = {}) {
+  target.color = 0xffffff
+  target.opacity = batch.opacity ?? 1
+  target.wireframe = batch.wireframe === true
+  return target
+}
+
 /** @param {MaterialInput} input */
 export function createMaterial({node, vertexColors}) {
   const opacity = node.opacity ?? 1

@@ -97,6 +97,8 @@ bun install
 
 The renderer receives explicit view/projection and model matrices. It must not become an alternate authority for camera, transform, simulation, placement, or physics semantics.
 
+Repeated content can be submitted as instance batches (one draw call per batch); see [`docs/contracts/performance-observability.md`](docs/contracts/performance-observability.md#instance-batches).
+
 ### Web
 
 ```bash

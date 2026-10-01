@@ -348,6 +348,62 @@ try {
   };
   checks.push("shadowCasterReach lets occluders far toward a low sun shade the focus");
 
+  // 9. Instance batches use the shared lit material path: vertex colors and the batch color render
+  //    like the equal node, batches on colored and uncolored meshes never share a material, fog
+  //    applies, and a batched occluder casts into a moved shadow focus like a node does.
+  const batchOf = (fields) => ({
+    id: "batch",
+    geometry: quad(),
+    color: "#ffffff",
+    instances: [{ transform: { translation: [0, 0, 0] } }],
+    ...fields,
+  });
+  const [batchVertex, batchPlain, batchFogged] = await draw({}, [
+    { camera: flatCamera, nodes: [], instanceBatches: [batchOf({ geometry: uniform })] },
+    { camera: flatCamera, nodes: [], instanceBatches: [batchOf({ color: "#339966" })] },
+    {
+      camera: flatCamera,
+      nodes: [],
+      instanceBatches: [batchOf({ color: "#339966" })],
+      environment: { fog: { color: "#000000", near: 1, far: 2 } },
+    },
+  ]);
+  assert(maxChannelDifference(batchVertex.pixels, litVertex.pixels) <= 1, "vertex-colored batch matches the vertex-colored lit node");
+  assert(maxChannelDifference(batchPlain.pixels, litNode.pixels) <= 1, "batch color matches the equal lit node color");
+  assert.deepEqual(
+    [batchPlain.observations.materialCreateCount, batchPlain.observations.materialEvictCount],
+    [1, 1],
+    "a batch on an uncolored mesh does not reuse the vertex-color batch material",
+  );
+  assert.deepEqual(pixelAt(batchFogged.pixels, flatCamera, middle), [0, 0, 0, 255], "fog applies to batches");
+  const batchedPost = {
+    id: "posts",
+    geometry: { kind: "box", size: [1, 2, 1] },
+    color: "#ffffff",
+    instances: [{ transform: { translation: [100, 1, 100] } }],
+  };
+  const groundOnly = shadowNodes.filter((entry) => entry.id === "ground");
+  const [batchUnfocused, batchFocused] = await draw({ shadows: true }, [
+    { camera: topCamera, nodes: groundOnly, instanceBatches: [batchedPost], environment: { sun } },
+    {
+      camera: topCamera,
+      nodes: groundOnly,
+      instanceBatches: [batchedPost],
+      environment: { sun, shadowFocus: [100, 0, 100], shadowExtent: 10 },
+    },
+  ]);
+  assert(
+    luminance(pixelAt(batchFocused.pixels, topCamera, occluded)) + 60 < luminance(pixelAt(batchUnfocused.pixels, topCamera, occluded)),
+    "a batched occluder casts into the focused shadow frame",
+  );
+  assert.deepEqual(pixelAt(batchFocused.pixels, topCamera, occluded), pixelAt(focused.pixels, topCamera, occluded), "batched and node occluders cast the same shadow");
+  evidence.instanceBatches = {
+    vertex: pixelAt(batchVertex.pixels, flatCamera, middle),
+    plain: pixelAt(batchPlain.pixels, flatCamera, middle),
+    shadow: pixelAt(batchFocused.pixels, topCamera, occluded),
+  };
+  checks.push("instance batches share the lit material path, fog, and shadow frame with nodes");
+
   assert.deepEqual(errors, [], "page must not report errors or warnings");
 } finally {
   await writeFile(path.join(output, "result.json"), `${JSON.stringify({ checks, evidence, errors }, null, 2)}\n`);
