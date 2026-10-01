@@ -161,3 +161,56 @@ export function replayDecisions(
   }
   return decisions;
 }
+
+export type LodLabState = {
+  distanceIndex: number;
+  maxPixelError: number;
+  hysteresisPercent: number;
+  /** Manual override level, or null when the Rust policy decides. */
+  overrideLevel: number | null;
+  /** Level shown in the previous frame; carried into the next lookup. */
+  shownLevel: number;
+  decision: LodDecision;
+};
+
+export type LodLabAction =
+  | { type: "distance"; distance: number }
+  | { type: "policy"; maxPixelError?: number; hysteresisPercent?: number }
+  | { type: "override"; level: number | null };
+
+export function initialLodLabState(
+  evidence: ScreenSpaceLodEvidence,
+  distance: number,
+  maxPixelError: number,
+  hysteresisPercent: number,
+): LodLabState {
+  const index = distanceIndex(evidence, distance);
+  const decision = lookupDecision(evidence, findPolicy(evidence, maxPixelError, hysteresisPercent), 0, index);
+  return {
+    distanceIndex: index,
+    maxPixelError,
+    hysteresisPercent,
+    overrideLevel: null,
+    shownLevel: decision.level,
+    decision,
+  };
+}
+
+/** Advances the lab by one interaction, carrying the shown level into the Rust lookup. */
+export function reduceLodLab(
+  evidence: ScreenSpaceLodEvidence,
+  state: LodLabState,
+  action: LodLabAction,
+): LodLabState {
+  const next = { ...state };
+  if (action.type === "distance") next.distanceIndex = distanceIndex(evidence, action.distance);
+  if (action.type === "policy") {
+    next.maxPixelError = action.maxPixelError ?? state.maxPixelError;
+    next.hysteresisPercent = action.hysteresisPercent ?? state.hysteresisPercent;
+  }
+  if (action.type === "override") next.overrideLevel = action.level;
+  const policy = findPolicy(evidence, next.maxPixelError, next.hysteresisPercent);
+  next.decision = lookupDecision(evidence, policy, state.shownLevel, next.distanceIndex);
+  next.shownLevel = next.overrideLevel ?? next.decision.level;
+  return next;
+}

@@ -7,12 +7,14 @@ on:
       - "package.json"
       - "packages/renderer/**"
       - "web/**"
+      - "fixtures/lod/**"
       - ".github/workflows/pages.yml"
   pull_request:
     paths:
       - "package.json"
       - "packages/renderer/**"
       - "web/**"
+      - "fixtures/lod/**"
       - ".github/workflows/pages.yml"
 
 permissions:

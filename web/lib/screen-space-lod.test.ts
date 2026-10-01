@@ -4,9 +4,11 @@ import {
   distanceIndex,
   findPolicy,
   hysteresisPercents,
+  initialLodLabState,
   lookupDecision,
   parseScreenSpaceLodEvidence,
   pixelBudgets,
+  reduceLodLab,
   replayDecisions,
   screenSpaceLodEvidence as evidence,
 } from "./screen-space-lod";
@@ -91,5 +93,29 @@ describe("Rust screen-space LOD evidence", () => {
     const decision = lookupDecision(evidence, policy, evidence.levels.length - 1, 0);
     expect(decision).toEqual({ level: 0, idealLevel: 0, reason: "refined" });
     expect(() => lookupDecision(evidence, policy, evidence.levels.length, 0)).toThrow();
+  });
+});
+
+describe("LOD lab state", () => {
+  test("carries the shown level so hysteresis holds while dollying back", () => {
+    const policy = findPolicy(evidence, 2, 25);
+    const [coarsen] = policy.outboundSwitches;
+    let state = initialLodLabState(evidence, distanceAt(evidence, coarsen.distanceIndex - 1), 2, 25);
+    expect(state.shownLevel).toBe(coarsen.from);
+    state = reduceLodLab(evidence, state, { type: "distance", distance: distanceAt(evidence, coarsen.distanceIndex) });
+    expect(state.shownLevel).toBe(coarsen.to);
+    expect(state.decision.reason).toBe("coarsened");
+    state = reduceLodLab(evidence, state, { type: "distance", distance: distanceAt(evidence, coarsen.distanceIndex - 1) });
+    expect(state.shownLevel).toBe(coarsen.to);
+    expect(state.decision.reason).toBe("kept");
+  });
+
+  test("manual override pins the level and auto resumes from it", () => {
+    let state = initialLodLabState(evidence, 3, 2, 25);
+    state = reduceLodLab(evidence, state, { type: "override", level: 3 });
+    expect(state.shownLevel).toBe(3);
+    state = reduceLodLab(evidence, state, { type: "override", level: null });
+    expect(state.decision).toEqual(lookupDecision(evidence, findPolicy(evidence, 2, 25), 3, state.distanceIndex));
+    expect(state.shownLevel).toBe(state.decision.level);
   });
 });
