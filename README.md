@@ -8,6 +8,7 @@ The repository deliberately has parallel surfaces:
 - **Web / Three.js** — visual, interactive lessons and an authoring/inspection surface that can be published with GitHub Pages and dogfoods the reusable renderer contract.
 - **Rust / `three-d-core`** — renderer-independent mesh geometry, topology, normals, UVs, and tangent-space derivation.
 - **Rust / `three-d-animation`** — renderer-independent matrices, transforms, animation tracks/clips, and skeletal data.
+- **Rust / `three-d-playback`** — frame-rate-independent playback clocks (clamp/loop, forward/reverse), wall-time transition progress, and deterministic cross-fades on top of `three-d-animation`.
 - **Rust / `three-d-rigged-assets`** — renderer-independent composition of skeletons, skin influences, animation clips, and joint-local primitive collision proxies, including deterministic bind-pose proxy fitting. It does not own physics simulation or asset-generation provenance.
 - **Rust / `three-d-camera`** — renderer-independent right-handed view plus perspective and orthographic WebGPU-depth camera matrices.
 - **Rust / `three-d-assets`** — renderer-independent asset meshes, PBR material factors, encoded texture resources, normal-map bindings, and cross-resource validation.
@@ -55,6 +56,7 @@ The GitHub Pages curriculum currently covers:
 26. Scene hierarchy inspection, mesh picking, vertex selection, and direct vertex/transform authoring
 27. Screen-space LOD selection with pixel-error budgets, hysteresis, and wireframe comparison
 28. Versioned format-neutral scene snapshot import/export with strict trust-boundary validation
+29. Frame-rate-independent playback timing and cross-fades across uneven frame partitions
 
 Every topic combines a concise explanation with an interactive scene and a small data inspector. The Rust side mirrors the durable, renderer-independent concepts rather than wrapping Three.js APIs or asset-file structures.
 
@@ -100,6 +102,8 @@ The renderer receives explicit view/projection and model matrices. It must not b
 
 Repeated content can be submitted as instance batches (one draw call per batch); see [`docs/contracts/performance-observability.md`](docs/contracts/performance-observability.md#instance-batches).
 
+Cosmetic impact/puff effects can be submitted as bounded baked flipbooks (`frame.effects`); fixed-time frame sampling is also available renderer-independently from `@moritzbrantner/three-d-renderer/flipbook`. See [`docs/contracts/browser-renderer.md`](docs/contracts/browser-renderer.md#cosmetic-flipbook-effects).
+
 ### Web
 
 ```bash
@@ -113,11 +117,20 @@ bun run build
 
 Then run `bun run dev` for the local teaching site.
 
+The playback timing lab reads committed Rust evidence. Regenerate it after changing `three-d-playback`, and optionally run its Chromium smoke against a served build:
+
+```bash
+cargo run -p three-d-playback --example playback_timing_evidence
+bun scripts/playback-timing-browser-smoke.mjs http://127.0.0.1:4173/animation-timing/
+```
+
 ## Architecture
 
 See [`docs/contracts/mesh-model.md`](docs/contracts/mesh-model.md) for the mesh and tangent-space parity contract.
 
 See [`docs/contracts/animation-model.md`](docs/contracts/animation-model.md) for transform, keyframe, hierarchy, and skeleton ownership.
+
+See [`docs/contracts/animation-playback.md`](docs/contracts/animation-playback.md) for elapsed-time playback, transition timing, and partition invariance.
 
 See [`docs/contracts/rigged-assets.md`](docs/contracts/rigged-assets.md) for rigged-asset composition and automatic collision-proxy fitting.
 

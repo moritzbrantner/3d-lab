@@ -1,6 +1,7 @@
 import { MaterialTextureTeaser } from "@/components/material-texture-teaser";
 import { ModelPipelineTeaser } from "@/components/model-pipeline-teaser";
 import { NormalMappingTeaser } from "@/components/normal-mapping-teaser";
+import { PlaybackTimingTeaser } from "@/components/playback-timing-teaser";
 import { ScreenSpaceLodTeaser } from "@/components/screen-space-lod-teaser";
 import { RendererComparisonTeaser } from "@/components/renderer-comparison-teaser";
 import { SceneEditorTeaser } from "@/components/scene-editor-teaser";
@@ -25,6 +26,7 @@ export default function Home() {
       <ScreenSpaceLodTeaser />
       <RendererComparisonTeaser />
       <SkeletalAnimationTeaser />
+      <PlaybackTimingTeaser />
       <ThreeLab />
     </main>
   );

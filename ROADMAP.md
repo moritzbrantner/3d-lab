@@ -28,6 +28,7 @@
 - [x] Build a three-joint skinned strip from explicit bone weights before introducing file formats.
 - [x] Load a minimal glTF 2.0 translation animation with `GLTFLoader` and `AnimationMixer`.
 - [x] Add renderer-independent `Mat4`, `Quat`, `Transform`, hierarchy, keyframe/clip, skeleton, and skin-influence types in Rust.
+- [x] Add frame-rate-independent playback through `three-d-playback`: elapsed-time clamp/loop/reverse clocks, wall-time transitions separate from clip clocks, deterministic cross-fades, and a Rust-evidence timing lab.
 
 ### Slice 4 — renderer comparison
 
@@ -99,5 +100,7 @@
 - [x] Replace per-operation flat topology rematerialization with persistent vertex/attribute chunks and localized triangle chunks; materialize contiguous `IndexedMesh` data only at explicit compatibility/render/export boundaries.
 - [x] Replace repeated full topology adjacency rebuilds with a lazily built vertex-incidence cache that follows localized chunk replacements and undo/redo without entering semantic history.
 - [x] Add pre-resolved, allocation-free compiled clip sampling with cursor/binary-search key lookup, bit-for-bit parity against the reference sampler, an optional 16-bit quantized track store with an explicit fail-closed error budget, and raw single-character/crowd benchmark evidence.
+- [x] Add bounded cosmetic baked-flipbook playback to the reusable renderer with renderer-independent fixed-time sampling, explicit budgets/release, and effect work observations (#85).
+- [ ] Prove the cosmetic flipbook capability with a real Raid Defense impact plus a second consumer, and add a seeded burst evaluator only if a consumer needs independently moving particles (#85).
 - [ ] Reduce renderer-side full topology materialization and whole `BufferGeometry` replacement where browser evidence shows it is material.
 - [ ] After at least four independent same-surface calibration runs, review robust MAD-derived wall-time/RSS margins and move the accepted policy into an evaluator-owned confirmation gate.
