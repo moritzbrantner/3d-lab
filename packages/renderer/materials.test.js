@@ -1,7 +1,7 @@
 import {describe, expect, test} from "bun:test"
 import * as THREE from "three"
 import {ThreeRendererContractError, validateRenderFrame} from "./index.js"
-import {createMaterial, materialKey} from "./materials.js"
+import {createMaterial, instanceBatchMaterialNode, materialKey} from "./materials.js"
 
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 
@@ -90,6 +90,41 @@ describe("scene node materials", () => {
     expect(material.vertexColors).toBe(true)
     expect(material.fog).toBe(true)
     expect(materialKey(request({id: "a", unlit: true}))).toBe(materialKey(request({id: "b", unlit: true})))
+  })
+})
+
+describe("instance batch materials", () => {
+  function batchRequest(batch, vertexColors = false) {
+    return {node: instanceBatchMaterialNode(batch), vertexColors}
+  }
+
+  test("batches use the default lit material in white so instance colors carry the color", () => {
+    const material = createMaterial(batchRequest({color: "#336633", opacity: 0.5, wireframe: true}))
+
+    expect(material).toBeInstanceOf(THREE.MeshStandardMaterial)
+    expect(material.color.getHex()).toBe(0xffffff)
+    expect([material.opacity, material.transparent, material.wireframe]).toEqual([0.5, true, true])
+    expect(material.emissive.equals(new THREE.MeshStandardMaterial().emissive)).toBe(true)
+  })
+
+  test("batches differing only in color share a key; opacity, wireframe and vertex colors split it", () => {
+    const base = materialKey(batchRequest({color: "#336633"}))
+    expect(materialKey(batchRequest({color: "#ff0000"}))).toBe(base)
+    expect(materialKey(batchRequest({color: "#ff0000", emissive: "#ff8800", unlit: true}))).toBe(base)
+    for (const variant of [
+      batchRequest({opacity: 0.5}),
+      batchRequest({wireframe: true}),
+      batchRequest({}, true),
+    ]) {
+      expect(materialKey(variant)).not.toBe(base)
+    }
+    expect(createMaterial(batchRequest({}, true)).vertexColors).toBe(true)
+  })
+
+  test("the batch node is written into a reused target", () => {
+    const target = {}
+    expect(instanceBatchMaterialNode({opacity: 0.25}, target)).toBe(target)
+    expect(instanceBatchMaterialNode({}, target)).toEqual({color: 0xffffff, opacity: 1, wireframe: false})
   })
 })
 

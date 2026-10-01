@@ -25,3 +25,15 @@ export function evictUnusedResources(cache, liveKeys) {
   }
   return evictedCount
 }
+
+/**
+ * Record live cache sizes after a frame. Every node object and every instance batch owns exactly one
+ * live Three.js mesh, so `liveObjectCount` includes instance batches; `liveInstanceBatchCount` is the
+ * batch-specific subset. This keeps `liveObjectCount` consistent with object create/remove counts.
+ */
+export function recordLiveCacheCounts(observations, {objects, instanceBatches, geometries, materials}) {
+  observations.liveObjectCount = objects.size + instanceBatches.size
+  observations.liveGeometryCount = geometries.size
+  observations.liveMaterialCount = materials.size
+  observations.liveInstanceBatchCount = instanceBatches.size
+}
