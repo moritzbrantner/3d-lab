@@ -8,12 +8,15 @@ The repository deliberately has parallel surfaces:
 - **Web / Three.js** — visual, interactive lessons and an authoring/inspection surface that can be published with GitHub Pages and dogfoods the reusable renderer contract.
 - **Rust / `three-d-core`** — renderer-independent mesh geometry, topology, normals, UVs, and tangent-space derivation.
 - **Rust / `three-d-animation`** — renderer-independent matrices, transforms, animation tracks/clips, and skeletal data.
+- **Rust / `three-d-rigged-assets`** — renderer-independent composition of skeletons, skin influences, animation clips, and joint-local primitive collision proxies, including deterministic bind-pose proxy fitting. It does not own physics simulation or asset-generation provenance.
 - **Rust / `three-d-camera`** — renderer-independent right-handed view plus perspective and orthographic WebGPU-depth camera matrices.
 - **Rust / `three-d-assets`** — renderer-independent asset meshes, PBR material factors, encoded texture resources, normal-map bindings, and cross-resource validation.
 - **Rust / `three-d-formats`** — loss-aware OBJ/glTF decoding adapters that normalize supported file semantics into `three-d-assets`.
 - **Rust / `three-d-lod`** — deterministic mesh simplification and source-based LOD derivation using meshopt while preserving the source vertex/attribute buffers.
 - **Native / `wgpu` example** — a narrow renderer-comparison adapter that consumes the Rust mesh and camera models without moving GPU ownership into the core crates.
 - **Asset-tooling LOD adapter example** — a narrow process adapter that exposes `three-d-lod` through a canonical position/index mesh JSON envelope without moving asset-tooling ownership into the LOD crate.
+- **Asset-tooling humanoid adapter example** — a narrow process adapter that validates production humanoid hierarchy, semantic bone IDs, Root/Hips separation, rest pose, and attachment sockets through `three-d-animation` without moving those semantics into workflow/provenance tooling.
+- **Asset-tooling rigged-collision adapter example** — a narrow process adapter that exposes deterministic bind-pose joint collision fitting from `three-d-rigged-assets`; it transports data and observations without taking over fitting or physics authority.
 - **Raw browser WebGPU experiment** — one intentionally tiny indexed draw that exposes browser GPU setup without replacing Three.js as the primary browser renderer.
 
 The reusable browser renderer is intentionally Three.js-first. The Rust core crates do not depend on Three.js, WebGL, WebGPU, a windowing stack, or a glTF/OBJ parser; rendering and file-format adapters stay downstream of the renderer-independent models. Applications such as Zoo should consume the renderer package rather than constructing a parallel Three.js/CSS renderer, while still keeping their game-specific scene composition and interaction policy outside 3d-lab.
@@ -70,10 +73,12 @@ Run the native `wgpu` comparison on a machine with a supported graphics adapter:
 cargo run -p three-d-wgpu-example
 ```
 
-The asset-tooling integration adapter is intentionally separate from the `three-d-lod` library:
+The asset-tooling integration adapters remain separate from the authoritative domain crates:
 
 ```bash
 cargo run -p asset-tooling-lod-adapter -- probe
+cargo run -p asset-tooling-humanoid-adapter -- probe
+cargo run -p asset-tooling-rigged-collision-adapter -- probe
 ```
 
 ### Reusable browser renderer
@@ -104,6 +109,8 @@ Then run `bun run dev` for the local teaching site.
 See [`docs/contracts/mesh-model.md`](docs/contracts/mesh-model.md) for the mesh and tangent-space parity contract.
 
 See [`docs/contracts/animation-model.md`](docs/contracts/animation-model.md) for transform, keyframe, hierarchy, and skeleton ownership.
+
+See [`docs/contracts/rigged-assets.md`](docs/contracts/rigged-assets.md) for rigged-asset composition and automatic collision-proxy fitting.
 
 See [`docs/contracts/renderer-parity.md`](docs/contracts/renderer-parity.md) for the cross-renderer mesh, matrix, and camera evidence contract.
 

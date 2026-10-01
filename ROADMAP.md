@@ -60,6 +60,7 @@
 
 ### Slice 7 — procedural character animation
 
+- [x] Establish a strict production-humanoid profile that composes the existing skeleton and retargeting contracts, separates Root from Hips, validates semantic limb ancestry, and standardizes equipment attachment sockets.
 - [ ] Add renderer-independent analytical two-bone IK for arms and legs with explicit target, pole-vector, reach, and joint-limit semantics.
 - [ ] Add weighted post-sampling pose constraints so authored/keyframed animation remains the base pose and procedural correction can blend in and out without becoming gameplay authority.
 - [ ] Add foot/limb placement that consumes external world-contact samples (position, normal, support identity) without making `three-d-animation` depend on a physics engine.
@@ -67,6 +68,19 @@
 - [ ] Add predictive swing/landing targets and bounded motion-warping primitives for interactions, attacks, vaults, and other target-relative animation while keeping authoritative movement outside the animation runtime.
 - [ ] Generalize proven constraint primitives to hand grips, look-at/aim constraints, quadruped limbs, and longer chains only after the two-bone/contact contracts are stable.
 - [ ] Add an interactive uneven-ground/stair acceptance lab plus deterministic pose/constraint fixtures so render adapters can share the same semantics.
+
+### Slice 8 — automatic rigged asset preparation
+
+- [x] Add a renderer-independent rigged-asset composition contract that binds one authoritative skeleton to validated skin influences, animation clips, and joint-local primitive collision proxies without moving physics or generation provenance into the runtime model.
+- [x] Add deterministic automatic primitive collision fitting from bind-pose positions and skin influences: dominant-joint assignment, inverse-bind conversion into joint-local space, bounded support thresholds, and stable sphere/box/local-Y capsule selection.
+- [ ] Expose collision fitting through an asset-tooling process adapter so generation receipts record exact input hashes, parameters, processor identity, and output hashes.
+- [ ] Add an optional automatic-rigging backend in asset-tooling (initial candidate: UniRig) with immutable model/runtime identity, local dependency acquisition, and fail-closed validation rather than hidden downloads.
+- [ ] Normalize generated humanoid rigs through the existing production HumanoidSkeleton profile, with explicit semantic mapping confidence and review evidence instead of renderer-side name guessing.
+- [ ] Retarget a canonical locomotion starter set (idle, walk, run, turn, jump/fall) through the existing humanoid retargeting contract; keep authored source clips and retargeting evidence independently replaceable.
+- [ ] Add a 3d-lab inspection surface with direct mesh picking plus synchronized Mesh / Skeleton / Skin weights / Collision / Animation views and precise animation-time controls.
+- [ ] Add a narrow physics-engine adapter that consumes the joint collision proxies without making 3d-lab a second collision-simulation authority.
+- [ ] Add production export packaging for skinned GLB plus explicit collision/rig metadata and asset-tooling receipts; keep render geometry distinct from collision authority.
+- [ ] Add deterministic fixtures and performance evidence for automatic rig/collision processing, including deformation and collision-proxy quality regressions before expanding to non-humanoid creatures.
 
 ### Cross-cutting performance foundation
 
