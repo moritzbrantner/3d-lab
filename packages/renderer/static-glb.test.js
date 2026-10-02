@@ -269,6 +269,22 @@ describe("static GLB rejection", () => {
     ["zero-initialized indices accessor", () => mutated(rockDocument, (json) => {
       delete json.accessors[json.meshes[0].primitives[0].indices].bufferView
     }), /indices accessor \d+ has no bufferView or sparse data/],
+    ["quantized POSITION encoding", () => mutated(rockDocument, (json) => {
+      json.accessors[json.meshes[0].primitives[0].attributes.POSITION].componentType = 5123
+    }), /POSITION accessor \d+ uses an unsupported encoding \(VEC3, componentType 5123\)/],
+    ["normalized float NORMAL", () => mutated(rockDocument, (json) => {
+      json.accessors[json.meshes[0].primitives[0].attributes.NORMAL].normalized = true
+    }), /NORMAL accessor \d+ uses an unsupported encoding/],
+    ["unnormalized integer COLOR_0", () => mutated(treeDocument, (json) => {
+      const primitive = json.meshes.flatMap((mesh) => mesh.primitives).find((entry) => entry.attributes.COLOR_0 !== undefined)
+      delete json.accessors[primitive.attributes.COLOR_0].normalized
+    }), /COLOR_0 accessor \d+ uses an unsupported encoding/],
+    ["float indices", () => mutated(rockDocument, (json) => {
+      json.accessors[json.meshes[0].primitives[0].indices].componentType = 5126
+    }), /indices accessor \d+ uses an unsupported encoding/],
+    ["VEC2 POSITION type", () => mutated(rockDocument, (json) => {
+      json.accessors[json.meshes[0].primitives[0].attributes.POSITION].type = "VEC2"
+    }), /POSITION accessor \d+ uses an unsupported encoding \(VEC2/],
     ["misaligned normals", () => mutated(rockDocument, (json) => {
       json.accessors[json.meshes[0].primitives[0].attributes.NORMAL].count = 3
     }), /NORMAL must be 3-component and align/],

@@ -15,6 +15,21 @@ const JSON_CHUNK = 0x4e4f534a
 const BIN_CHUNK = 0x004e4942
 const TRIANGLES = 4
 const SUPPORTED_ATTRIBUTES = new Set(["POSITION", "NORMAL", "TANGENT", "TEXCOORD_0", "COLOR_0"])
+const FLOAT_COMPONENT = 5126
+const UNSIGNED_BYTE_COMPONENT = 5121
+const UNSIGNED_SHORT_COMPONENT = 5123
+const UNSIGNED_INT_COMPONENT = 5125
+// glTF 2.0 core accessor encodings per semantic (no KHR_mesh_quantization, which, like every
+// extension, `three-d-formats` does not enable): [types, component types allowed as float,
+// component types allowed only when normalized]. Indices must be unnormalized unsigned scalars.
+const SEMANTIC_ENCODINGS = Object.freeze({
+  POSITION: [["VEC3"], [FLOAT_COMPONENT], []],
+  NORMAL: [["VEC3"], [FLOAT_COMPONENT], []],
+  TANGENT: [["VEC4"], [FLOAT_COMPONENT], []],
+  TEXCOORD_0: [["VEC2"], [FLOAT_COMPONENT], [UNSIGNED_BYTE_COMPONENT, UNSIGNED_SHORT_COMPONENT]],
+  COLOR_0: [["VEC3", "VEC4"], [FLOAT_COMPONENT], [UNSIGNED_BYTE_COMPONENT, UNSIGNED_SHORT_COMPONENT]],
+  indices: [["SCALAR"], [UNSIGNED_BYTE_COMPONENT, UNSIGNED_SHORT_COMPONENT, UNSIGNED_INT_COMPONENT], []],
+})
 /**
  * Extensions whose semantics the adapter maps. Empty on purpose: `three-d-formats` enables no glTF
  * extension, so it rejects every required extension and ignores optional ones (including
@@ -207,8 +222,22 @@ function preflight(json, binLength) {
       // absent attribute; neither is a meaningful static mesh, so it is rejected explicitly.
       const referenced = [...Object.entries(attributes), ...(primitive.indices === undefined ? [] : [["indices", primitive.indices]])]
       for (const [semantic, accessor] of referenced) {
-        if (accessors[accessor].bufferView === undefined && accessors[accessor].sparse === undefined) {
+        const definition = accessors[accessor]
+        if (definition.bufferView === undefined && definition.sparse === undefined) {
           fail(`${label} ${semantic} accessor ${accessor} has no bufferView or sparse data; zero-initialized accessors are not supported`)
+        }
+        // Mirrors the glTF 2.0 semantic encodings the Rust loader enforces, so GLTFLoader cannot
+        // decode (and the adapter render) geometry with an encoding the authority rejects.
+        const [types, plain, normalizedOnly] = SEMANTIC_ENCODINGS[semantic]
+        const normalized = definition.normalized ?? false
+        const allowed = types.includes(definition.type) && (
+          semantic === "indices"
+            ? normalized === false && plain.includes(definition.componentType)
+            : (plain.includes(definition.componentType) && normalized === false) ||
+              (normalizedOnly.includes(definition.componentType) && normalized === true)
+        )
+        if (!allowed) {
+          fail(`${label} ${semantic} accessor ${accessor} uses an unsupported encoding (${String(definition.type)}, componentType ${String(definition.componentType)}${normalized ? ", normalized" : ""})`)
         }
       }
       if (primitive.material !== undefined) requireIndex(primitive.material, materials.length, `${label} material`)
