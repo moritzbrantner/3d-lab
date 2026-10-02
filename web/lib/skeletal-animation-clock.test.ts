@@ -4,6 +4,7 @@ import {
   CLIP_UI_PUBLISH_INTERVAL,
   createClipClock,
   MAX_CLIP_FRAME_DELTA,
+  prepareClipPlayback,
   setClipClockTime,
 } from "./skeletal-animation-clock";
 import { TEACHING_CLIP_DURATION } from "./skeletal-animation";
@@ -74,5 +75,41 @@ describe("skeletal animation clip clock", () => {
     setClipClockTime(clock, TEACHING_CLIP_DURATION);
     advanceClipClock(clock, 0.0625);
     expect(clock.time).toBeCloseTo(0.0625, 9);
+  });
+});
+
+describe("skeletal animation playback range", () => {
+  const range = { start: 0.5, end: 1.5 };
+
+  test("looping wraps inside the playback range", () => {
+    const clock = createClipClock(1.45);
+    advanceClipClock(clock, 0.1, { range });
+    expect(clock.time).toBeCloseTo(0.55, 9);
+    expect(clock.finished).toBe(false);
+  });
+
+  test("a time outside the range rejoins at the range start", () => {
+    const clock = createClipClock(0.1);
+    advanceClipClock(clock, 0.05, { range });
+    expect(clock.time).toBeCloseTo(0.55, 9);
+  });
+
+  test("a non-looping clip stops at the range end, publishes and reports finished", () => {
+    const clock = createClipClock(1.45);
+    expect(advanceClipClock(clock, 0.1, { range, loop: false })).toBe(true);
+    expect(clock.time).toBe(1.5);
+    expect(clock.finished).toBe(true);
+  });
+
+  test("prepareClipPlayback restarts a finished or out-of-range clock", () => {
+    const clock = createClipClock(1.5);
+    clock.finished = true;
+    prepareClipPlayback(clock, { range, loop: false });
+    expect(clock.time).toBe(0.5);
+    expect(clock.finished).toBe(false);
+
+    const inside = createClipClock(1);
+    prepareClipPlayback(inside, { range });
+    expect(inside.time).toBe(1);
   });
 });
