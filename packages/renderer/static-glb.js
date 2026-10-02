@@ -274,9 +274,37 @@ function preflight(json, binLength) {
   return {roots, ignoredExtensions}
 }
 
-async function decodeGltf(bytes) {
-  // Copy so the loader never observes caller-owned memory after this call.
-  const buffer = bytes.slice().buffer
+/**
+ * Re-packs the GLB with every extension declaration removed. Preflight already rejected required
+ * extensions, and the Rust loader enables none, so an optional extension (for example Draco with
+ * core fallback attributes) must not switch GLTFLoader onto an extension decoding path; it reads
+ * only the core accessors. The BIN chunk is copied unchanged.
+ */
+function coreGlb(bytes, json) {
+  const stripped = JSON.stringify(json, (key, value) =>
+    key === "extensions" || key === "extensionsUsed" || key === "extensionsRequired" ? undefined : value,
+  )
+  const encoded = new TextEncoder().encode(stripped)
+  const jsonLength = Math.ceil(encoded.byteLength / 4) * 4
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  const binStart = 20 + view.getUint32(12, true)
+  const bin = bytes.subarray(binStart)
+  const output = new Uint8Array(12 + 8 + jsonLength + bin.byteLength)
+  const out = new DataView(output.buffer)
+  out.setUint32(0, GLB_MAGIC, true)
+  out.setUint32(4, 2, true)
+  out.setUint32(8, output.byteLength, true)
+  out.setUint32(12, jsonLength, true)
+  out.setUint32(16, JSON_CHUNK, true)
+  output.fill(0x20, 20, 20 + jsonLength)
+  output.set(encoded, 20)
+  output.set(bin, 20 + jsonLength)
+  return output
+}
+
+async function decodeGltf(bytes, json) {
+  // A fresh copy, so the loader never observes caller-owned memory after this call.
+  const buffer = coreGlb(bytes, json).buffer
   try {
     return await new GLTFLoader().parseAsync(buffer, "")
   } catch (error) {
@@ -490,7 +518,7 @@ export async function adaptStaticGlb(source, options = {}) {
   const {roots, ignoredExtensions} = preflight(json, binLength)
   // Computed in script: `crypto.subtle` is missing outside secure contexts (plain-http pages).
   const resourceKey = options.resourceKey ?? `glb-sha256:${sha256Hex(bytes)}`
-  const {parser} = await decodeGltf(bytes)
+  const {parser} = await decodeGltf(bytes, json)
 
   const materials = Object.freeze(list(json, "materials", "static GLB").map(lowerMaterial))
   const primitiveCache = new Map()
@@ -619,6 +647,19 @@ function selectedDrawables(asset, filter) {
   return drawables
 }
 
+/** Mirrors the renderer's node/batch appearance rules so bad options fail as StaticGlbContractError. */
+function requireAppearance(options, label, {batch = false} = {}) {
+  if (options.opacity !== undefined && (!Number.isFinite(options.opacity) || options.opacity < 0 || options.opacity > 1)) {
+    fail(`${label} opacity must be between 0 and 1`)
+  }
+  for (const flag of ["wireframe", "visible"]) {
+    if (options[flag] !== undefined && typeof options[flag] !== "boolean") fail(`${label} ${flag} must be a boolean`)
+  }
+  if (batch && options.revision !== undefined && (typeof options.revision !== "string" || options.revision.length === 0)) {
+    fail(`${label} revision must be a non-empty string`)
+  }
+}
+
 function requireId(id) {
   if (typeof id !== "string" || id.length === 0) fail("static GLB placement id must be a non-empty string")
 }
@@ -631,6 +672,7 @@ function requireId(id) {
 export function staticGlbSceneNodes(asset, placement) {
   requireId(placement?.id)
   const label = `static GLB placement ${placement.id}`
+  requireAppearance(placement, label)
   const instance = placementMatrix(placement, label)
   return selectedDrawables(asset, placement.filter).map((drawable) => {
     const {material} = drawable
@@ -655,6 +697,7 @@ export function staticGlbSceneNodes(asset, placement) {
 export function staticGlbInstanceBatches(asset, options) {
   requireId(options?.id)
   if (!Array.isArray(options.instances)) fail(`static GLB batch ${options.id} instances must be an array`)
+  requireAppearance(options, `static GLB batch ${options.id}`, {batch: true})
   const label = (index) => `static GLB batch ${options.id}[${index}]`
   const instances = options.instances.map((instance, index) => placementMatrix(instance, label(index)))
   return selectedDrawables(asset, options.filter).map((drawable) => {

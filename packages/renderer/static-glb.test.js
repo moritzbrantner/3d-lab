@@ -420,6 +420,36 @@ describe("static GLB rejection", () => {
     expect(node).not.toHaveProperty("emissive")
   })
 
+  test("an optional Draco extension does not switch decoding off the core fallback accessors", async () => {
+    const plain = await adaptStaticGlb(rockBytes)
+    const asset = await adaptStaticGlb(mutated(rockDocument, (json) => {
+      json.extensionsUsed = ["KHR_draco_mesh_compression"]
+      json.meshes[0].primitives[0].extensions = {
+        KHR_draco_mesh_compression: {bufferView: 0, attributes: {POSITION: 0, NORMAL: 1}},
+      }
+    }))
+    expect(asset.ignoredExtensions).toEqual(["KHR_draco_mesh_compression"])
+    expect(asset.drawables[0].geometry.positions).toEqual(plain.drawables[0].geometry.positions)
+    expect(asset.drawables[0].geometry.indices).toEqual(plain.drawables[0].geometry.indices)
+  })
+
+  test("placement and batch appearance options are validated as contract errors", async () => {
+    const asset = await adaptStaticGlb(rockBytes)
+    const cases = [
+      [() => staticGlbSceneNodes(asset, {id: "rock", opacity: 2}), /opacity must be between 0 and 1/],
+      [() => staticGlbSceneNodes(asset, {id: "rock", opacity: Number.NaN}), /opacity must be between 0 and 1/],
+      [() => staticGlbSceneNodes(asset, {id: "rock", wireframe: "yes"}), /wireframe must be a boolean/],
+      [() => staticGlbSceneNodes(asset, {id: "rock", visible: 1}), /visible must be a boolean/],
+      [() => staticGlbInstanceBatches(asset, {id: "rocks", instances: [], opacity: -1}), /opacity must be between 0 and 1/],
+      [() => staticGlbInstanceBatches(asset, {id: "rocks", instances: [], revision: ""}), /revision must be a non-empty string/],
+      [() => staticGlbInstanceBatches(asset, {id: "rocks", instances: [], visible: "no"}), /visible must be a boolean/],
+    ]
+    for (const [call, pattern] of cases) {
+      expect(call).toThrow(StaticGlbContractError)
+      expect(call).toThrow(pattern)
+    }
+  })
+
   test("distinct default-scene roots still adapt", async () => {
     const asset = await adaptStaticGlb(mutated(treeDocument, (json) => {
       json.nodes[0].children = [1]
