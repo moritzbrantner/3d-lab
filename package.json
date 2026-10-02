@@ -18,6 +18,10 @@
     "./weighted-skin": {
       "types": "./packages/renderer/weighted-skin.d.ts",
       "import": "./packages/renderer/weighted-skin.js"
+    },
+    "./flipbook": {
+      "types": "./packages/renderer/flipbook.d.ts",
+      "import": "./packages/renderer/flipbook.js"
     }
   },
   "scripts": {
