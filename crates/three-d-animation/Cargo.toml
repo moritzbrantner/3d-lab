@@ -19,3 +19,7 @@ harness = false
 [[bench]]
 name = "retargeting"
 harness = false
+
+[[bench]]
+name = "clip_sampling_hot_path"
+harness = false
