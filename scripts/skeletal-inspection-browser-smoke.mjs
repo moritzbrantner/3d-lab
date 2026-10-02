@@ -37,11 +37,24 @@ try {
     await input.press("Enter");
   };
   const pickPoints = async () => {
-    await page.waitForFunction((el) => Boolean(el.dataset.pickPoints), await canvas.elementHandle());
-    return (await canvas.evaluate((el) => JSON.parse(el.dataset.pickPoints)))
+    // Points are published by the render loop; wait until they are unchanged across several
+    // frames so a just-committed time or selection has been rendered before clicking.
+    const settled = await canvas.evaluate(async (el) => {
+      const nextFrame = () => new Promise((resolve) => requestAnimationFrame(resolve));
+      let previous = el.dataset.pickPoints;
+      for (let stable = 0; stable < 3;) {
+        await nextFrame();
+        const current = el.dataset.pickPoints;
+        stable = current && current === previous ? stable + 1 : 0;
+        previous = current;
+      }
+      return previous;
+    });
+    return JSON.parse(settled)
       .map(([kind, id, x, y]) => ({ kind: kind === "j" ? "joint" : "vertex", id, x, y }));
   };
   const clickCanvasAt = async ({ x, y }) => {
+    await canvas.scrollIntoViewIfNeeded();
     const box = await canvas.boundingBox();
     await page.mouse.click(box.x + x, box.y + y);
   };
