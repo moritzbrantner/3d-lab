@@ -96,6 +96,10 @@ pub enum IkError {
     ReachBelowMinimum {
         layer: usize,
     },
+    /// A base-pose transform has a non-finite translation, rotation, or scale.
+    NonFiniteBasePose {
+        node: usize,
+    },
 }
 
 impl fmt::Display for IkError {
@@ -155,6 +159,10 @@ impl fmt::Display for IkError {
             Self::ReachBelowMinimum { layer } => write!(
                 formatter,
                 "IK layer {layer} max_reach is below the limb's minimum reach |upper - lower| in the current pose"
+            ),
+            Self::NonFiniteBasePose { node } => write!(
+                formatter,
+                "IK base pose transform for node {node} must be finite"
             ),
         }
     }
@@ -558,6 +566,15 @@ impl IkWorkspace {
         for (index, layer) in layers.iter().enumerate() {
             validate_layer(rig, index, layer)?;
         }
+        // Sampled clips and public transforms do not forbid NaN/infinity; reject
+        // them here instead of letting limb math produce NaN reach bounds.
+        if let Some(node) = base_pose.iter().position(|transform| {
+            !finite_vec3(transform.translation)
+                || !finite_quat(transform.rotation)
+                || !finite_vec3(transform.scale)
+        }) {
+            return Err(IkError::NonFiniteBasePose { node });
+        }
 
         output.copy_from_slice(base_pose);
         self.outcomes.clear();
@@ -676,7 +693,8 @@ impl IkWorkspace {
         let t = goal.target;
         let upper = (b - a).length();
         let lower = (c - b).length();
-        if upper <= EPSILON || lower <= EPSILON {
+        // Finite inputs can still compose to overflowing world positions.
+        if !(upper > EPSILON && lower > EPSILON && (upper + lower).is_finite()) || !finite_vec3(a) {
             return Err(IkError::DegenerateLimb { layer });
         }
 
@@ -702,11 +720,18 @@ impl IkWorkspace {
             .or_else(|| goal.pole.and_then(|pole| ac.cross(pole - a).normalized()))
             .unwrap_or_else(|| any_perpendicular(ab));
 
-        let current_root = angle_between(ac, ab);
         let current_mid = angle_between(a - b, c - b);
         let desired_root = law_of_cosines(upper, reach, lower);
         let desired_mid = law_of_cosines(upper, lower, reach);
-        let root_bend = axis_angle(axis, desired_root - current_root);
+        // A limb folded exactly back onto its root (equal bones, tip at the
+        // root) has no defined root angle. Opening the mid joint alone already
+        // yields the desired root-to-tip length; the aim step below then
+        // points it at the target and the pole twist sets the bend plane.
+        let root_bend = if ac.normalized().is_some() {
+            axis_angle(axis, desired_root - angle_between(ac, ab))
+        } else {
+            Quat::IDENTITY
+        };
         let mid_bend = axis_angle(axis, desired_mid - current_mid);
 
         let bent_mid = a + rotate(root_bend, ab);
@@ -1913,6 +1938,108 @@ mod tests {
         assert!(wide_limits > 1000);
         assert!(unblended_cases > 500);
         assert!(scaled_cases > 5, "only {scaled_cases} cap-scaled blends");
+    }
+
+    #[test]
+    fn fully_folded_equal_length_limb_reaches_its_target() {
+        // root(0) → mid(1) → tip(2) with unit bones folded so the tip sits on
+        // the root: the current root angle is undefined.
+        let rig = IkRig::new(vec![None, Some(0), Some(1)]).unwrap();
+        let mut base = vec![Transform::IDENTITY; 3];
+        base[1].translation = Vec3::new(1.0, 0.0, 0.0);
+        base[2].translation = Vec3::new(-1.0, 0.0, 0.0);
+        let chain = TwoBoneChain::new(&rig, 0, 1, 2).unwrap();
+        let mut workspace = IkWorkspace::new(3);
+        let mut output = vec![Transform::IDENTITY; 3];
+        for (target, pole) in [
+            (Vec3::new(0.0, 1.0, 0.0), None),
+            (Vec3::new(0.6, 0.0, 0.8), None),
+            (Vec3::new(0.0, 1.0, 0.0), Some(Vec3::new(0.0, 0.0, 5.0))),
+            (Vec3::new(1.5, 0.5, 0.0), None),
+        ] {
+            let mut goal = LimbGoal::new(chain, target);
+            goal.pole = pole;
+            workspace
+                .solve(
+                    &rig,
+                    &base,
+                    &[IkLayer::new(IkGoal::Limb(goal), 1.0)],
+                    &mut output,
+                )
+                .unwrap();
+            let outcome = workspace.outcomes()[0];
+            assert_eq!(outcome.status, IkStatus::Reached, "target {target:?}");
+            assert!(
+                outcome.residual < TOLERANCE,
+                "target {target:?}: {}",
+                outcome.residual
+            );
+            if pole.is_some() {
+                // The mid joint bends fully toward the +z pole: sin(60°) off the axis.
+                assert!(position(workspace.world[1]).z > 0.86);
+            }
+        }
+        // Arbitrarily oriented folded limbs.
+        let mut rng = Lcg(0xf01d_ed00_1234_5678);
+        for case in 0..500 {
+            let mut base = vec![Transform::IDENTITY; 3];
+            base[0].rotation = rng.unit_quat();
+            base[1].rotation = rng.unit_quat();
+            base[1].translation = Vec3::new(1.0, 0.0, 0.0);
+            base[2].translation =
+                rotate(quat_conjugate(base[1].rotation), Vec3::new(-1.0, 0.0, 0.0));
+            let direction = Vec3::new(rng.signed(), rng.signed(), rng.signed())
+                .normalized()
+                .unwrap_or(Vec3::new(0.0, 1.0, 0.0));
+            let target = direction * (0.2 + 1.7 * rng.next());
+            workspace
+                .solve(
+                    &rig,
+                    &base,
+                    &[IkLayer::new(
+                        IkGoal::Limb(LimbGoal::new(chain, target)),
+                        1.0,
+                    )],
+                    &mut output,
+                )
+                .unwrap();
+            let outcome = workspace.outcomes()[0];
+            assert_eq!(outcome.status, IkStatus::Reached, "case {case}");
+            assert!(
+                outcome.residual < TOLERANCE,
+                "case {case}: {}",
+                outcome.residual
+            );
+        }
+    }
+
+    #[test]
+    fn non_finite_base_pose_is_rejected_before_solving() {
+        let rig = rig();
+        let goal = IkGoal::Limb(LimbGoal::new(leg(&rig), Vec3::new(0.0, -1.0, 0.0)));
+        let mut workspace = IkWorkspace::new(rig.node_count());
+        let mut output = vec![Transform::IDENTITY; rig.node_count()];
+        for poison in [
+            |t: &mut Transform| t.translation.x = f32::NAN,
+            |t: &mut Transform| t.scale.y = f32::INFINITY,
+            |t: &mut Transform| t.rotation.w = f32::NAN,
+        ] {
+            let mut base = vec![Transform::IDENTITY; rig.node_count()];
+            poison(&mut base[2]);
+            assert_eq!(
+                workspace.solve(&rig, &base, &[IkLayer::new(goal, 1.0)], &mut output),
+                Err(IkError::NonFiniteBasePose { node: 2 })
+            );
+        }
+        // Finite inputs whose composition overflows are a degenerate limb.
+        let mut base = vec![Transform::IDENTITY; rig.node_count()];
+        base[1].translation = Vec3::new(0.0, -1.0, 0.0);
+        base[2].translation = Vec3::new(0.0, -f32::MAX, 0.0);
+        base[3].translation = Vec3::new(0.0, -f32::MAX, 0.0);
+        assert_eq!(
+            workspace.solve(&rig, &base, &[IkLayer::new(goal, 1.0)], &mut output),
+            Err(IkError::DegenerateLimb { layer: 0 })
+        );
     }
 
     #[test]
