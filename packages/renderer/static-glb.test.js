@@ -285,6 +285,9 @@ describe("static GLB rejection", () => {
     ["VEC2 POSITION type", () => mutated(rockDocument, (json) => {
       json.accessors[json.meshes[0].primitives[0].attributes.POSITION].type = "VEC2"
     }), /POSITION accessor \d+ uses an unsupported encoding \(VEC2/],
+    ["unused external image URI", () => mutated(rockDocument, (json) => {
+      json.images = [{uri: "albedo.png"}]
+    }), /image 0 uses an external URI/],
     ["misaligned normals", () => mutated(rockDocument, (json) => {
       json.accessors[json.meshes[0].primitives[0].attributes.NORMAL].count = 3
     }), /NORMAL must be 3-component and align/],

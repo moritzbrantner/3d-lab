@@ -166,6 +166,14 @@ function preflight(json, binLength) {
       fail(`bufferView ${index} exceeds its buffer`)
     }
   })
+  // The Rust loader loads every declared image, used or not, and rejects external URIs
+  // (`UnsupportedGltfImageUri`); only embedded data URIs and bufferView images are self-contained.
+  objectList(json, "images", "static GLB").forEach((image, index) => {
+    if (image.uri !== undefined && (typeof image.uri !== "string" || !image.uri.startsWith("data:"))) {
+      fail(`static GLB image ${index} uses an external URI; package a self-contained GLB`)
+    }
+    if (image.bufferView !== undefined) requireIndex(image.bufferView, bufferViews.length, `image ${index} bufferView`)
+  })
   const accessors = objectList(json, "accessors", "static GLB")
   accessors.forEach((accessor, index) => {
     if (accessor.bufferView !== undefined) requireIndex(accessor.bufferView, bufferViews.length, `accessor ${index} bufferView`)
