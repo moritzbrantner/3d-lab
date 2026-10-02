@@ -202,6 +202,15 @@ function preflight(json, binLength) {
       if (attributes.POSITION === undefined) fail(`${label} is missing POSITION`)
       if (attributes.NORMAL === undefined) fail(`${label} is missing NORMAL; generated flat normals are not supported`)
       if (primitive.indices !== undefined) requireIndex(primitive.indices, accessors.length, `${label} indices accessor`)
+      // A glTF accessor with neither bufferView nor sparse is zero-initialized. GLTFLoader would
+      // materialize zeros (older versions resolve null), while `three-d-formats` reads it as an
+      // absent attribute; neither is a meaningful static mesh, so it is rejected explicitly.
+      const referenced = [...Object.entries(attributes), ...(primitive.indices === undefined ? [] : [["indices", primitive.indices]])]
+      for (const [semantic, accessor] of referenced) {
+        if (accessors[accessor].bufferView === undefined && accessors[accessor].sparse === undefined) {
+          fail(`${label} ${semantic} accessor ${accessor} has no bufferView or sparse data; zero-initialized accessors are not supported`)
+        }
+      }
       if (primitive.material !== undefined) requireIndex(primitive.material, materials.length, `${label} material`)
     })
   })

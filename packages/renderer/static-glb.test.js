@@ -260,6 +260,15 @@ describe("static GLB rejection", () => {
       delete json.scene
       json.scenes = []
     }), /no scene/],
+    ["zero-initialized POSITION accessor", () => mutated(rockDocument, (json) => {
+      delete json.accessors[json.meshes[0].primitives[0].attributes.POSITION].bufferView
+    }), /has no bufferView or sparse data; zero-initialized accessors are not supported/],
+    ["zero-initialized NORMAL accessor", () => mutated(rockDocument, (json) => {
+      delete json.accessors[json.meshes[0].primitives[0].attributes.NORMAL].bufferView
+    }), /NORMAL accessor \d+ has no bufferView or sparse data/],
+    ["zero-initialized indices accessor", () => mutated(rockDocument, (json) => {
+      delete json.accessors[json.meshes[0].primitives[0].indices].bufferView
+    }), /indices accessor \d+ has no bufferView or sparse data/],
     ["misaligned normals", () => mutated(rockDocument, (json) => {
       json.accessors[json.meshes[0].primitives[0].attributes.NORMAL].count = 3
     }), /NORMAL must be 3-component and align/],
