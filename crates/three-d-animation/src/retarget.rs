@@ -205,11 +205,11 @@ impl fmt::Display for RetargetError {
 
 impl std::error::Error for RetargetError {}
 
-fn finite_vec3(value: Vec3) -> bool {
+pub(crate) fn finite_vec3(value: Vec3) -> bool {
     value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
 }
 
-fn finite_quat(value: Quat) -> bool {
+pub(crate) fn finite_quat(value: Quat) -> bool {
     value.x.is_finite() && value.y.is_finite() && value.z.is_finite() && value.w.is_finite()
 }
 
@@ -224,11 +224,11 @@ fn valid_transform(value: Transform, require_invertible_scale: bool) -> bool {
                 && value.scale.z.abs() > EPSILON))
 }
 
-fn quat_conjugate(value: Quat) -> Quat {
+pub(crate) fn quat_conjugate(value: Quat) -> Quat {
     Quat::new(-value.x, -value.y, -value.z, value.w)
 }
 
-fn quat_mul(left: Quat, right: Quat) -> Quat {
+pub(crate) fn quat_mul(left: Quat, right: Quat) -> Quat {
     Quat::new(
         left.w * right.x + left.x * right.w + left.y * right.z - left.z * right.y,
         left.w * right.y - left.x * right.z + left.y * right.w + left.z * right.x,

@@ -21,5 +21,9 @@ name = "retargeting"
 harness = false
 
 [[bench]]
+name = "layered_ik"
+harness = false
+
+[[bench]]
 name = "clip_sampling_hot_path"
 harness = false
