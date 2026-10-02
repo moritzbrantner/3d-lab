@@ -16,7 +16,7 @@ import * as THREE from "three"
  * @param {MaterialInput} input
  */
 export function materialKey({node, vertexColors}) {
-  return `${String(node.color)}:${node.opacity ?? 1}:${node.wireframe === true}:${vertexColors}:${shadingKey(node)}`
+  return `${String(node.color)}:${node.opacity ?? 1}:${node.wireframe === true}:${vertexColors}:${shadingKey(node)}:${node.doubleSided === true}`
 }
 
 function shadingKey(node) {
@@ -31,13 +31,14 @@ function shadingKey(node) {
  * share one material (and share it with equally configured white lit nodes). Batches take no
  * `emissive` or `unlit` shading.
  *
- * @param {{opacity?: number, wireframe?: boolean}} batch
+ * @param {{opacity?: number, wireframe?: boolean, doubleSided?: boolean}} batch
  * @param {object} [target]
  */
 export function instanceBatchMaterialNode(batch, target = {}) {
   target.color = 0xffffff
   target.opacity = batch.opacity ?? 1
   target.wireframe = batch.wireframe === true
+  target.doubleSided = batch.doubleSided === true
   return target
 }
 
@@ -49,6 +50,8 @@ export function createMaterial({node, vertexColors}) {
     opacity,
     transparent: opacity < 1,
     wireframe: node.wireframe === true,
+    // Single-sided (back faces culled) unless the node opts into rendering both faces.
+    side: node.doubleSided === true ? THREE.DoubleSide : THREE.FrontSide,
     // Vertex colors multiply the node color, so white nodes show the vertex colors unchanged.
     vertexColors,
   }

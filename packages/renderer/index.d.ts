@@ -94,7 +94,7 @@ export type IndexedMeshGeometry = {
   kind: "mesh"
   /**
    * Stable immutable identity for this exact geometry payload, including positions, indices,
-   * normals, and colors. Geometry is cached by this key alone, so a payload with different
+   * normals, uvs, and colors. Geometry is cached by this key alone, so a payload with different
    * contents (for example recolored terrain) needs a different key.
    * Content-addressed asset hashes are the preferred downstream value.
    */
@@ -102,6 +102,11 @@ export type IndexedMeshGeometry = {
   positions: ReadonlyArray<readonly [number, number, number]>
   indices: ReadonlyArray<number>
   normals?: ReadonlyArray<readonly [number, number, number]>
+  /**
+   * Per-vertex texture coordinates (UV0), aligned one-to-one with positions. Materialized as the
+   * `uv` attribute; no current material samples a texture, so they do not change shading yet.
+   */
+  uvs?: ReadonlyArray<readonly [number, number]>
   /**
    * Per-vertex sRGB colors with components in 0..1, aligned one-to-one with positions. They
    * multiply the node color in linear space, so a `#ffffff` node shows them unchanged.
@@ -128,11 +133,13 @@ type RendererNodeBase = {
   opacity?: number
   wireframe?: boolean
   visible?: boolean
+  /** Render back faces too instead of culling them. Defaults to false (single-sided). */
+  doubleSided?: boolean
 }
 
 /**
- * How a node responds to light. Nodes with equal color, opacity, wireframe, vertex-color use,
- * and shading share one material.
+ * How a node responds to light. Nodes with equal color, opacity, wireframe, sidedness,
+ * vertex-color use, and shading share one material.
  */
 export type RendererNodeShading =
   | {
@@ -193,6 +200,8 @@ export type RendererInstanceBatch = {
   opacity?: number
   wireframe?: boolean
   visible?: boolean
+  /** Render back faces too instead of culling them. Defaults to false (single-sided). */
+  doubleSided?: boolean
   /**
    * Stable identity for the exact instance payload (instances plus batch color). When present
    * and unchanged since the previous frame, the renderer skips re-uploading instance data.
