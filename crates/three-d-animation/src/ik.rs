@@ -37,6 +37,10 @@ const EPSILON: f32 = 1.0e-6;
 const REACH_TOLERANCE: f32 = 1.0e-4;
 /// Remaining aim angle (radians) below which a look-at layer counts as reached.
 const LOOK_AT_ANGLE_TOLERANCE: f32 = 1.0e-3;
+/// Fixed bisection steps used to scale a blended look-at layer back inside
+/// its angle cap. Each step composes only the chain's local rotations (no
+/// hierarchy refresh), so the work stays bounded and allocation-free.
+const LOOK_AT_BLEND_SCALE_STEPS: usize = 20;
 /// Slack applied to the inclusive minimum reach fraction so a fraction
 /// computed exactly as `|upper - lower| / (upper + lower)` still solves despite
 /// `f32` rounding.
@@ -586,27 +590,29 @@ impl IkWorkspace {
                 }
             };
 
+            let mut solved = Snapshot::default();
             let mut first_blended = usize::MAX;
             for &(joint, original) in snapshot.as_slice() {
-                let factor = layer.weight * layer.mask.map_or(1.0, |mask| mask.weight(joint));
-                let solved = output[joint].rotation;
-                output[joint].rotation = if factor >= 1.0 {
-                    solved
-                } else if factor <= 0.0 {
-                    original
-                } else {
-                    original.slerp(solved, factor)
-                };
-                if output[joint].rotation != solved {
+                let factor = layer_factor(layer, joint);
+                let rotation = output[joint].rotation;
+                solved.push(joint, rotation);
+                output[joint].rotation = blend_rotation(original, rotation, factor);
+                if output[joint].rotation != rotation {
                     first_blended = first_blended.min(joint);
                 }
                 stats.joints_written += 1;
             }
             if first_blended != usize::MAX {
-                stats.world_nodes_updated += self.refresh(rig, output, first_blended);
-                if let Some((goal, initial)) = look_at {
-                    self.limit_blended_look_at(rig, output, &goal, initial, layer, &mut stats);
+                // Scaling the blend can also move joints that were fully
+                // applied, so the refresh then starts at the first chain joint.
+                if let Some((goal, initial)) = look_at
+                    && self.limit_blended_look_at(
+                        rig, output, &goal, initial, layer, &snapshot, &solved,
+                    )
+                {
+                    first_blended = first_blended.min(goal.chain.joints()[0]);
                 }
+                stats.world_nodes_updated += self.refresh(rig, output, first_blended);
             }
 
             if status == IkStatus::Clamped {
@@ -649,7 +655,10 @@ impl IkWorkspace {
             .parent(joint)
             .map_or(Quat::IDENTITY, |parent| self.world_rotation[parent]);
         let local_delta = quat_mul(quat_mul(quat_conjugate(parent), delta), parent);
-        pose[joint].rotation = quat_mul(local_delta, pose[joint].rotation);
+        // An unnormalizable base rotation is identity, as in `refresh`, `Mat4::rotation` and
+        // `Quat::slerp`; multiplying a zero quaternion would leave the joint unable to rotate.
+        let base = pose[joint].rotation.normalized().unwrap_or(Quat::IDENTITY);
+        pose[joint].rotation = quat_mul(local_delta, base);
     }
 
     fn solve_limb(
@@ -802,32 +811,71 @@ impl IkWorkspace {
     /// Re-enforces `max_angle` after the layer weight and joint mask blended
     /// each chain joint toward its solved rotation independently. Only the
     /// fully solved pose is guaranteed to lie inside the permitted cap; a
-    /// per-joint blend of it is not, so any excess is removed by rotating the
-    /// deepest chain joint this layer is allowed to move.
+    /// per-joint blend of it is not. If the blend leaves the cap, every
+    /// joint's blend fraction is scaled by one common factor `s` in `[0, 1)`
+    /// (found by a fixed-count bisection; `s = 0` is the pre-layer aim, which
+    /// is inside the cap), so each joint still lies on its pre-layer → solved
+    /// SLERP, relative weights are kept, and zero-weight joints never move.
+    /// Only rotations are composed here; the caller refreshes the hierarchy.
+    #[allow(clippy::too_many_arguments)]
     fn limit_blended_look_at(
-        &mut self,
+        &self,
         rig: &IkRig,
         pose: &mut [Transform],
         goal: &LookAtGoal,
         initial: Vec3,
         layer: &IkLayer<'_>,
-        stats: &mut IkSolveStats,
-    ) {
+        original: &Snapshot,
+        solved: &Snapshot,
+    ) -> bool {
         let chain = &goal.chain;
-        let forward = self.aim_direction(chain);
-        let (limited, exceeded) = clamp_direction(initial, forward, goal.max_angle);
-        if !exceeded {
-            return;
-        }
-        let Some(&joint) =
-            chain.joints().iter().rev().find(|&&joint| {
-                layer.weight * layer.mask.map_or(1.0, |mask| mask.weight(joint)) > 0.0
-            })
-        else {
-            return;
+        let exceeds = |pose: &[Transform]| {
+            let forward = rotate(self.chain_aim_rotation(rig, pose, chain), chain.forward);
+            clamp_direction(initial, forward, goal.max_angle).1
         };
-        self.rotate_world(rig, pose, joint, from_to(forward, limited));
-        stats.world_nodes_updated += self.refresh(rig, pose, joint);
+        if !exceeds(pose) {
+            return false;
+        }
+        let apply = |pose: &mut [Transform], scale: f32| {
+            for (&(joint, from), &(_, to)) in original.as_slice().iter().zip(solved.as_slice()) {
+                pose[joint].rotation = blend_rotation(from, to, layer_factor(layer, joint) * scale);
+            }
+        };
+        let (mut inside, mut outside) = (0.0_f32, 1.0_f32);
+        for _ in 0..LOOK_AT_BLEND_SCALE_STEPS {
+            let scale = 0.5 * (inside + outside);
+            apply(pose, scale);
+            if exceeds(pose) {
+                outside = scale;
+            } else {
+                inside = scale;
+            }
+        }
+        apply(pose, inside);
+        true
+    }
+
+    /// World rotation of the chain's aim joint for `pose`, composed from the
+    /// first chain joint's (unchanged) parent world rotation.
+    fn chain_aim_rotation(&self, rig: &IkRig, pose: &[Transform], chain: &LookAtChain) -> Quat {
+        let first = chain.joints()[0];
+        let mut node = chain.aim_joint();
+        let mut rotation = Quat::IDENTITY;
+        loop {
+            let local = pose[node].rotation.normalized().unwrap_or(Quat::IDENTITY);
+            rotation = quat_mul(local, rotation);
+            if node == first {
+                break;
+            }
+            match rig.parent(node) {
+                Some(parent) => node = parent,
+                None => break,
+            }
+        }
+        let base = rig
+            .parent(first)
+            .map_or(Quat::IDENTITY, |parent| self.world_rotation[parent]);
+        quat_mul(base, rotation)
     }
 
     fn residual(&self, goal: &IkGoal) -> f32 {
@@ -943,6 +991,20 @@ impl JointList {
     }
 }
 
+fn layer_factor(layer: &IkLayer<'_>, joint: usize) -> f32 {
+    layer.weight * layer.mask.map_or(1.0, |mask| mask.weight(joint))
+}
+
+fn blend_rotation(original: Quat, solved: Quat, factor: f32) -> Quat {
+    if factor >= 1.0 {
+        solved
+    } else if factor <= 0.0 {
+        original
+    } else {
+        original.slerp(solved, factor)
+    }
+}
+
 fn affected_joints(goal: &IkGoal) -> JointList {
     match goal {
         IkGoal::Limb(goal) => JointList {
@@ -1050,6 +1112,12 @@ mod tests {
     use core::f32::consts::FRAC_PI_2;
 
     const TOLERANCE: f32 = 1.0e-3;
+
+    fn quat_angle(a: Quat, b: Quat) -> f32 {
+        let a = a.normalized().unwrap();
+        let b = b.normalized().unwrap();
+        2.0 * a.dot(b).abs().min(1.0).acos()
+    }
 
     /// hips(0) → upper leg(1) → lower leg(2) → foot(3); spine(4) → head(5);
     /// upper arm(6) → lower arm(7) → hand(8) under the spine.
@@ -1722,6 +1790,7 @@ mod tests {
         let mut output = vec![Transform::IDENTITY; rig.node_count()];
         let mut wide_limits = 0;
         let mut unblended_cases = 0;
+        let mut scaled_cases = 0;
         for case in 0..4000 {
             let mut base = vec![Transform::IDENTITY; rig.node_count()];
             for transform in base.iter_mut().skip(1) {
@@ -1774,8 +1843,61 @@ mod tests {
             if masked {
                 layer = layer.with_mask(&mask);
             }
+            let mut full = vec![Transform::IDENTITY; rig.node_count()];
+            workspace
+                .solve(
+                    &rig,
+                    &base,
+                    &[IkLayer::new(IkGoal::LookAt(goal), 1.0)],
+                    &mut full,
+                )
+                .unwrap();
             workspace.solve(&rig, &base, &[layer], &mut output).unwrap();
             let aimed = rotate(workspace.world_rotation(3).unwrap(), forward);
+            // The cap is enforced without bypassing weights: every joint stays
+            // on its pre-layer → solved SLERP at no more than its effective
+            // weight, all scaled by one common factor, and a joint with zero
+            // effective weight keeps its base rotation exactly.
+            let mut common_scale: Option<f32> = None;
+            for joint in 1..4 {
+                let factor = layer_weight * if masked { mask.weight(joint) } else { 1.0 };
+                if factor <= 0.0 {
+                    assert_eq!(output[joint].rotation, base[joint].rotation, "case {case}");
+                    continue;
+                }
+                let solved_angle = quat_angle(base[joint].rotation, full[joint].rotation);
+                // f32 `acos` near one is too coarse to compare tiny arcs.
+                if solved_angle * factor < 0.2 {
+                    continue;
+                }
+                let traveled = quat_angle(base[joint].rotation, output[joint].rotation);
+                let scale = traveled / (solved_angle * factor);
+                assert!(
+                    scale <= 1.0 + 1.0e-2,
+                    "case {case}: joint {joint} scale {scale}"
+                );
+                let off_path = quat_angle(
+                    base[joint]
+                        .rotation
+                        .slerp(full[joint].rotation, (traveled / solved_angle).min(1.0)),
+                    output[joint].rotation,
+                );
+                assert!(
+                    off_path < 1.0e-2,
+                    "case {case}: joint {joint} left its SLERP by {off_path}"
+                );
+                if let Some(common) = common_scale {
+                    assert!(
+                        (common - scale).abs() < 2.0e-2,
+                        "case {case}: scales {common} vs {scale}"
+                    );
+                } else {
+                    common_scale = Some(scale);
+                }
+            }
+            if common_scale.is_some_and(|scale| scale < 0.98) {
+                scaled_cases += 1;
+            }
             let deviation = angle_between(initial, aimed);
             assert!(
                 deviation <= max_angle + TOLERANCE,
@@ -1790,5 +1912,40 @@ mod tests {
         }
         assert!(wide_limits > 1000);
         assert!(unblended_cases > 500);
+        assert!(scaled_cases > 5, "only {scaled_cases} cap-scaled blends");
+    }
+
+    #[test]
+    fn zero_length_base_rotation_is_identity_for_ik_deltas() {
+        // An unnormalizable base rotation means identity elsewhere in the
+        // crate; the solver must still rotate the joint, not keep it zero.
+        let rig = rig();
+        let mut base = vec![Transform::IDENTITY; rig.node_count()];
+        let mut identity_base = base.clone();
+        base[5].rotation = Quat::new(0.0, 0.0, 0.0, 0.0);
+        identity_base[5].rotation = Quat::IDENTITY;
+        let chain = LookAtChain::new(&rig, &[(5, 1.0)], Vec3::new(0.0, 0.0, 1.0)).unwrap();
+        let goal = IkGoal::LookAt(LookAtGoal {
+            chain,
+            target: Vec3::new(2.0, 2.0, 2.0),
+            max_angle: PI,
+        });
+        let mut workspace = IkWorkspace::new(rig.node_count());
+        let mut output = vec![Transform::IDENTITY; rig.node_count()];
+        workspace
+            .solve(&rig, &base, &[IkLayer::new(goal, 1.0)], &mut output)
+            .unwrap();
+        assert_eq!(workspace.outcomes()[0].status, IkStatus::Reached);
+        assert!(workspace.outcomes()[0].residual < TOLERANCE);
+        let mut expected = vec![Transform::IDENTITY; rig.node_count()];
+        workspace
+            .solve(
+                &rig,
+                &identity_base,
+                &[IkLayer::new(goal, 1.0)],
+                &mut expected,
+            )
+            .unwrap();
+        assert!(quat_angle(output[5].rotation, expected[5].rotation) < TOLERANCE);
     }
 }

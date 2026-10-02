@@ -118,7 +118,12 @@ slice order. Source clips and the base pose are never written.
   joints with per-joint weights and a maximum total deviation angle.
 - Each layer has a weight in `[0, 1]` and an optional per-joint `JointMask`;
   affected joints blend local rotations from the pre-layer pose with shortest-arc
-  SLERP. Weight zero leaves the pose bit-identical.
+  SLERP. Weight zero leaves the pose bit-identical. If a blended look-at would
+  exceed its `max_angle`, all of that layer's blend fractions are scaled by one
+  common factor (fixed-count bisection) until the aim is inside the cap, so each
+  joint stays on its pre-layer → solved SLERP and zero-weight joints never move.
+- An unnormalizable (zero-length) base rotation is treated as identity, as in
+  `Mat4::rotation` and `Quat::slerp`.
 - Work is bounded: at most `MAX_IK_LAYERS` layers, no iteration, and at most
   `MAX_WORLD_PASSES_PER_LAYER` hierarchy refreshes per layer, each starting at
   the first changed joint. Solves reuse workspace storage and do not allocate.
