@@ -45,6 +45,8 @@
 - [x] Expand glTF anatomy from animation-only to meshes/materials/assets.
 - [x] Add OBJ and glTF mesh loading and validation.
 - [x] Let the reusable browser renderer consume content-identified indexed mesh geometry without becoming a file-format or provenance authority.
+- [x] Lower validated static GLBs (hierarchy, transforms, UV0/vertex-color geometry, factor materials) once into shared renderer resources through a public `static-glb` adapter that rejects textures, emissive, alpha, skins, animations, and morph targets.
+- [ ] Add textured PBR materials (#86) and imported skinned/animated assets (#87) to the static GLB path, and a native static-asset path through `three-d-formats` plus a scene-layer hierarchy.
 - [x] Add renderer-independent tangent attributes and deterministic tangent derivation.
 - [x] Preserve glTF `TANGENT` attributes and teach tangent-space normal-map shading interactively.
 - [x] Preserve encoded image/texture data and glTF normal-texture bindings through `three-d-assets`.
@@ -99,6 +101,7 @@
 - [x] Add topology structural work budgets, deterministic topology runtime evidence, and weekly same-surface runtime calibration.
 - [x] Replace per-operation flat topology rematerialization with persistent vertex/attribute chunks and localized triangle chunks; materialize contiguous `IndexedMesh` data only at explicit compatibility/render/export boundaries.
 - [x] Replace repeated full topology adjacency rebuilds with a lazily built vertex-incidence cache that follows localized chunk replacements and undo/redo without entering semantic history.
+- [x] Add pre-resolved, allocation-free compiled clip sampling with cursor/binary-search key lookup, bit-for-bit parity against the reference sampler, an optional 16-bit quantized track store with an explicit fail-closed error budget, and raw single-character/crowd benchmark evidence.
 - [x] Add bounded cosmetic baked-flipbook playback to the reusable renderer with renderer-independent fixed-time sampling, explicit budgets/release, and effect work observations (#85).
 - [ ] Prove the cosmetic flipbook capability with a real Raid Defense impact plus a second consumer, and add a seeded burst evaluator only if a consumer needs independently moving particles (#85).
 - [ ] Reduce renderer-side full topology materialization and whole `BufferGeometry` replacement where browser evidence shows it is material.

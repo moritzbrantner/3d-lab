@@ -46,6 +46,7 @@ describe("scene node materials", () => {
       request({}, true),
       request({emissive: "#ff8800"}),
       request({unlit: true}),
+      request({doubleSided: true}),
     ]) {
       expect(materialKey(variant)).not.toBe(base)
     }
@@ -115,6 +116,7 @@ describe("instance batch materials", () => {
       batchRequest({opacity: 0.5}),
       batchRequest({wireframe: true}),
       batchRequest({}, true),
+      batchRequest({doubleSided: true}),
     ]) {
       expect(materialKey(variant)).not.toBe(base)
     }
@@ -124,7 +126,7 @@ describe("instance batch materials", () => {
   test("the batch node is written into a reused target", () => {
     const target = {}
     expect(instanceBatchMaterialNode({opacity: 0.25}, target)).toBe(target)
-    expect(instanceBatchMaterialNode({}, target)).toEqual({color: 0xffffff, opacity: 1, wireframe: false})
+    expect(instanceBatchMaterialNode({}, target)).toEqual({color: 0xffffff, opacity: 1, wireframe: false, doubleSided: false})
   })
 })
 

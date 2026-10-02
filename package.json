@@ -19,6 +19,10 @@
       "types": "./packages/renderer/weighted-skin.d.ts",
       "import": "./packages/renderer/weighted-skin.js"
     },
+    "./static-glb": {
+      "types": "./packages/renderer/static-glb.d.ts",
+      "import": "./packages/renderer/static-glb.js"
+    },
     "./flipbook": {
       "types": "./packages/renderer/flipbook.d.ts",
       "import": "./packages/renderer/flipbook.js"
