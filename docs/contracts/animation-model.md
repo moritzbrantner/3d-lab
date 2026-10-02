@@ -135,7 +135,9 @@ slice order. Source clips and the base pose are never written.
   joint stays on its pre-layer → solved SLERP and zero-weight joints never move.
 - An unnormalizable (zero-length) base rotation is treated as identity, as in
   `Mat4::rotation` and `Quat::slerp`. A base pose with a non-finite
-  translation, rotation, or scale is rejected with `IkError::NonFiniteBasePose`.
+  translation, rotation, or scale is rejected with `IkError::NonFiniteBasePose`,
+  and finite transforms that compose to non-finite world positions for a solved
+  limb or look-at chain with `IkError::NonFiniteWorldPose`.
 - Work is bounded: at most `MAX_IK_LAYERS` layers, no iteration, and at most
   `MAX_WORLD_PASSES_PER_LAYER` hierarchy refreshes per layer, each starting at
   the first changed joint. Solves reuse workspace storage and do not allocate.

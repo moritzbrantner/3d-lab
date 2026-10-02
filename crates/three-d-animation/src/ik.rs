@@ -100,6 +100,11 @@ pub enum IkError {
     NonFiniteBasePose {
         node: usize,
     },
+    /// Finite local transforms composed to a non-finite world position for a
+    /// joint this layer solves (for example an overflowing scale chain).
+    NonFiniteWorldPose {
+        layer: usize,
+    },
 }
 
 impl fmt::Display for IkError {
@@ -163,6 +168,10 @@ impl fmt::Display for IkError {
             Self::NonFiniteBasePose { node } => write!(
                 formatter,
                 "IK base pose transform for node {node} must be finite"
+            ),
+            Self::NonFiniteWorldPose { layer } => write!(
+                formatter,
+                "IK layer {layer} joints compose to a non-finite world position"
             ),
         }
     }
@@ -601,6 +610,16 @@ impl IkWorkspace {
             let status = match layer.goal {
                 IkGoal::Limb(goal) => self.solve_limb(rig, output, &goal, index, &mut stats)?,
                 IkGoal::LookAt(goal) => {
+                    // Overflowed positions would make every aim direction
+                    // unnormalizable and silently read as zero angle.
+                    if goal
+                        .chain
+                        .joints()
+                        .iter()
+                        .any(|&joint| !finite_vec3(self.position(joint)))
+                    {
+                        return Err(IkError::NonFiniteWorldPose { layer: index });
+                    }
                     let initial = self.aim_direction(&goal.chain);
                     look_at = Some((goal, initial));
                     self.solve_look_at(rig, output, &goal, initial, &mut stats)
@@ -694,7 +713,10 @@ impl IkWorkspace {
         let upper = (b - a).length();
         let lower = (c - b).length();
         // Finite inputs can still compose to overflowing world positions.
-        if !(upper > EPSILON && lower > EPSILON && (upper + lower).is_finite()) || !finite_vec3(a) {
+        if !(finite_vec3(a) && finite_vec3(b) && finite_vec3(c) && (upper + lower).is_finite()) {
+            return Err(IkError::NonFiniteWorldPose { layer });
+        }
+        if upper <= EPSILON || lower <= EPSILON {
             return Err(IkError::DegenerateLimb { layer });
         }
 
@@ -2031,14 +2053,32 @@ mod tests {
                 Err(IkError::NonFiniteBasePose { node: 2 })
             );
         }
-        // Finite inputs whose composition overflows are a degenerate limb.
+        // Finite inputs whose composition overflows are rejected for limbs
+        // and look-at chains alike.
         let mut base = vec![Transform::IDENTITY; rig.node_count()];
         base[1].translation = Vec3::new(0.0, -1.0, 0.0);
         base[2].translation = Vec3::new(0.0, -f32::MAX, 0.0);
         base[3].translation = Vec3::new(0.0, -f32::MAX, 0.0);
         assert_eq!(
             workspace.solve(&rig, &base, &[IkLayer::new(goal, 1.0)], &mut output),
-            Err(IkError::DegenerateLimb { layer: 0 })
+            Err(IkError::NonFiniteWorldPose { layer: 0 })
+        );
+        let mut base = vec![Transform::IDENTITY; rig.node_count()];
+        base[4].scale = Vec3::new(f32::MAX, f32::MAX, f32::MAX);
+        base[5].translation = Vec3::new(0.0, 2.0, 0.0);
+        let look = IkGoal::LookAt(LookAtGoal {
+            chain: LookAtChain::new(&rig, &[(5, 1.0)], Vec3::new(0.0, 0.0, 1.0)).unwrap(),
+            target: Vec3::new(1.0, 1.0, 1.0),
+            max_angle: PI,
+        });
+        assert_eq!(
+            workspace.solve(
+                &rig,
+                &base,
+                &[IkLayer::new(goal, 0.0), IkLayer::new(look, 1.0)],
+                &mut output
+            ),
+            Err(IkError::NonFiniteWorldPose { layer: 1 })
         );
     }
 
