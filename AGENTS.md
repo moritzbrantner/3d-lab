@@ -33,5 +33,3 @@ These rules govern how work is sliced and when expensive checks run. They never 
 - **Codex reviews the PR.** Codex reviews automatically when a PR is opened or marked ready, so open it (or mark a draft ready) only once the branch is complete. Address or explicitly answer every Codex finding before merge; after substantial fixes, comment `@codex review` for another pass.
 - **Decide and continue.** When a task leaves a design choice open, pick the simplest option consistent with this file, record it in the PR description (or in `docs/contracts/` when consequential) and keep going.
 - **Short PR descriptions.** At most about 15 lines: what changed, contract/format/compatibility changes, one line naming the checks that ran, and anything not verified. Leave detailed evidence to CI and the tests.
-
-Tasks arrive as GitHub issues in the format, labels and pickup rules of `docs/AGENT_TASKS.md`; implement only `spec:ready` issues labeled for you. Claude Opus runs the loop with the `/agent-loop` skill (`.claude/skills/agent-loop/`); ChatGPT Sol uses the Codex `implementer-loop` skill (`.agents/skills/implementer-loop/`).
