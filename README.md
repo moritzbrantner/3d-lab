@@ -100,6 +100,8 @@ bun install
 
 The renderer receives explicit view/projection and model matrices. It must not become an alternate authority for camera, transform, simulation, placement, or physics semantics.
 
+Validated static GLB assets (for example asset-tooling rocks and trees) are lowered once through `@moritzbrantner/three-d-renderer/static-glb` into shared, content-identified renderer geometry; see [`docs/contracts/browser-renderer.md`](docs/contracts/browser-renderer.md#static-glb-assets).
+
 Repeated content can be submitted as instance batches (one draw call per batch); see [`docs/contracts/performance-observability.md`](docs/contracts/performance-observability.md#instance-batches).
 
 Cosmetic impact/puff effects can be submitted as bounded baked flipbooks (`frame.effects`); fixed-time frame sampling is also available renderer-independently from `@moritzbrantner/three-d-renderer/flipbook`. See [`docs/contracts/browser-renderer.md`](docs/contracts/browser-renderer.md#cosmetic-flipbook-effects).
@@ -122,6 +124,12 @@ The playback timing lab reads committed Rust evidence. Regenerate it after chang
 ```bash
 cargo run -p three-d-playback --example playback_timing_evidence
 bun scripts/playback-timing-browser-smoke.mjs http://127.0.0.1:4173/animation-timing/
+```
+
+The skeletal animation lab has an "Inspect rig, clip & weights" topic (joint picking, exact transforms, clip range and weight views). Run its Chromium smoke against a served build:
+
+```bash
+bun scripts/skeletal-inspection-browser-smoke.mjs http://127.0.0.1:4173/skeletal-animation/
 ```
 
 ## Architecture

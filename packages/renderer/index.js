@@ -162,6 +162,14 @@ function validateIndexedMeshGeometry(geometry) {
       requireFiniteTuple("mesh normal", normal, 3)
     }
   }
+  if (geometry.uvs !== undefined) {
+    if (!Array.isArray(geometry.uvs) || geometry.uvs.length !== geometry.positions.length) {
+      throw new ThreeRendererContractError("mesh uvs must align one-to-one with positions")
+    }
+    for (const uv of geometry.uvs) {
+      requireFiniteTuple("mesh uv", uv, 2)
+    }
+  }
   if (geometry.colors !== undefined) {
     if (!Array.isArray(geometry.colors) || geometry.colors.length !== geometry.positions.length) {
       throw new ThreeRendererContractError("mesh colors must align one-to-one with positions")
@@ -262,12 +270,19 @@ export function validateRenderFrame(frame) {
     validateNodeShading(node)
     requireColor(node.color)
     requireOpacity(node)
+    requireDoubleSided(node)
   }
 
   if (frame.instanceBatches !== undefined) validateInstanceBatches(frame.instanceBatches)
   if (frame.effects !== undefined) validateCosmeticEffects(frame.effects, failContract)
 
   return frame
+}
+
+function requireDoubleSided(entry) {
+  if (entry.doubleSided !== undefined && typeof entry.doubleSided !== "boolean") {
+    throw new ThreeRendererContractError(`doubleSided for ${entry.id} must be a boolean`)
+  }
 }
 
 function requireOpacity(entry) {
@@ -298,6 +313,7 @@ function validateInstanceBatches(batches) {
     validateGeometry(batch.geometry)
     requireColor(batch.color)
     requireOpacity(batch)
+    requireDoubleSided(batch)
     if (!Array.isArray(batch.instances)) {
       throw new ThreeRendererContractError(`instances for batch ${batch.id} must be an array`)
     }

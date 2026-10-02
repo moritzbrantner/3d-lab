@@ -10,6 +10,8 @@ on:
       - "web/components/renderer-performance-canary.tsx"
       - "web/app/skeletal-animation/**"
       - "web/components/character-rig-lab*"
+      - "web/components/skeletal-animation-*"
+      - "web/lib/skeletal-animation-*"
       - "web/components/imported-skin-lab*"
       - "web/app/editor/**"
       - "web/components/scene-editor-lab*"
@@ -17,10 +19,13 @@ on:
       - "web/lib/character-*"
       - "web/lib/imported-skin*"
       - "scripts/character-browser-smoke.mjs"
+      - "scripts/skeletal-inspection-browser-smoke.mjs"
       - "scripts/editor-snapshot-browser-smoke.mjs"
       - "scripts/renderer-presentation-smoke.mjs"
       - "scripts/sync-web-animation-fixtures.mjs"
       - "fixtures/catalog/khronos-simpleskin-embedded.*"
+      - "fixtures/static-glb/**"
+      - "scripts/static-glb-fixtures.mjs"
       - "profiles/runtime-profiler/renderer-browser.json"
       - "profiles/runtime-profiler/renderer-browser.mjs"
       - ".github/workflows/renderer-runtime-evidence.yml"
@@ -149,6 +154,9 @@ jobs:
             bun scripts/character-browser-smoke.mjs \
               http://127.0.0.1:4173/skeletal-animation/ \
               "$RUNNER_TEMP/character-browser-smoke"
+            bun scripts/skeletal-inspection-browser-smoke.mjs \
+              http://127.0.0.1:4173/skeletal-animation/ \
+              "$RUNNER_TEMP/skeletal-inspection-browser-smoke"
             bun scripts/editor-snapshot-browser-smoke.mjs \
               http://127.0.0.1:4173/editor/ \
               "$RUNNER_TEMP/editor-snapshot-browser-smoke"
@@ -189,6 +197,7 @@ jobs:
             ${{ runner.temp }}/candidate-renderer-browser
             ${{ runner.temp }}/renderer-browser-comparison.json
             ${{ runner.temp }}/character-browser-smoke
+            ${{ runner.temp }}/skeletal-inspection-browser-smoke
             ${{ runner.temp }}/editor-snapshot-browser-smoke
             ${{ runner.temp }}/renderer-presentation-smoke
             ${{ runner.temp }}/reference-renderer-server.log
