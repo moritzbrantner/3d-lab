@@ -5,6 +5,7 @@
     "rust",
     "nextjs",
     "tooling",
-    "playwright"
+    "playwright",
+    "ui"
   ]
 }
