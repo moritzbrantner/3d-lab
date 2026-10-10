@@ -4,7 +4,8 @@
     "rust",
     "nextjs",
     "tooling",
-    "playwright"
+    "playwright",
+    "ui"
   ],
   "resolvedModules": [
     "base",
@@ -13,7 +14,8 @@
     "react",
     "nextjs",
     "tooling",
-    "playwright"
+    "playwright",
+    "ui"
   ],
   "files": {
     "modules/base/principles/README.md": "3d58fb814c77122520a9140a1f81a0e4b6f53276f404b25d3bb0d364ddb29c31",
@@ -51,7 +53,8 @@
     "modules/tooling/technologies/tooling/README.md": "9de9b62271629e975208bc004098370cedc9bd722bf57a28f74623ae59520847",
     "modules/tooling/technologies/tooling/BUN-001.json": "fa8a372718ef4bead7714fc671625744b5d190db28b0f3bdd3c2e4e5f62f5bc7",
     "modules/playwright/technologies/tooling/playwright/README.md": "0c8292a0c4fad6b9d4945f8d34ddf1f0e1eb71f75446a99aa4dad3bce6ca6ff8",
+    "modules/ui/conventions/interface-design/README.md": "44a901e377d0a01a50e8f06dfdb1f312248cd80ef8e2e4409d8369fc2c80dabe",
     "configurations.json": "55aa39679c6f3b2e00f8e75600677c366603e1ae8153cb733ceb06461540dfd7",
-    "index.md": "d3fff6787572cd02c9d903a076337c9ae625823e195f440b3beb8f601f042c1e"
+    "index.md": "5165ff10359dc07573a16100ecfd3c744d66010e006f927d99774b5eaca5e873"
   }
 }
