@@ -136,6 +136,17 @@ Read this section first. Open the linked managed source when a rule is relevant,
 - **TAILWIND-002 — Use semantic tokens and named variants** — Use semantic tokens and named variants for visual decisions. ([details](modules/tooling/technologies/tooling/README.md))
 - **PLAYWRIGHT-001 — Test critical observable workflows** — Cover user-visible workflows that focused tests cannot prove using accessible selectors, URLs, and observable outcomes. ([details](modules/playwright/technologies/tooling/playwright/README.md))
 - **PLAYWRIGHT-002 — Own the environment and preserve failure evidence** — Explicitly provision servers, data, services, ports, and teardown; retain enough artifacts to reproduce failures. ([details](modules/playwright/technologies/tooling/playwright/README.md))
+- **UI-001 — Use surfaces to communicate structure, not to decorate every section** — Use raised surfaces for meaningful semantic units; otherwise use hierarchy, spacing, headings, separators, lists, tables, or rows. ([details](modules/ui/conventions/interface-design/README.md))
+- **UI-002 — Show information where it changes a decision** — Give prominence only to information that changes understanding or next action; do not repeat facts already visible. ([details](modules/ui/conventions/interface-design/README.md))
+- **UI-005 — Make primary workflows keyboard-first and commands discoverable** — Make every primary workflow keyboard-completable. ([details](modules/ui/conventions/interface-design/README.md))
+- **UI-006 — Make interactive data views accessible and shareable** — Use charts only when interaction adds understanding; provide equivalent structured values. ([details](modules/ui/conventions/interface-design/README.md))
+- **UI-007 — Make primary workflows work on touch and mobile** — Preserve primary tasks, hierarchy, state, and required actions on representative mobile and touch input. ([details](modules/ui/conventions/interface-design/README.md))
+- **UI-008 — Make numeric editor controls precision-first** — Provide directly editable numeric values for precision-sensitive parameters, including dimensions, position, rotation, timing, cuts, simulation settings, and effect parameters. Do not use slider-only controls; a value label or tooltip is not exact entry. ([details](modules/ui/conventions/interface-design/README.md))
+- **UI-009 — Make functional screens task-first, not promotional** — Apply `PRINCIPLE-009`: on representative target viewports, put the primary task, current content or state, and frequent actions before product self-description. ([details](modules/ui/conventions/interface-design/README.md))
+- **UI-010 — Make persistent UI earn its space** — Every persistent navigation item, toolbar control, panel, badge, card, or link must support a recurring task, a real destination, or decision-relevant state. ([details](modules/ui/conventions/interface-design/README.md))
+- **UI-011 — Make empty states operational** — State what is absent and expose the most likely next action. ([details](modules/ui/conventions/interface-design/README.md))
+- **UI-012 — Make interactive tools direct-manipulation first** — For editors and workspace-oriented tools, let users select, move, resize, connect, scrub, reorder, edit, or otherwise act on the represented object directly when the domain has a natural interaction for it. ([details](modules/ui/conventions/interface-design/README.md))
+- **UI-013 — Give each interaction one owner and protect its geometry** — Give each gesture and interaction state machine one authoritative owner. Parent and child layers must not independently implement competing selection rectangles, dragging, panning, resizing, connection gestures, timeline scrubbing, or equivalent behavior for the same physical input. ([details](modules/ui/conventions/interface-design/README.md))
 
 ## Installed modules
 
@@ -187,6 +198,10 @@ Read this section first. Open the linked managed source when a rule is relevant,
 ### playwright
 
 - [modules/playwright/technologies/tooling/playwright/README.md](modules/playwright/technologies/tooling/playwright/README.md)
+
+### ui
+
+- [modules/ui/conventions/interface-design/README.md](modules/ui/conventions/interface-design/README.md)
 
 ## Companion configuration assets
 
