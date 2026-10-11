@@ -121,3 +121,65 @@ unavailable; renderer-independent pose/skin semantics still need proof. Local
 AGENTS requires one task/branch/PR and prohibits unapproved splits. This acceptance
 does not create a child issue, claim full scope, close #87, or claim downstream
 ARPG #55/#145 ready.
+
+## Additional independent public runtime contract (before implementation)
+
+`packages/renderer/acceptance/imported-character-runtime.test.ts` consumes the
+**actual processed output** `fox.glb` and its complete retained asset-tooling
+proof, not the original source GLB. Proposed routine names
+`adaptImportedCharacter(outputBytes, {provenance})`, retained
+`asset.createInstance({modelMatrix?})`, and instance `seek`, `transition`,
+`advance` may be independently translated to a settled public seam. They do not
+license a competing parser, normalization operation, JavaScript animation sampler
+or `AnimationMixer` runtime. Existing Rust format/rig/animation/playback authorities
+must supply the semantics; Three.js objects only submit/present them.
+
+The new public contract directly inspects the actual returned scene's single
+SkinnedMesh: all 15 source oracle poses (joint world matrices and five deformed
+world vertices), nonzero locomotion, shared geometry/material/influence-buffer
+identity and unchanged bytes, separate skeleton/pose objects, retained embedded
+texture, arbitrary non-oracle seek times, placed joint/vertex composition, invalid
+seek/clip/transition/delta atomicity, and measured-delta crossfade partition
+invariance with a real intermediate pose and target completion. World-matrix
+component tolerance is 0.002 and vertex tolerance 0.02 **Fox source units**, not
+invented meters. The independent native local-matrix tolerance remains 2e-5.
+
+Seven malformed fixtures fault-inject the real processed GLB's active joint,
+nonfinite/negative/zero-sum weights, inverse bind, clip target and unsupported
+interpolation. Their negative trust-boundary receipts retain attribution and match
+the edited bytes' integrity fields; they are explicitly not genuine processor
+results or new source assets. Rejection must identify the violated semantic
+boundary, not merely reject a stale hash/missing receipt. A framing test establishes
+that each mutation preserves valid GLB framing and actually changes input. The
+previous valid instance's pose/resources must remain unchanged and usable.
+
+Baseline: the framing invariant passes; twelve public runtime cases are red at
+missing export **before instance creation**, so their later assertions have not
+executed. This makes runtime requirements executable once the public seam exists;
+it does not demonstrate Rust/WASM/browser execution or candidate rendering now.
+If mandatory upstream receipt verification preempts the fault-fixture semantic
+boundary, independently translate these negatives to the existing authoritative
+validator seam rather than accepting provenance-only rejection as skin coverage.
+
+### Remaining exact consumer gap
+
+There is no public live Rust/WASM imported-character sampling/transition bridge or
+settled browser consumer surface on the baseline. Existing private imported-skin
+lab uses AnimationMixer; existing Chromium script is an independent source oracle.
+Neither is a candidate pass. Package tests inspect actual renderer resources but
+create no WebGL context and cannot prove draw submission, visible animated pixels,
+texture rendering, per-frame publication ownership, or Rust sampling authority.
+The current package runner is Bun. If production texture decoding or the public
+WASM bridge requires browser facilities, independently move these same scenarios
+to actual Chromium; do not fabricate DOM/image decoders to make Bun green or force
+a browser-only production adapter into an inappropriate universal shape.
+
+Before #87 merge, a distinct implementation context must settle the existing
+public bridge and consumer route within this same issue/PR, then independent
+acceptance must exercise actual Chromium against it: load processed Fox once,
+select Survey/Walk, arbitrary seek and fade, compare live joints/vertices, and
+verify independent instances plus a nonempty visible textured character. No
+placeholder window state, prepared-oracle replay, fake canvas or new child issue
+is authorized. Native renderer submission may remain the explicit issue-permitted
+adapter gap; shared runtime semantics may not. This expanded draft remains
+partial; it does not close #87 or establish approved ARPG Knight assets.
