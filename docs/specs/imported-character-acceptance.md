@@ -246,3 +246,55 @@ allowed. Full browser acceptance is now specified as an executable consumer, but
 candidate behavior and authority are still unproven until implementation and audit.
 No approved Knight/Sword/Shield bundle, native skin submission or ARPG readiness is
 claimed.
+
+## Author-owned Chromium translation of the retained runtime contracts
+
+The runtime cases originally authored in `imported-character-runtime.test.ts`
+now execute in the existing `scripts/imported-character-browser-acceptance.ts`.
+The actual texture-bearing Fox is adapted in Chromium: Bun does not provide the
+browser image decoder required by the real presentation adapter. No pending
+texture API, fake DOM, placeholder image, or alternate runtime was introduced.
+Bun retains the public-export requirement and actual negative-GLB framing checks;
+its prior runtime RED count is historical, not current runtime evidence.
+
+The browser report records these twelve completed cases only after their assertions
+execute successfully:
+
+| Original contract | Preserved browser assertions |
+| --- | --- |
+| All Fox oracle poses | All 15 named joint/world matrices and five world vertices with unchanged tolerances; actual Walk motion |
+| Shared resources and independent poses | Exact geometry/material/influence-array identity, separate skeleton/bones, unchanged buffers and B pose during A seeks including nonoracle Walk0.321/Run0.117; real decoded texture |
+| Model placement | Rotation Y0.37 plus translation(7,-3,11) composes outside every joint world matrix and skinned vertex; 26 scene nodes remain distinct from 24 skin slots |
+| Invalid runtime input | NaN/Infinity seek, unknown clip, negative transition/delta reject and preserve exact pose/buffers |
+| Live crossfade | Measured0.2 versus20×0.01 partition equivalence, intermediate pose differs from immediate target, final0.4 endpoint matches |
+| Dangling active joint | Actual JOINTS_0 slot24; joint/skin rejection |
+| Nonfinite weight | Actual NaN weight; weight/influence rejection |
+| Negative weight | Actual-1 weight; weight/influence rejection |
+| Zero weight tuple | Actual four zero weights; weight/influence rejection |
+| Nonfinite inverse bind | Actual Infinity matrix element; bind/matrix rejection |
+| Dangling clip target | Actual target node26; target/node rejection |
+| Unsupported cubic interpolation | Actual CUBICSPLINE; interpolation/cubic rejection |
+
+Each of the seven negative cases preserves valid GLB framing, updates the negative
+fixture receipt hash/length to match its actual damaged bytes, and requires the
+semantic rejection reason. A previously retained valid instance must preserve its
+exact pose and buffers, then successfully seek Run0.117 with changed pose. This
+prevents stale-checksum-only rejection or failed asset adaptation damaging other
+instances from satisfying acceptance. Fault receipts remain negative test inputs,
+not real producer receipts or independently approved assets.
+
+The existing `renderer-runtime-evidence.yml` now discovers these surfaces and
+mandatorily runs `bun run build:imported-character-wasm` followed by the browser
+script on the candidate. The producer owns the real Rust build command/bridge
+wiring, not these protected assertions. The gate retains actual compiled WASM
+response identity, instantiation and the mandatory source-authority audit above;
+inline/dummy/unrelated artifacts cannot bypass the required compiled Rust proof.
+Browser evidence is uploaded by the same existing workflow, outside benchmark
+capture. No second renderer, framework, fixture stream or partial child issue.
+
+At frozen `ba9cf1d` before any #87 production, the translated browser command again
+initializes actual Chromium and the existing public WebGL renderer, then fails RED
+at the missing public imported-character export. All twelve downstream runtime
+cases remain unexecuted. Bun metadata/framing are 2 GREEN; both public-export
+checks are 2 RED. `git diff --check` passes. These results do not prove imported
+runtime behavior, rendered Fox, real texture decode or compiled Rust authority.

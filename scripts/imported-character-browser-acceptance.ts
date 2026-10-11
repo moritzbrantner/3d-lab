@@ -17,6 +17,36 @@ const proof = JSON.parse(await readFile(resolve(root,"fixtures/imported-characte
 const fox = await readFile(resolve(root,"fixtures/imported-character/fox.glb"));
 assert.equal(createHash("sha256").update(fox).digest("hex"), proof.result.outputs.output.sha256);
 assert.equal(fox.byteLength, proof.result.outputs.output.byteLength);
+// Mutate real production GLB data, preserving valid framing and all unrelated bytes.
+function mutate(change: (json: any, binary: Buffer) => void): Buffer {
+  const jsonLength = fox.readUInt32LE(12);
+  const json = JSON.parse(fox.subarray(20,20+jsonLength).toString());
+  const binary = Buffer.from(fox.subarray(28+jsonLength)); change(json,binary);
+  const encoded = Buffer.from(JSON.stringify(json)); const padded = Buffer.alloc(Math.ceil(encoded.length/4)*4,0x20); encoded.copy(padded);
+  const result = Buffer.alloc(28+padded.length+binary.length);
+  result.writeUInt32LE(0x46546c67,0); result.writeUInt32LE(2,4); result.writeUInt32LE(result.length,8);
+  result.writeUInt32LE(padded.length,12); result.writeUInt32LE(0x4e4f534a,16); padded.copy(result,20);
+  result.writeUInt32LE(binary.length,20+padded.length); result.writeUInt32LE(0x004e4942,24+padded.length); binary.copy(result,28+padded.length);
+  return result;
+}
+function accessorOffset(json: any, index: number): number {
+  const accessor = json.accessors[index]; return (json.bufferViews[accessor.bufferView].byteOffset ?? 0)+(accessor.byteOffset ?? 0);
+}
+const malformed: Array<[string, RegExp, (json: any, binary: Buffer) => void]> = [
+  ["dangling active joint", /joint|skin/i, (j,b) => { b.writeUInt16LE(24, accessorOffset(j,j.meshes[0].primitives[0].attributes.JOINTS_0)); }],
+  ["nonfinite weight", /weight|influence/i, (j,b) => { b.writeFloatLE(NaN, accessorOffset(j,j.meshes[0].primitives[0].attributes.WEIGHTS_0)); }],
+  ["negative weight", /weight|influence/i, (j,b) => { b.writeFloatLE(-1, accessorOffset(j,j.meshes[0].primitives[0].attributes.WEIGHTS_0)); }],
+  ["zero weight tuple", /weight|influence/i, (j,b) => { b.fill(0,accessorOffset(j,j.meshes[0].primitives[0].attributes.WEIGHTS_0),accessorOffset(j,j.meshes[0].primitives[0].attributes.WEIGHTS_0)+16); }],
+  ["nonfinite inverse bind", /bind|matrix/i, (j,b) => { b.writeFloatLE(Infinity,accessorOffset(j,j.skins[0].inverseBindMatrices)); }],
+  ["dangling clip target", /target|node/i, j => { j.animations[0].channels[0].target.node=26; }],
+  ["unsupported cubic interpolation", /interpolation|cubic/i, j => { j.animations[0].samplers[0].interpolation="CUBICSPLINE"; }],
+];
+const negativeFixtures = malformed.map(([name,reason,change]) => {
+  const damaged=mutate(change); const receipt=structuredClone(proof);
+  receipt.result.outputs.output.sha256=createHash("sha256").update(damaged).digest("hex");
+  receipt.result.outputs.output.byteLength=damaged.byteLength;
+  return {name,reason:reason.source,bytes:Array.from(damaged),receipt};
+});
 const wasm: Array<{url: string; sha256: string; bytes: number}> = [];
 const pageErrors: string[] = [];
 // Disposable fixture server, no application state, decoder or model implementation.
@@ -47,7 +77,7 @@ try {
     map.textContent=JSON.stringify({imports:{three:"/node_modules/three/build/three.module.js","three/":"/node_modules/three/"}});
     document.head.appendChild(map);
   });
-  const result = await page.evaluate(async ({ importedPath }) => {
+  const result = await page.evaluate(async ({ importedPath, negativeFixtures }) => {
     const THREE = await import("three");
     const publicRenderer = await import("/packages/renderer/index.js");
     const canvas=document.querySelector("canvas")!;
@@ -88,19 +118,38 @@ try {
     check(am.skeleton!==bm.skeleton && am.skeleton.bones[0]!==bm.skeleton.bones[0],'poses alias');
     const material=Array.isArray(am.material)?am.material[0]:am.material;
     check(material.map && material.map.image && material.map.image.width>0 && material.map.image.height>0,'actual embedded texture must be decoded, not dropped');
+    const completedCases=["repeated characters share actual immutable geometry/material/skin buffers but independent poses"];
     const samples=[];
     for(const sample of oracle.samples) {
       await a.seek(sample.clip,sample.time);const actual=pose(a);
       check(mesh(a).skeleton.bones.length===24,'skin palette != scene node indices');
+      check(JSON.stringify(mesh(a).skeleton.bones.map(bone=>bone.name))===JSON.stringify(sample.joints.map(joint=>joint.name)),'actual joint names/order differ');
       sample.joints.forEach((joint,i)=>close(actual.joints[i],joint.matrixWorld,0.002));
       sample.vertices.forEach((vertex,i)=>close(actual.vertices[i],vertex.world,0.02));
       check(JSON.stringify(pose(b))===bBefore,'A seek changed B');check(immutable(a)===fixed,'seek rebuilt/mutated immutable buffers');
       samples.push({clip:sample.clip,time:sample.time,...actual});
     }
+    completedCases.push("public live instances seek all actual Fox joint/world-vertex oracle poses");
+    await a.seek('Walk',0);const walkStart=JSON.stringify(pose(a));
+    await a.seek('Walk',oracle.samples.find(sample=>sample.clip==='Walk' && sample.time>0).time);
+    check(JSON.stringify(pose(a))!==walkStart,'actual Walk pose does not move');
+    await a.seek('Walk',0.321);check(JSON.stringify(pose(a))!==bBefore,'nonoracle Walk pose did not move');
+    await a.seek('Run',0.117);check(JSON.stringify(pose(b))===bBefore && immutable(a)===fixed,'nonoracle seek changed other instance/resources');
     await a.seek('Walk',0.321);const before=JSON.stringify(pose(a));
     for(const attempt of [()=>a.seek('Walk',NaN),()=>a.seek('Walk',Infinity),()=>a.seek('absent-clip',0),()=>a.advance(-1),()=>a.transition('Run',-1)]) {
       let rejected=false;try{await attempt();}catch{rejected=true;}
       check(rejected,'invalid runtime input succeeded');check(JSON.stringify(pose(a))===before && immutable(a)===fixed,'invalid input was not atomic');
+    }
+    completedCases.push("invalid seek, unknown clip and invalid transition/delta preserve valid pose and resources");
+    for(const fixture of negativeFixtures) {
+      const retained=await module.adaptImportedCharacter(bytes,{provenance:proof});
+      const valid=retained.createInstance();await valid.seek('Walk',0.321);
+      const priorPose=JSON.stringify(pose(valid)),priorBuffers=immutable(valid);
+      let failure;try {await module.adaptImportedCharacter(new Uint8Array(fixture.bytes),{provenance:fixture.receipt});} catch(error) {failure=error;}
+      check(failure && new RegExp(fixture.reason,'i').test(String(failure)),`${fixture.name}: semantic rejection reason missing`);
+      check(JSON.stringify(pose(valid))===priorPose && immutable(valid)===priorBuffers,`${fixture.name}: damaged prior retained instance`);
+      await valid.seek('Run',0.117);check(JSON.stringify(pose(valid))!==priorPose,`${fixture.name}: prior valid instance cannot be reused`);
+      completedCases.push(`malformed actual Fox ${fixture.name} is rejected without damaging a retained valid instance`);
     }
     // Explicit source-unit camera fixture; no gameplay/camera authority created.
     await a.seek('Survey',0);
@@ -121,21 +170,27 @@ try {
     await a.seek('Walk',0.321);const moving=draw([a]);let changed=0;
     for(let i=0;i<moving.length;i+=4){if(moving[i]!==first[i]||moving[i+1]!==first[i+1]||moving[i+2]!==first[i+2]){changed++;}}
     check(changed>8,'actual rendered clip has no visible motion');
-    const placed=asset.createInstance({modelMatrix:new THREE.Matrix4().makeTranslation(span*0.8,0,0).elements});
-    await placed.seek('Walk',0.321);const canonical=pose(a),shifted=pose(placed);
-    canonical.vertices.forEach((vertex,i)=>close(shifted.vertices[i],[vertex[0]+span*0.8,vertex[1],vertex[2]],0.02));
+    const placement=new THREE.Matrix4().makeRotationY(0.37).setPosition(7,-3,11);
+    const placed=asset.createInstance({modelMatrix:placement.elements});
+    await a.seek('Walk',0.321);await placed.seek('Walk',0.321);const canonical=pose(a),shifted=pose(placed);
+    canonical.joints.forEach((matrix,i)=>close(shifted.joints[i],new THREE.Matrix4().multiplyMatrices(placement,new THREE.Matrix4().fromArray(matrix)).elements,0.002));
+    canonical.vertices.forEach((vertex,i)=>close(shifted.vertices[i],new THREE.Vector3().fromArray(vertex).applyMatrix4(placement).toArray(),0.02));
+    check(mesh(a).skeleton.bones.length===24 && proof.result.observations.nodes.length===26,'scene indices confused with skin palette slots');
+    completedCases.push("model placement composes outside all nonjoint ancestors, inverse binds and skin slots");
     await a.seek('Survey',0);await b.seek('Survey',0);await a.transition('Walk',0.4);await b.transition('Walk',0.4);
     await a.advance(0.2);for(let i=0;i<20;i++){await b.advance(0.01);}
     const mid=pose(a);pose(b).joints.forEach((matrix,i)=>close(matrix,mid.joints[i],0.002));
     const target=asset.createInstance();await target.seek('Walk',0.2);check(JSON.stringify(mid)!==JSON.stringify(pose(target)),'fade instantly replaced clip');
     await a.advance(0.2);await target.seek('Walk',0.4);pose(a).joints.forEach((matrix,i)=>close(matrix,pose(target).joints[i],0.002));
+    completedCases.push("live public crossfade uses measured deltas, is partition invariant and reaches target clip");
+    check(completedCases.length===12,'runtime case coverage incomplete');
     check(instantiated>0,'candidate path never instantiated actual compiled WebAssembly');
     check(immutable(a)===fixed && am.geometry===bm.geometry,'fade rebuilt immutable resource');
     draw([a,placed]);
     // Presentation-only draw loop keeps a real submitted frame available for screenshot.
     const present=()=>{module.renderImportedCharacterInstances(renderer,{camera:renderCamera,instances:[a,placed]});requestAnimationFrame(present);};requestAnimationFrame(present);
-    return {samples,visiblePixels:visible,movingPixels:changed,wasmInstances:instantiated,sharedGeometry:true,sharedInfluences:true,independentPoses:true};
-  }, {importedPath});
+    return {completedCases,samples,visiblePixels:visible,movingPixels:changed,wasmInstances:instantiated,sharedGeometry:true,sharedInfluences:true,independentPoses:true};
+  }, {importedPath,negativeFixtures});
   await Promise.all(responses);
   assert(wasm.some(resource=>resource.bytes>8),"actual compiled Rust WASM artifact bytes were not observed; inline bridge requires independent source-bound translation");
   assert.deepEqual(pageErrors,[]);
