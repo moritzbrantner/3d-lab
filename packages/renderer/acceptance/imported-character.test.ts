@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
-const root = new URL("../../", import.meta.url);
+const root = new URL("../../../", import.meta.url);
 
 test("Fox fixture is the actual replayed production import, with license and clip evidence", async () => {
   const proof = JSON.parse(await readFile(new URL("fixtures/imported-character/fox.production-import.json", root), "utf8"));

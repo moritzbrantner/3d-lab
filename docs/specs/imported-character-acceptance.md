@@ -36,7 +36,7 @@ composition; quietly dropping the texture does not satisfy acceptance.
 
 ## Runnable established evidence
 
-- `bun test tests/acceptance/imported-character.test.ts`: fixture integrity,
+- `bun test packages/renderer/acceptance/imported-character.test.ts`: fixture integrity,
   import/source identity, accepted policy, warnings and clip names pass; the
   absent public package export fails on the baseline.
 - `cargo test -p three-d-formats --test imported_character_clips`: existing native
