@@ -2,8 +2,8 @@
 
 This independent acceptance was established on origin/main
 `a39a673` before production implementation. Shared conventions resolved at
-`46d8793bb3034326561f876dcc67dbaa5aa1e432`. This draft is a partial acceptance
-handoff and uses `Refs #87`: a public export alone does not complete the issue.
+`46d8793bb3034326561f876dcc67dbaa5aa1e432`. This draft establishes independent acceptance before implementation and uses
+`Refs #87`: a public export alone does not complete the issue.
 
 ## Actual source and authority
 
@@ -97,9 +97,10 @@ native clips still own every sampled animated channel.
    counters exist, verify pose updates reuse immutable resources rather than
    rebuilding geometry or publishing React state per frame. Do not invent budgets.
 
-These runtime scenarios are **not covered by the present public-export failure**.
-They require independent executable coverage against the settled production seam
-before any implementation merge or #87 completion claim.
+The additional package and actual Chromium contracts below make these runtime
+requirements executable against the proposed routine public seam. Baseline failures
+occur before instance creation: later assertions remain unexecuted, and every
+contract plus the authority audit must pass before implementation merge.
 
 ## Explicit baseline gaps
 
@@ -183,3 +184,65 @@ placeholder window state, prepared-oracle replay, fake canvas or new child issue
 is authorized. Native renderer submission may remain the explicit issue-permitted
 adapter gap; shared runtime semantics may not. This expanded draft remains
 partial; it does not close #87 or establish approved ARPG Knight assets.
+
+
+## Actual public Chromium consumer acceptance (before implementation)
+
+Run `bun scripts/imported-character-browser-acceptance.ts [ignored-output-dir]`.
+This uses existing Playwright/Chromium, a disposable localhost port0 fixture server,
+and the actual public `createThreeSceneRenderer` on a real canvas. That renderer is
+the existing JavaScript/Three rendering backend, not a Rust renderer. The candidate
+imported-character path must extend/reuse it, not create a parallel renderer. The
+routine proposed submission name
+`renderImportedCharacterInstances(existingRenderer,{camera,instances})` may be
+translated independently together with the existing asset/instance method names.
+No new product direction, parser, reconstruction, framework or private lab adapter
+is introduced by this acceptance consumer. Asset-tooling still owns the actual
+processed GLB/bundle and receipt; Rust owns pose/clip/rig/playback semantics.
+
+The script verifies actual processed Fox integrity, initializes the public WebGL2
+renderer, imports only the proposed public module, and requires:
+
+- all15 live sampled world-joint/vertex reference poses; actual24-joint palette;
+- arbitrary0.321s seek, invalid-time/unknown-clip/delta/transition atomicity;
+- unchanged geometry/material/influence buffers shared across distinct skeletons;
+- a decoded actual embedded texture, not a replacement material;
+- actual draw submission measured by framebuffer differences from an empty frame,
+  and visible motion between Survey and Walk (no DOM or prepared-pixel proxy);
+- placed source-unit skinned vertices retaining root/ancestor/bind composition;
+- measured-delta fade partition equivalence, intermediate pose and target endpoint;
+- real WebAssembly instantiation during candidate module initialization/adaptation/
+  sampling, and retained hash/length of the actual compiled artifact response;
+- a screenshot and numeric/resource evidence from the real public rendered consumer.
+
+The WebAssembly observer forwards every invocation to the real browser API and
+never replaces execution or returned values. It is not an animation implementation.
+An inline/synchronous bridge can receive an independently verified observer
+translation that preserves real compiled-module execution/artifact identity.
+The test camera and pixel/joint inspections are independent acceptance inputs and
+measurements, not gameplay/presentation pose authorities. Rendering the same
+submitted state in RAF only keeps the actual canvas available for screenshot.
+
+**Mandatory source audit:** bind the observed compiled artifact to the existing
+`three-d-animation`/`three-d-playback`/rig hierarchy and format lowering. Follow the
+public `seek`, transition and measured-delta call graph into compiled Rust and back
+into renderer pose submission. No Three AnimationMixer, JS interpolation/clock,
+15-pose replay table, dummy or unrelated WASM module can satisfy authority, even if
+it happens to pass numeric/pixel assertions. Geometry, skin and resource lowering
+remain retained; source hash/provenance cannot silently change. Submission uses
+one existing renderer/context, with no private preview, new shader stand-in or
+second renderer. Inspect existing work observations where exposed, not invented
+performance thresholds. Browser/renderer ownership and candidate source audit are
+both required before #87 merge.
+
+Observed baseline `d06fc58` plus this test: actual Chromium and public renderer
+WebGL initialized successfully, then the missing `./imported-character` export
+caused expected RED. No later seek/texture/draw/fade/WASM assertion executed. This
+is a meaningful missing-capability acceptance failure, not a reason to omit the
+browser contract. The previous private source oracle remains independent reference
+only. The existing runtime-evidence lane must execute this protected command once
+the public candidate is implemented; no green partial/package-only merge is
+allowed. Full browser acceptance is now specified as an executable consumer, but
+candidate behavior and authority are still unproven until implementation and audit.
+No approved Knight/Sword/Shield bundle, native skin submission or ARPG readiness is
+claimed.
