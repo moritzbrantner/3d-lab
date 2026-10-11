@@ -23,6 +23,6 @@
     "@types/react-dom": "19.2.2",
     "@types/three": "0.185.4",
     "@webgpu/types": "0.1.74",
-    "typescript": "5.9.2"
+    "typescript": "5.9.3"
   }
 }
