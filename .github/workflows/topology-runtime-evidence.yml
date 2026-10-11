@@ -191,7 +191,7 @@ jobs:
               git rev-parse HEAD:web/lib/mesh.ts
               git rev-parse HEAD:scripts/profile-editor-topology.ts
               git rev-parse HEAD:profiles/runtime-profiler/editor-topology.json
-              git rev-parse HEAD:bun.lock
+              git rev-parse HEAD:package.json
             } | sha256sum | awk '{print "sha256:" $1}'
           )"
           echo "TOPOLOGY_SURFACE_DIGEST=$surface_digest" >> "$GITHUB_ENV"
