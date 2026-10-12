@@ -22,7 +22,7 @@ impl CharacterAsset {
     }
     pub fn metadata_json(&self) -> String {
         serde_json::json!({ "sourceNodes": self.data.source_nodes, "nodeNames": self.data.node_names,
-            "skinNodes": self.data.skin_nodes, "meshNode": self.data.mesh_node, "primitiveIndices": self.data.primitive_indices,
+            "skinNodes": self.data.skin_nodes, "meshNode": self.data.mesh_node, "primitiveIndices": self.data.primitive_indices, "gpuSkinIndices": self.data.gpu_skin_indices,
             "inverseBinds": self.data.inverse_binds.iter().map(|m| m.elements).collect::<Vec<_>>(),
             "clips": self.data.rig.animations().iter().map(|c| serde_json::json!({"name":c.name(),"duration":c.duration()})).collect::<Vec<_>>() }).to_string()
     }

@@ -40,6 +40,8 @@ export async function adaptImportedCharacter(source, options = {}) {
     // Existing weighted-skin policy: bind bounds are not conservative animated bounds (#66).
     node.frustumCulled = false
     if (!node.geometry.index) node.geometry.setIndex(new THREE.Uint32BufferAttribute(metadata.primitiveIndices[primitive], 1))
+    // Consume Rust-normalized authored palette slots; never reinterpret active weights here.
+    node.geometry.setAttribute("skinIndex", new THREE.Uint16BufferAttribute(metadata.gpuSkinIndices[primitive].flat(), 4))
     primitive += 1
   } })
   gltf.scene.traverse(node => {

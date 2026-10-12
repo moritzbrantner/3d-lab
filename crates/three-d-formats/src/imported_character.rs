@@ -17,6 +17,7 @@ pub struct ImportedCharacter {
     pub inverse_binds: Vec<Mat4>,
     pub mesh_node: usize,
     pub primitive_indices: Vec<Vec<u32>>,
+    pub gpu_skin_indices: Vec<Vec<[u16; 4]>>,
     pub rig: RiggedAsset,
 }
 fn invalid(message: impl Into<String>) -> FormatError {
@@ -173,6 +174,7 @@ pub fn load_gltf_imported_character(bytes: &[u8]) -> Result<ImportedCharacter, F
         .ok_or_else(|| invalid("missing skin mesh"))?;
     let mut influences = Vec::new();
     let mut primitive_indices = Vec::new();
+    let mut gpu_skin_indices = Vec::new();
     for primitive in mesh.primitives() {
         if primitive.mode() != gltf::mesh::Mode::Triangles
             || primitive.morph_targets().next().is_some()
@@ -211,6 +213,7 @@ pub fn load_gltf_imported_character(bytes: &[u8]) -> Result<ImportedCharacter, F
         if joints.len() != positions.len() || weights.len() != positions.len() {
             return Err(invalid("skin influence count mismatch"));
         }
+        let mut gpu_slots = Vec::new();
         for (slots, weights) in joints.into_iter().zip(weights) {
             // Validate ORIGINAL authored24-slot domain before canonical hierarchy remapping.
             let authored = SkinInfluence::new(slots, weights)
@@ -218,6 +221,16 @@ pub fn load_gltf_imported_character(bytes: &[u8]) -> Result<ImportedCharacter, F
             authored
                 .validate_joints(skin_nodes.len())
                 .map_err(|e| invalid(format!("skin joint: {e}")))?;
+            // Stock GPU skinning fetches every slot even when its weight is zero.
+            // Active references already passed the authored palette check above;
+            // only inert out-of-range references may be normalized to a safe slot.
+            gpu_slots.push(slots.map(|slot| {
+                if usize::from(slot) < skin_nodes.len() {
+                    slot
+                } else {
+                    0
+                }
+            }));
             let mapped = slots.map(|slot| {
                 skin_nodes
                     .get(usize::from(slot))
@@ -233,6 +246,7 @@ pub fn load_gltf_imported_character(bytes: &[u8]) -> Result<ImportedCharacter, F
                     .map_err(|e| invalid(format!("skin influence: {e}")))?,
             );
         }
+        gpu_skin_indices.push(gpu_slots);
     }
     let clips = load_gltf_animation_clips(bytes)?
         .iter()
@@ -274,6 +288,7 @@ pub fn load_gltf_imported_character(bytes: &[u8]) -> Result<ImportedCharacter, F
         inverse_binds,
         mesh_node,
         primitive_indices,
+        gpu_skin_indices,
         rig,
     })
 }
