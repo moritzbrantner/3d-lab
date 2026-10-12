@@ -93,7 +93,10 @@ The portable directory contains only actual production-export GLBs, no input
 GLBs or original texture workspace. Native assertions forbid external image
 URIs; the checker reference is an independent oracle supplied after import, not
 an asset dependency. Both authored and caller-bound exports must import/edit in
-actual Blender. Source-fixture harness self-tests are distinct from this gate.
+actual Blender. Each external Blender process has a 300-second operational
+timeout with a 10-second forced-termination grace period; a timeout fails the
+gate, rather than becoming passing or skipped evidence. This is subprocess
+lifecycle protection, not a gameplay cadence or export performance budget. Source-fixture harness self-tests are distinct from this gate.
 
 ## Chronological baseline and remaining gates
 
