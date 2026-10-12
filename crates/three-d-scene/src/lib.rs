@@ -8,20 +8,30 @@ use core::fmt;
 use three_d_animation::{Quat, Transform};
 use three_d_core::{Color3, Mesh, Tangent4, Vec2, Vec3, VertexAttributes};
 
+use three_d_assets::{
+    Asset, AssetError, EncodedImage, Material, Texture, TextureSampler,
+    validate_resource_references,
+};
+
 const UNIT_QUATERNION_TOLERANCE: f32 = 1.0e-4;
 const UNMAPPED_INDEX: u32 = u32::MAX;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SceneMesh {
     id: String,
-    mesh: Mesh,
+    name: Option<String>,
+    primitives: Vec<ScenePrimitive>,
 }
 
 impl SceneMesh {
     pub fn new(id: impl Into<String>, mesh: Mesh) -> Self {
         Self {
             id: id.into(),
-            mesh,
+            name: None,
+            primitives: vec![ScenePrimitive {
+                mesh,
+                material: None,
+            }],
         }
     }
 
@@ -29,8 +39,102 @@ impl SceneMesh {
         &self.id
     }
 
+    /// The first primitive, retained for geometry-only callers.
+    /// Group-aware consumers must use `primitives()` to preserve all geometry.
+    pub const fn mesh(&self) -> &Mesh {
+        &self.primitives.as_slice()[0].mesh
+    }
+
+    pub fn name(&self) -> &str {
+        self.name.as_deref().unwrap_or(&self.id)
+    }
+
+    pub fn primitives(&self) -> &[ScenePrimitive] {
+        &self.primitives
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ScenePrimitive {
+    mesh: Mesh,
+    material: Option<usize>,
+}
+
+impl ScenePrimitive {
     pub const fn mesh(&self) -> &Mesh {
         &self.mesh
+    }
+    pub const fn material(&self) -> Option<usize> {
+        self.material
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SceneResources {
+    materials: Vec<Material>,
+    images: Vec<EncodedImage>,
+    samplers: Vec<TextureSampler>,
+    textures: Vec<Texture>,
+}
+
+impl SceneResources {
+    pub fn new(
+        materials: Vec<Material>,
+        images: Vec<EncodedImage>,
+        samplers: Vec<TextureSampler>,
+        textures: Vec<Texture>,
+    ) -> Result<Self, SceneError> {
+        validate_resource_references(&materials, &images, &samplers, &textures)
+            .map_err(SceneError::Asset)?;
+        let resources = Self {
+            materials,
+            images,
+            samplers,
+            textures,
+        };
+        resources.validate_supported()?;
+        Ok(resources)
+    }
+
+    fn validate_supported(&self) -> Result<(), SceneError> {
+        for image in &self.images {
+            if !matches!(image.mime_type(), "image/png" | "image/jpeg") {
+                return Err(SceneError::UnsupportedImageMime);
+            }
+        }
+        for material in &self.materials {
+            for binding in [
+                material.base_color_texture(),
+                material.metallic_roughness_texture(),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                if binding.tex_coord() != 0 {
+                    return Err(SceneError::UnsupportedUvSet);
+                }
+            }
+            if material
+                .normal_texture()
+                .is_some_and(|binding| binding.tex_coord() != 0)
+            {
+                return Err(SceneError::UnsupportedUvSet);
+            }
+        }
+        Ok(())
+    }
+
+    pub fn materials(&self) -> &[Material] {
+        &self.materials
+    }
+    pub fn images(&self) -> &[EncodedImage] {
+        &self.images
+    }
+    pub fn samplers(&self) -> &[TextureSampler] {
+        &self.samplers
+    }
+    pub fn textures(&self) -> &[Texture] {
+        &self.textures
     }
 }
 
@@ -89,10 +193,18 @@ pub struct SceneSnapshot {
     meshes: Vec<SceneMesh>,
     nodes: Vec<SceneNode>,
     normalization_observations: Option<SceneNormalizationObservations>,
+    resources: Option<std::sync::Arc<SceneResources>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SceneError {
+    Asset(AssetError),
+    UnsupportedSkin,
+    UnsupportedImageMime,
+    UnsupportedUvSet,
+    MissingUvs,
+    MaterialBindingShape,
+    MaterialIndexOutOfBounds,
     EmptyScene,
     EmptyMeshId {
         mesh: usize,
@@ -126,6 +238,20 @@ pub enum SceneError {
 impl fmt::Display for SceneError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Asset(error) => write!(formatter, "asset resources: {error}"),
+            Self::UnsupportedSkin => {
+                formatter.write_str("static scene does not support skin influences")
+            }
+            Self::UnsupportedImageMime => {
+                formatter.write_str("GLB image MIME must be image/png or image/jpeg")
+            }
+            Self::UnsupportedUvSet => formatter.write_str("scene supports only texture UV set 0"),
+            Self::MissingUvs => formatter.write_str("textured primitive is missing UV0"),
+            Self::MaterialBindingShape => formatter
+                .write_str("material binding shape must match every mesh group and primitive"),
+            Self::MaterialIndexOutOfBounds => {
+                formatter.write_str("primitive material index is out of bounds")
+            }
             Self::EmptyScene => formatter.write_str("scene must contain at least one node"),
             Self::EmptyMeshId { mesh } => write!(formatter, "mesh {mesh} has an empty id"),
             Self::DuplicateMeshId { mesh } => {
@@ -211,7 +337,100 @@ impl SceneSnapshot {
             meshes,
             nodes,
             normalization_observations: None,
+            resources: None,
         })
+    }
+
+    pub fn from_asset(asset: Asset, nodes: Vec<SceneNode>) -> Result<Self, SceneError> {
+        let three_d_assets::AssetParts {
+            meshes: groups,
+            materials,
+            images,
+            samplers,
+            textures,
+        } = asset.into_parts();
+        // The Asset boundary already established resource referential integrity.
+        let resources = SceneResources {
+            materials,
+            images,
+            samplers,
+            textures,
+        };
+        resources.validate_supported()?;
+        let mut meshes = Vec::with_capacity(groups.len());
+        for (index, group) in groups.into_iter().enumerate() {
+            let (name, source) = group.into_parts();
+            let mut primitives = Vec::with_capacity(source.len());
+            for primitive in source {
+                let (mesh, material, skin) = primitive.into_parts();
+                if skin.is_some() {
+                    return Err(SceneError::UnsupportedSkin);
+                }
+                primitives.push(ScenePrimitive { mesh, material });
+            }
+            meshes.push(SceneMesh {
+                id: format!("{}-{index}", name.as_deref().unwrap_or("mesh")),
+                name,
+                primitives,
+            });
+        }
+        let mut scene = Self::new(meshes, nodes)?;
+        scene.resources = Some(std::sync::Arc::new(resources));
+        scene.validate_material_uvs()?;
+        Ok(scene)
+    }
+
+    pub fn with_material_resources(
+        mut self,
+        resources: SceneResources,
+        bindings: Vec<Vec<Option<usize>>>,
+    ) -> Result<Self, SceneError> {
+        if bindings.len() != self.meshes.len()
+            || bindings
+                .iter()
+                .zip(&self.meshes)
+                .any(|(bindings, mesh)| bindings.len() != mesh.primitives.len())
+        {
+            return Err(SceneError::MaterialBindingShape);
+        }
+        if bindings
+            .iter()
+            .flatten()
+            .flatten()
+            .any(|&index| index >= resources.materials.len())
+        {
+            return Err(SceneError::MaterialIndexOutOfBounds);
+        }
+        for (mesh, bindings) in self.meshes.iter_mut().zip(bindings) {
+            for (primitive, material) in mesh.primitives.iter_mut().zip(bindings) {
+                primitive.material = material;
+            }
+        }
+        self.resources = Some(std::sync::Arc::new(resources));
+        self.validate_material_uvs()?;
+        Ok(self)
+    }
+
+    fn validate_material_uvs(&self) -> Result<(), SceneError> {
+        if let Some(resources) = &self.resources {
+            for primitive in self.meshes.iter().flat_map(|mesh| &mesh.primitives) {
+                if let Some(index) = primitive.material {
+                    let material = &resources.materials[index];
+                    if (material.base_color_texture().is_some()
+                        || material.metallic_roughness_texture().is_some()
+                        || material.normal_texture().is_some())
+                        && primitive.mesh.attributes().uvs.is_none()
+                    {
+                        return Err(SceneError::MissingUvs);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub fn resources(&self) -> Option<&SceneResources> {
+        self.resources.as_deref()
     }
 
     pub fn meshes(&self) -> &[SceneMesh] {
@@ -238,12 +457,14 @@ impl SceneSnapshot {
         let source_vertex_count = self
             .meshes
             .iter()
-            .map(|mesh| mesh.mesh.vertices().len())
+            .flat_map(|mesh| &mesh.primitives)
+            .map(|primitive| primitive.mesh.vertices().len())
             .sum();
         let index_visit_count = self
             .meshes
             .iter()
-            .map(|mesh| mesh.mesh.indices().len())
+            .flat_map(|mesh| &mesh.primitives)
+            .map(|primitive| primitive.mesh.indices().len())
             .sum();
 
         let mut mesh_order: Vec<_> = (0..self.meshes.len()).collect();
@@ -254,18 +475,31 @@ impl SceneSnapshot {
             .enumerate()
             .map(|(new_index, old_index)| {
                 mesh_remap[old_index] = new_index;
-                SceneMesh::new(
-                    self.meshes[old_index].id.clone(),
-                    normalize_mesh(&self.meshes[old_index].mesh),
-                )
+                SceneMesh {
+                    id: self.meshes[old_index].id.clone(),
+                    name: self.meshes[old_index].name.clone(),
+                    primitives: self.meshes[old_index]
+                        .primitives
+                        .iter()
+                        .map(|primitive| ScenePrimitive {
+                            mesh: normalize_mesh(&primitive.mesh),
+                            material: primitive.material,
+                        })
+                        .collect(),
+                }
             })
             .collect();
 
-        let materialized_vertex_count = meshes.iter().map(|mesh| mesh.mesh.vertices().len()).sum();
+        let materialized_vertex_count = meshes
+            .iter()
+            .flat_map(|mesh| &mesh.primitives)
+            .map(|primitive| primitive.mesh.vertices().len())
+            .sum();
         let materialized_attribute_value_count = meshes
             .iter()
-            .map(|mesh| {
-                let attributes = mesh.mesh.attributes();
+            .flat_map(|mesh| &mesh.primitives)
+            .map(|primitive| {
+                let attributes = primitive.mesh.attributes();
                 attributes.normals.as_ref().map_or(0, Vec::len)
                     + attributes.tangents.as_ref().map_or(0, Vec::len)
                     + attributes.uvs.as_ref().map_or(0, Vec::len)
@@ -310,6 +544,7 @@ impl SceneSnapshot {
             .collect();
 
         let mut normalized = Self::new(meshes, nodes)?;
+        normalized.resources = self.resources.clone();
         normalized.normalization_observations = Some(SceneNormalizationObservations {
             mesh_count: normalized.meshes.len(),
             node_count: normalized.nodes.len(),
