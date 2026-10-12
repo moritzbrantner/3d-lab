@@ -152,6 +152,16 @@ rest transforms, skin slots/inverse binds/influences and named clips. It topolog
 orders structural pose nodes and explicitly maps original scene indices and authored
 skin palette slots. Non-joint ancestors participate in animation/world transforms;
 structural skeleton entries are not fabricated authored joints or humanoid semantics.
+This bounded imported-character adapter requires all canonical source nodes to be
+reachable from the default scene (or scene zero when no default is declared), with
+scene roots also roots of that canonical hierarchy. Other scene arrangements and
+detached required nodes fail during Rust adaptation with a scene/hierarchy capability
+error, before GPU acquisition or instance creation. Named clips must have positive
+duration for this playback adapter; instantaneous clips fail adaptation with a
+clip/duration error. The general animation library retains instantaneous sampling.
+Existing encoded image/material/resource validation also precedes GPU acquisition;
+external buffer/image URIs do not become implicit browser network dependencies.
+
 The original skin slot order/inverse binds remain GPU metadata. Nonindexed triangle
 primitives receive sequential indices through the existing format lowering rule.
 

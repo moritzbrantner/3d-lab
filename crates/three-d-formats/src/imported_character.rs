@@ -96,6 +96,34 @@ pub fn load_gltf_imported_character(bytes: &[u8]) -> Result<ImportedCharacter, F
             return Err(invalid("scene node hierarchy cycle"));
         }
     }
+    // The GPU adapter loads the default scene (or scene zero), not all document nodes.
+    // This bounded adapter requires the complete canonical pose hierarchy in that scene.
+    let scene = gltf
+        .default_scene()
+        .or_else(|| gltf.scenes().next())
+        .ok_or_else(|| invalid("imported character requires a selected scene hierarchy"))?;
+    let mut pending = Vec::new();
+    for root in scene.nodes() {
+        if parents[root.index()].is_some() {
+            return Err(invalid(
+                "selected scene root has a parent outside its root hierarchy",
+            ));
+        }
+        pending.push(root.index());
+    }
+    let mut selected = vec![false; source.len()];
+    while let Some(index) = pending.pop() {
+        if selected[index] {
+            continue;
+        }
+        selected[index] = true;
+        pending.extend(source[index].children().map(|child| child.index()));
+    }
+    if selected.iter().any(|present| !present) {
+        return Err(invalid(
+            "selected scene must include the complete imported node/mesh/skin hierarchy; detached nodes are unsupported",
+        ));
+    }
     let mut nodes = Vec::new();
     let mut names = Vec::new();
     for &index in &ordered {
@@ -266,6 +294,11 @@ pub fn load_gltf_imported_character(bytes: &[u8]) -> Result<ImportedCharacter, F
     let mut names_seen = std::collections::BTreeSet::new();
     if clips.is_empty() || clips.iter().any(|c| !names_seen.insert(c.name())) {
         return Err(invalid("clip names must be present and unique"));
+    }
+    if clips.iter().any(|clip| clip.duration() <= 0.0) {
+        return Err(invalid(
+            "zero-duration animation clips are unsupported by the imported playback adapter",
+        ));
     }
     // Skeleton entries are structural pose nodes, NOT newly authored skin joints.
     // Non-skin entries have an unused identity bind; original palette metadata stays separate.
