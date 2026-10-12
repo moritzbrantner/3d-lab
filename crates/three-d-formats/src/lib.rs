@@ -276,16 +276,20 @@ pub fn load_gltf(bytes: &[u8]) -> Result<Asset, FormatError> {
     let gltf = gltf::Gltf::from_slice(bytes)
         .map_err(|error| FormatError::InvalidGltf(error.to_string()))?;
     let buffers = load_gltf_buffers(&gltf)?;
-    let images = gltf_resources::load_images(&gltf, &buffers)?;
-    let samplers = gltf_resources::load_samplers(&gltf);
-    let textures = gltf_resources::load_textures(&gltf);
+    load_gltf_asset(&gltf, &buffers)
+}
+
+fn load_gltf_asset(gltf: &gltf::Gltf, buffers: &[Vec<u8>]) -> Result<Asset, FormatError> {
+    let images = gltf_resources::load_images(gltf, buffers)?;
+    let samplers = gltf_resources::load_samplers(gltf);
+    let textures = gltf_resources::load_textures(gltf);
     let materials = gltf
         .materials()
         .map(convert_gltf_material)
         .collect::<Result<Vec<_>, _>>()?;
     let meshes = gltf
         .meshes()
-        .map(|mesh| convert_gltf_mesh(mesh, &buffers))
+        .map(|mesh| convert_gltf_mesh(mesh, buffers))
         .collect::<Result<Vec<_>, _>>()?;
 
     if meshes.is_empty() {

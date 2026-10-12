@@ -1,5 +1,5 @@
 //! Imported scene lowering through the existing glTF decoder and animation/rig authorities.
-use crate::{FormatError, load_gltf_animation_clips, load_gltf_buffers};
+use crate::{FormatError, load_gltf_animation_clips, load_gltf_asset, load_gltf_buffers};
 use three_d_animation::{
     AnimationClip, AnimationTrack, Joint, Mat4, Quat, Skeleton, SkinInfluence, Transform,
     TransformNode, world_matrices,
@@ -10,6 +10,8 @@ use three_d_rigged_assets::RiggedAsset;
 /// Source scene identities remain separate from authored skin palette slots.
 #[derive(Debug, Clone)]
 pub struct ImportedCharacter {
+    /// Canonical encoded resources and material references, validated before GPU acquisition.
+    pub asset: three_d_assets::Asset,
     pub nodes: Vec<TransformNode>,
     pub source_nodes: Vec<usize>,
     pub node_names: Vec<String>,
@@ -280,7 +282,9 @@ pub fn load_gltf_imported_character(bytes: &[u8]) -> Result<ImportedCharacter, F
     let skeleton = Skeleton::new(joints).map_err(|e| invalid(e.to_string()))?;
     let rig = RiggedAsset::new(skeleton, influences, clips, Vec::new())
         .map_err(|e| invalid(format!("rig: {e}")))?;
+    let asset = load_gltf_asset(&gltf, &buffers)?;
     Ok(ImportedCharacter {
+        asset,
         nodes,
         source_nodes: ordered,
         node_names: names,
