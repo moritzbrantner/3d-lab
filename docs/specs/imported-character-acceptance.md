@@ -338,3 +338,35 @@ Observed JS adapter hash `212746430b91d3841c1157723a3a494e56f683492846d39c2b6fe7
 and actual candidate WASM hash `f970ab2e0a1b2a094620344adc8f6c312b4d5d3607353b158f2b5cdf24c197b2`.
 This independently authored supplemental RED precedes the adjacent safety fix;
 it is not represented as pre-initial-production acceptance chronology.
+
+## Supplemental image acquisition boundary before the adjacent closure repair
+
+Independently authored at production checkpoint `d3fb36d`, before its image-URI
+closure repair. The exact processed Fox GLB is mutated only by replacing image0's
+embedded bufferView with an external URI. The fixture receipt hash/length match
+these exact altered bytes, so integrity rejection cannot stand in for resource
+validation. The disposable real local server serves the original embedded PNG
+bytes at that unapproved URI: actual successful image decoding does not authorize
+acquisition outside the imported asset/provenance boundary.
+
+The existing public Chromium adapter must reject with an image/URI/external
+semantic reason **before any request** to that image resource. Playwright's real
+request observer records every attempted unapproved resource request; no image
+network mock, fake failure, substituted pixels or runtime state is used. Requests
+are retained even on failed acceptance in `resource-observations.json`. A prior
+valid instance must keep its exact pose and immutable buffers and subsequently
+seek Run0.117 successfully with changed pose. Generic network failure is not proof
+of semantic closure. Existing `gltf_resources::load_images` rejects non-data URIs;
+production must reuse that existing resource owner, not introduce a second image
+parser/decoder or weaken the imported provenance boundary.
+
+Actual baseline command `bun scripts/imported-character-browser-acceptance.ts
+ target/imported-character-external-image-baseline` is genuinely RED: Chromium
+requests `/unapproved-fox-image.png` and the local server serves the real original
+PNG. The zero-request assertion fails with the recorded actual URL. Earlier valid
+runtime/render and supplemental inactive-slot assertions execute; later semantic
+rejection/prior-instance checks and remaining malformed/placement/fade assertions
+are unexecuted in this failing run. This supplemental case was authored after
+initial production but before its adjacent closure patch; no all-tests-first or
+complete browser success claim is made. Prior twelve runtime and inactive-slot
+expectations remain unchanged.

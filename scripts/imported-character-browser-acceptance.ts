@@ -58,11 +58,25 @@ const inactiveReceipt=structuredClone(proof);
 inactiveReceipt.result.outputs.output.sha256=createHash("sha256").update(inactiveDamaged).digest("hex");
 inactiveReceipt.result.outputs.output.byteLength=inactiveDamaged.byteLength;
 const inactiveFixture={bytes:Array.from(inactiveDamaged),receipt:inactiveReceipt};
+// Actual embedded source pixels at an unauthorized URI: acquisition must not
+// succeed merely because the image happens to be identical to the approved PNG.
+const foxJsonLength=fox.readUInt32LE(12);
+const foxJson=JSON.parse(fox.subarray(20,20+foxJsonLength).toString());
+const imageView=foxJson.bufferViews[foxJson.images[0].bufferView];
+const originalPng=fox.subarray(28+foxJsonLength+(imageView.byteOffset??0),28+foxJsonLength+(imageView.byteOffset??0)+imageView.byteLength);
+const externalImageBytes=mutate(json=>{delete json.images[0].bufferView;json.images[0].uri='/unapproved-fox-image.png';});
+const externalImageReceipt=structuredClone(proof);
+externalImageReceipt.result.outputs.output.sha256=createHash("sha256").update(externalImageBytes).digest("hex");
+externalImageReceipt.result.outputs.output.byteLength=externalImageBytes.byteLength;
+const externalImageFixture={bytes:Array.from(externalImageBytes),receipt:externalImageReceipt};
+const unapprovedRequests: string[]=[];
 const wasm: Array<{url: string; sha256: string; bytes: number}> = [];
 const pageErrors: string[] = [];
 // Disposable fixture server, no application state, decoder or model implementation.
 const server = Bun.serve({ hostname:"127.0.0.1", port:0, async fetch(request) {
   const url = new URL(request.url);
+  if (url.pathname==='/unapproved-fox-image.png') {return new Response(originalPng,{headers:{"Content-Type":"image/png"}});}
+  if (url.pathname==='/acceptance-resource-observations') {return Response.json({requests:unapprovedRequests});}
   if (url.pathname === "/") {
     return new Response('<!doctype html><html><body><canvas aria-label="Actual public imported character" width="640" height="480"></canvas></body></html>', { headers:{"Content-Type":"text/html"} });
   }
@@ -75,6 +89,7 @@ const server = Bun.serve({ hostname:"127.0.0.1", port:0, async fetch(request) {
 const browser = await chromium.launch({headless:true,channel:"chromium",args:["--enable-unsafe-swiftshader","--use-gl=angle","--use-angle=swiftshader"]});
 const page = await browser.newPage({viewport:{width:800,height:600}});
 page.on("pageerror",error=>pageErrors.push(error.message));
+page.on("request",request=>{if(new URL(request.url()).pathname==='/unapproved-fox-image.png'){unapprovedRequests.push(request.url());}});
 const responses: Promise<void>[] = [];
 page.on("response",response=> {
   if (response.headers()["content-type"]?.includes("application/wasm") || new URL(response.url()).pathname.endsWith(".wasm")) {
@@ -88,7 +103,7 @@ try {
     map.textContent=JSON.stringify({imports:{three:"/node_modules/three/build/three.module.js","three/":"/node_modules/three/"}});
     document.head.appendChild(map);
   });
-  const result = await page.evaluate(async ({ importedPath, negativeFixtures, inactiveFixture }) => {
+  const result = await page.evaluate(async ({ importedPath, negativeFixtures, inactiveFixture, externalImageFixture }) => {
     const THREE = await import("three");
     const publicRenderer = await import("/packages/renderer/index.js");
     const canvas=document.querySelector("canvas")!;
@@ -189,6 +204,15 @@ try {
     const inactiveSibling=inactiveAsset.createInstance();
     check(mesh(inactiveSibling).geometry===inactiveMesh.geometry,'inactive accepted asset did not retain shared geometry');
     draw([a]);
+    // No network acquisition may occur before semantic external-image rejection.
+    await a.seek('Walk',0.321);const beforeExternal=JSON.stringify(pose(a)),buffersExternal=immutable(a);
+    let externalFailure;try {await module.adaptImportedCharacter(new Uint8Array(externalImageFixture.bytes),{provenance:externalImageFixture.receipt});}catch(error){externalFailure=error;}
+    const acquisition=await(await fetch('/acceptance-resource-observations')).json();
+    check(acquisition.requests.length===0,`external image acquired outside provenance: ${JSON.stringify(acquisition.requests)}`);
+    check(externalFailure && /image|uri|external/i.test(String(externalFailure)),'external image must reject semantically, not by unrelated network failure');
+    check(JSON.stringify(pose(a))===beforeExternal && immutable(a)===buffersExternal,'external image rejection damaged retained valid instance');
+    await a.seek('Run',0.117);check(JSON.stringify(pose(a))!==beforeExternal,'valid instance unusable after external image rejection');
+    await a.seek('Walk',0.321);
     for(const fixture of negativeFixtures) {
       const retained=await module.adaptImportedCharacter(bytes,{provenance:proof});
       const valid=retained.createInstance();await valid.seek('Walk',0.321);
@@ -217,8 +241,8 @@ try {
     draw([a,placed]);
     // Presentation-only draw loop keeps a real submitted frame available for screenshot.
     const present=()=>{module.renderImportedCharacterInstances(renderer,{camera:renderCamera,instances:[a,placed]});requestAnimationFrame(present);};requestAnimationFrame(present);
-    return {inactiveSlot:{accepted:true,finitePose:true,boundedGpuPalette:true,unchangedFrame:true},completedCases,samples,visiblePixels:visible,movingPixels:changed,wasmInstances:instantiated,sharedGeometry:true,sharedInfluences:true,independentPoses:true};
-  }, {importedPath,negativeFixtures,inactiveFixture});
+    return {externalImage:{semanticRejection:true,outboundRequests:0,priorInstanceUsable:true},inactiveSlot:{accepted:true,finitePose:true,boundedGpuPalette:true,unchangedFrame:true},completedCases,samples,visiblePixels:visible,movingPixels:changed,wasmInstances:instantiated,sharedGeometry:true,sharedInfluences:true,independentPoses:true};
+  }, {importedPath,negativeFixtures,inactiveFixture,externalImageFixture});
   await Promise.all(responses);
   assert(wasm.some(resource=>resource.bytes>8),"actual compiled Rust WASM artifact bytes were not observed; inline bridge requires independent source-bound translation");
   assert.deepEqual(pageErrors,[]);
@@ -226,5 +250,6 @@ try {
   await writeFile(resolve(output,"evidence.json"),JSON.stringify({assetSha256:proof.result.outputs.output.sha256,...result,wasm},null,2)+'\n');
   console.log('imported-character-browser-acceptance=passed (source authority audit also mandatory)');
 } finally {
+  await writeFile(resolve(output,"resource-observations.json"),JSON.stringify({unapprovedRequests},null,2)+'\n');
   await browser.close();server.stop(true);
 }
