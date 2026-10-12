@@ -158,3 +158,10 @@ caller resource boundary. It remains compile RED with the original eight at
 missing APIs; later caller-resource assertions are UNRUN. No producer may treat
 nominal typed Material as proof of validation, silently clamp invalid values or
 serialize nonfinite factors as null. Production representation remains flexible.
+
+Coordinating root reviewed the observed admissions before production and chose
+the existing earliest semantic owner: Material::pbr_metallic_roughness rebuilds
+BaseColorFactor through its existing constructor, analogous to SkinInfluence.
+Private Material fields can then remain trusted; no duplicate downstream factor
+validator is required. Both supplemental helpers propagate earliest constructor
+rejection and never unwrap an invalid Material to force a later failure.
