@@ -5,6 +5,8 @@
 //! silently discarded.
 
 mod gltf_resources;
+mod imported_character;
+pub use imported_character::{ImportedCharacter, load_gltf_imported_character};
 
 use std::fmt;
 use std::io::Cursor;
@@ -352,6 +354,19 @@ fn aligned_keyframes<T: Copy>(
 pub fn load_gltf_animation_clips(bytes: &[u8]) -> Result<Vec<AnimationClip>, FormatError> {
     let gltf = gltf::Gltf::from_slice(bytes)
         .map_err(|error| FormatError::InvalidGltf(error.to_string()))?;
+    // glTF's typed target accessor assumes valid node references; diagnose before
+    // accessing it so malformed imported clips never trap the browser bridge.
+    for (animation, definition) in gltf.as_json().animations.iter().enumerate() {
+        for (channel, definition) in definition.channels.iter().enumerate() {
+            if definition.target.node.value() >= gltf.as_json().nodes.len() {
+                return Err(animation_error(
+                    animation,
+                    channel,
+                    "clip target node out of range",
+                ));
+            }
+        }
+    }
     let buffers = load_gltf_buffers(&gltf)?;
 
     gltf.animations()

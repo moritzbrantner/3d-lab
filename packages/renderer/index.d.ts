@@ -362,6 +362,7 @@ export type ThreeSceneRenderer = {
    * have changed, for example on every frame of an animated day/night cycle.
    */
   renderCamera(camera: RendererCamera): RendererWorkObservations
+  renderImportedRoots(frame: {camera: RendererCamera; roots: import("three").Object3D[]}): {importedInstances:number}
   render(frame: RendererFrame): RendererWorkObservations
   dispose(): void
 }

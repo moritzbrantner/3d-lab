@@ -26,11 +26,16 @@
     "./flipbook": {
       "types": "./packages/renderer/flipbook.d.ts",
       "import": "./packages/renderer/flipbook.js"
+    },
+    "./imported-character": {
+      "types": "./packages/renderer/imported-character.d.ts",
+      "import": "./packages/renderer/imported-character.js"
     }
   },
   "scripts": {
     "test": "bun test packages/renderer",
-    "bench:character-pose": "bun scripts/character-pose-evidence.mjs"
+    "bench:character-pose": "bun scripts/character-pose-evidence.mjs",
+    "build:imported-character-wasm": "bun scripts/build-imported-character-wasm.mjs"
   },
   "dependencies": {
     "three": "0.185.1"

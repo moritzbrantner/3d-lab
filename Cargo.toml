@@ -8,6 +8,7 @@ members = [
     "crates/three-d-assets",
     "crates/three-d-rigged-assets",
     "crates/three-d-formats",
+    "crates/three-d-character-wasm",
     "crates/three-d-lod",
     "crates/three-d-playback",
     "crates/three-d-scene",

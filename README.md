@@ -153,3 +153,9 @@ See [`docs/contracts/asset-model.md`](docs/contracts/asset-model.md) for asset/m
 See [`docs/contracts/editor-model.md`](docs/contracts/editor-model.md) for the authoring-state, hierarchy, vertex-edit, and Three.js adapter boundary.
 
 See [`ROADMAP.md`](ROADMAP.md) for the next implementation slices.
+
+Validated imported characters use `@moritzbrantner/three-d-renderer/imported-character`.
+Build its live Rust browser bridge with `bun run build:imported-character-wasm`;
+run the actual consumer contract with
+`bun scripts/imported-character-browser-acceptance.ts target/imported-character-browser-acceptance`.
+See the browser renderer contract for retained resources, independent poses and native adapter limits.

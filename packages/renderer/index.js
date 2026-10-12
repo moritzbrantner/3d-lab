@@ -493,6 +493,8 @@ export function createThreeSceneRenderer(canvas, options = {}) {
   let configuredHeight = null
   let configuredPixelRatio = null
 
+  const importedRoots = new Set()
+
   function applyCamera(frameCamera) {
     camera.matrixWorldInverse.fromArray(frameCamera.viewMatrix)
     camera.matrixWorld.copy(camera.matrixWorldInverse).invert()
@@ -535,6 +537,18 @@ export function createThreeSceneRenderer(canvas, options = {}) {
       effectLayer.observe(observations)
       renderer.render(scene, camera)
       return observations
+    },
+
+    /** Present Rust-authoritative imported poses through the same scene/context. */
+    renderImportedRoots({camera: frameCamera, roots}) {
+      validateRenderCamera(frameCamera)
+      if (!Array.isArray(roots) || roots.some(root => !root?.isObject3D)) failContract("imported roots must be Three objects")
+      const current = new Set(roots)
+      for (const root of importedRoots) if (!current.has(root)) { scene.remove(root); importedRoots.delete(root) }
+      for (const root of roots) if (!importedRoots.has(root)) { scene.add(root); importedRoots.add(root) }
+      applyCamera(frameCamera)
+      renderer.render(scene, camera)
+      return {importedInstances: roots.length}
     },
 
     render(frame) {
