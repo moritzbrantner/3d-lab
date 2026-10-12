@@ -132,3 +132,29 @@ Pages is not this library interchange capability's verification surface; no fake
 browser rendering substitutes for Blender. This does not close Video84 CLI,
 canonical provenance/metadata/selection or three-real-video product acceptance,
 and does not expand renderer86 or animated export.
+
+## Preproduction caller base-color trust supplement
+
+Source audit of protected head62391b3 identified an existing constructor hole:
+BaseColorFactor has public fields; Material::pbr_metallic_roughness validates
+metallic/roughness but does not rebuild the supplied base color, and Asset::new/
+with_resources validate references without checking it. Independent
+`caller_material_boundary.rs` exercises the actual current public constructors.
+All20 invalid shapes (each RGBA component negative, above1, NaN, positive or
+negative infinity) are independently rejected by BaseColorFactor::new yet
+admitted by Material→Asset. The test collects all admissions before failing:
+**1 valid-factor positive GREEN,1 genuine behavioral RED**, every invalid shape
+actually observed. Log `/tmp/3dlab116-caller-color-baseline.log`. No malformed
+JSON, private validator or fabricated geometry is involved.
+
+The supplement is authored BEFORE116 production. Its immutable outcome is a
+useful base-color/factor-specific rejection before caller material data becomes
+trusted for resource-preserving export. Existing Material/Asset authority or
+proposed SceneResources boundary may own that validation; a separate acceptance
+context can translate the helper to the chosen equivalent public resource seam
+without changing the20 invalid outcomes or valid0/1/fractional/alpha0 positives.
+The added ninth full-contract case independently protects the proposed actual
+caller resource boundary. It remains compile RED with the original eight at
+missing APIs; later caller-resource assertions are UNRUN. No producer may treat
+nominal typed Material as proof of validation, silently clamp invalid values or
+serialize nonfinite factors as null. Production representation remains flexible.

@@ -2,7 +2,8 @@
 //! translation is allowed separately, never material/geometry expectation weakening.
 use three_d_animation::{Quat, Transform};
 use three_d_assets::{
-    EncodedImage, Material, MaterialTextureBinding, NormalTextureBinding, Texture, TextureSampler,
+    BaseColorFactor, EncodedImage, Material, MaterialTextureBinding, NormalTextureBinding, Texture,
+    TextureSampler,
 };
 use three_d_core::Vec3;
 use three_d_export::{export_scene_glb, export_scene_glb_with_observations};
@@ -408,4 +409,36 @@ fn non_gltf_image_mime_fails_instead_of_claiming_portable_embedding() {
         error.contains("mime") || error.contains("image"),
         "specific unsupported image contract: {error}"
     );
+}
+
+#[test]
+fn invalid_public_field_factor_rejects_before_caller_resources_become_trusted() {
+    for component in 0..4 {
+        for value in [-0.25, 1.25, f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            let mut rgba = [1.0; 4];
+            rgba[component] = value;
+            let result = Material::pbr_metallic_roughness(
+                Some("caller-invalid".into()),
+                BaseColorFactor {
+                    r: rgba[0],
+                    g: rgba[1],
+                    b: rgba[2],
+                    a: rgba[3],
+                },
+                0.25,
+                0.75,
+                false,
+            )
+            .map_err(|error| error.to_string())
+            .and_then(|material| {
+                SceneResources::new(vec![material], Vec::new(), Vec::new(), Vec::new())
+                    .map_err(|error| error.to_string())
+            });
+            let error = result.unwrap_err().to_lowercase();
+            assert!(
+                error.contains("color") || error.contains("factor") || error.contains("rgba"),
+                "useful caller base-color rejection before trusted table: {error}"
+            );
+        }
+    }
 }
