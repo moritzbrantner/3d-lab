@@ -9,7 +9,7 @@ The crate models:
 - an asset as a collection of named mesh groups, materials, encoded images, samplers, and textures;
 - a mesh group as one or more primitives;
 - a primitive as validated `three-d-core::Mesh` geometry plus an optional material reference and optional vertex-aligned `three-d-animation::SkinInfluence` data;
-- a small metallic-roughness PBR material record with base-color, metallic, roughness, double-sided factors, and an optional normal-texture binding;
+- a small metallic-roughness PBR material record with base-color, metallic, roughness, double-sided factors, and optional base-color, metallic-roughness and normal-texture bindings;
 - an encoded image as MIME-typed bytes without imposing a pixel decoder;
 - a sampler as renderer-independent filtering and wrapping semantics;
 - a texture as an image reference plus an optional sampler reference;
@@ -22,7 +22,7 @@ The geometry inside every primitive remains owned by `three-d-core`; `three-d-as
 
 `three-d-formats` is the downstream decoding layer. It uses dedicated OBJ and glTF parsers, normalizes accepted geometry into `three-d-core::Mesh`, and terminates in `three-d-assets::Asset`.
 
-The adapter is deliberately loss-aware. It rejects source semantics that cannot currently be represented faithfully rather than silently deleting them. The current glTF mesh-asset path accepts triangle primitives with positions plus optional normals, tangents, UV0, color0, and paired `JOINTS_0`/`WEIGHTS_0`; embedded/GLB buffer data; factor-only metallic-roughness materials; encoded images from data URIs or buffer views; texture/sampler records; and normal-texture material bindings. Additional joint/weight sets, morph targets, base-color/metallic-roughness/occlusion/emissive textures, emissive/alpha material behavior, external buffer URIs, and external image URIs remain explicit unsupported boundaries. The mesh-asset loader preserves vertex skin influences but does not claim to assemble the glTF node-to-skin relationship; renderer-neutral scene/skin binding remains a separate scene-layer follow-up. The current in-memory OBJ path triangulates and single-indexes geometry, but rejects MTL-backed material references until an explicit MTL-to-material policy exists.
+The adapter is deliberately loss-aware. It rejects source semantics that cannot currently be represented faithfully rather than silently deleting them. The current glTF mesh-asset path accepts triangle primitives with positions plus optional normals, tangents, UV0, color0, and paired `JOINTS_0`/`WEIGHTS_0`; embedded/GLB buffer data; metallic-roughness material factors with base-color, metallic-roughness and normal-texture bindings; encoded images from data URIs or buffer views; texture/sampler records; and normal-texture material bindings. Additional joint/weight sets, morph targets, occlusion/emissive textures, emissive/alpha material behavior, external buffer URIs, and external image URIs remain explicit unsupported boundaries. The mesh-asset loader preserves vertex skin influences but does not claim to assemble the glTF node-to-skin relationship; renderer-neutral scene/skin binding remains a separate scene-layer follow-up. The current in-memory OBJ path triangulates and single-indexes geometry, but rejects MTL-backed material references until an explicit MTL-to-material policy exists.
 
 This separation means support can grow format-by-format without importing parser vocabulary into the semantic crates.
 
@@ -58,3 +58,31 @@ The `resourceKey` is identity, not a filename. Downstream consumers should use a
 This boundary is intentionally geometry-first. Texture/material transport remains a separate follow-up so applications do not grow local glTF loaders or ad-hoc renderer-specific asset semantics while waiting for full authored-model support.
 
 For self-contained static GLBs, the renderer package's `static-glb` adapter performs that lowering once in the browser: node hierarchy and transforms, indexed geometry with UV0 and sRGB vertex colors, and factor-only materials, with geometry keys derived from the asset's content identity (see [`browser-renderer.md`](browser-renderer.md#static-glb-assets)). It mirrors the `three-d-formats` supported boundary and rejects textures, emissive factors, required extensions, alpha modes, skins, animations, and morph targets rather than inventing a parallel asset model; it uses Three.js `GLTFLoader` only to decode accessors because the Rust crates are not available in the browser.
+
+## Static resource-preserving scene export
+
+`SceneSnapshot::from_asset` consumes a validated `Asset`, moving its mesh groups,
+primitive geometry and encoded resources without whole-buffer adaptation copies.
+Each scene mesh retains all primitives and their material references; caller nodes
+reference shared groups, so repeated instances do not duplicate buffers or images.
+The existing `SceneMesh::new` constructor remains a single unbound primitive;
+`SceneMesh::mesh` is its first-primitive compatibility accessor. Group-aware consumers
+use `primitives()` rather than treating that accessor as an entire imported group.
+Authored group names are preserved independently from unique normalization IDs.
+
+`SceneResources::new` uses the assets owner's referential validation for caller-supplied
+material/image/sampler/texture tables. `with_material_resources` binds exactly one
+optional material per existing primitive. The static portable boundary supports UV0
+and PNG/JPEG encoded images, rejects skin influences, unsupported UV sets, missing
+UVs for textured primitives, unsupported MIME and dangling references usefully.
+Material construction revalidates public `BaseColorFactor` fields before trusting them.
+No image decoder or source-format parser is added to scene semantics.
+
+Scene normalization retains existing geometry ordering and canonicalization, operating
+once per primitive. Immutable resource tables are shared through normalization; they
+are not normalized, decoded or cloned per instance. An already normalized snapshot is
+borrowed directly by `export_scene_glb`; initial parsing is not a claim of normalization.
+The existing exporter embeds exact encoded images into the same GLB binary, preserving
+supported scalar factors, base-color/metallic-roughness/normal channels and sampler
+references. No external resource acquisition is required to consume its output.
+Geometry-only constructors preserve the existing serialization policy and representation.

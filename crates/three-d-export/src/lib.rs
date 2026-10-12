@@ -176,18 +176,21 @@ fn scene_export_observations(
         vertex_count: scene
             .meshes()
             .iter()
-            .map(|mesh| mesh.mesh().vertices().len())
+            .flat_map(|mesh| mesh.primitives())
+            .map(|primitive| primitive.mesh().vertices().len())
             .sum(),
         index_count: scene
             .meshes()
             .iter()
-            .map(|mesh| mesh.mesh().indices().len())
+            .flat_map(|mesh| mesh.primitives())
+            .map(|primitive| primitive.mesh().indices().len())
             .sum(),
         attribute_value_count: scene
             .meshes()
             .iter()
-            .map(|mesh| {
-                let attributes = mesh.mesh().attributes();
+            .flat_map(|mesh| mesh.primitives())
+            .map(|primitive| {
+                let attributes = primitive.mesh().attributes();
                 attributes.normals.as_ref().map_or(0, Vec::len)
                     + attributes.tangents.as_ref().map_or(0, Vec::len)
                     + attributes.uvs.as_ref().map_or(0, Vec::len)
@@ -195,6 +198,102 @@ fn scene_export_observations(
             })
             .sum(),
     }
+}
+
+fn serialize_resources(
+    scene: &SceneSnapshot,
+    binary: &mut Vec<u8>,
+    views: &mut Vec<Value>,
+) -> Result<Option<Map<String, Value>>, SceneExportError> {
+    let Some(resources) = scene.resources() else {
+        return Ok(None);
+    };
+    let mut result = Map::new();
+    let materials: Vec<_> = resources.materials().iter().map(|material| {
+        let color = material.base_color_factor();
+        let mut pbr = json!({ "baseColorFactor": [color.r, color.g, color.b, color.a], "metallicFactor": material.metallic_factor(), "roughnessFactor": material.roughness_factor() });
+        for (key, binding) in [("baseColorTexture", material.base_color_texture()), ("metallicRoughnessTexture", material.metallic_roughness_texture())] {
+            if let Some(binding) = binding { pbr[key] = json!({ "index": binding.texture(), "texCoord": binding.tex_coord() }); }
+        }
+        let mut value = json!({ "pbrMetallicRoughness": pbr, "doubleSided": material.double_sided() });
+        if let Some(name) = material.name() { value["name"] = json!(name); }
+        if let Some(binding) = material.normal_texture() { value["normalTexture"] = json!({ "index": binding.texture(), "texCoord": binding.tex_coord(), "scale": binding.scale() }); }
+        value
+    }).collect();
+    let mut images = Vec::with_capacity(resources.images().len());
+    for image in resources.images() {
+        align_four(binary, 0);
+        let offset = binary.len();
+        binary.extend_from_slice(image.bytes());
+        let view = views.len();
+        views.push(json!({ "buffer": 0, "byteOffset": u32_size(offset)?, "byteLength": u32_size(image.bytes().len())? }));
+        let mut value = json!({ "bufferView": view, "mimeType": image.mime_type() });
+        if let Some(name) = image.name() {
+            value["name"] = json!(name);
+        }
+        images.push(value);
+    }
+    let samplers: Vec<_> = resources
+        .samplers()
+        .iter()
+        .map(|sampler| {
+            use three_d_assets::{
+                MagnificationFilter as Mag, MinificationFilter as Min, TextureWrap as Wrap,
+            };
+            let wrap = |value| match value {
+                Wrap::ClampToEdge => 33071,
+                Wrap::MirroredRepeat => 33648,
+                Wrap::Repeat => 10497,
+            };
+            let mut value =
+                json!({ "wrapS": wrap(sampler.wrap_s()), "wrapT": wrap(sampler.wrap_t()) });
+            if let Some(name) = sampler.name() {
+                value["name"] = json!(name);
+            }
+            if let Some(filter) = sampler.mag_filter() {
+                value["magFilter"] = json!(match filter {
+                    Mag::Nearest => 9728,
+                    Mag::Linear => 9729,
+                });
+            }
+            if let Some(filter) = sampler.min_filter() {
+                value["minFilter"] = json!(match filter {
+                    Min::Nearest => 9728,
+                    Min::Linear => 9729,
+                    Min::NearestMipmapNearest => 9984,
+                    Min::LinearMipmapNearest => 9985,
+                    Min::NearestMipmapLinear => 9986,
+                    Min::LinearMipmapLinear => 9987,
+                });
+            }
+            value
+        })
+        .collect();
+    let textures: Vec<_> = resources
+        .textures()
+        .iter()
+        .map(|texture| {
+            let mut value = json!({ "source": texture.image() });
+            if let Some(name) = texture.name() {
+                value["name"] = json!(name);
+            }
+            if let Some(sampler) = texture.sampler() {
+                value["sampler"] = json!(sampler);
+            }
+            value
+        })
+        .collect();
+    for (key, values) in [
+        ("materials", materials),
+        ("images", images),
+        ("samplers", samplers),
+        ("textures", textures),
+    ] {
+        if !values.is_empty() {
+            result.insert(key.into(), json!(values));
+        }
+    }
+    Ok(Some(result))
 }
 
 pub fn export_scene_glb(scene: &SceneSnapshot) -> Result<Vec<u8>, SceneExportError> {
@@ -227,103 +326,108 @@ fn export_normalized_scene_glb(scene: &SceneSnapshot) -> Result<Vec<u8>, SceneEx
     let mut gltf_meshes = Vec::new();
 
     for (mesh_index, scene_mesh) in scene.meshes().iter().enumerate() {
-        let mesh = scene_mesh.mesh();
-        if mesh.vertices().is_empty() || mesh.indices().is_empty() {
-            return Err(SceneExportError::EmptyMesh { mesh: mesh_index });
-        }
-        let (minimum, maximum) = position_bounds(mesh.vertices());
-        let position_accessor = add_f32_accessor(
-            &mut binary,
-            &mut buffer_views,
-            &mut accessors,
-            3,
-            mesh.vertices()
-                .iter()
-                .map(|value| vec![value.x, value.y, value.z]),
-            mesh.vertices().len(),
-            Some((minimum, maximum)),
-        )?;
-
-        let mut attributes = Map::new();
-        attributes.insert("POSITION".into(), json!(position_accessor));
-        if let Some(normals) = &mesh.attributes().normals {
-            let accessor = add_f32_accessor(
+        let mut gltf_primitives = Vec::new();
+        for primitive in scene_mesh.primitives() {
+            let mesh = primitive.mesh();
+            if mesh.vertices().is_empty() || mesh.indices().is_empty() {
+                return Err(SceneExportError::EmptyMesh { mesh: mesh_index });
+            }
+            let (minimum, maximum) = position_bounds(mesh.vertices());
+            let position_accessor = add_f32_accessor(
                 &mut binary,
                 &mut buffer_views,
                 &mut accessors,
                 3,
-                normals.iter().map(|value| vec![value.x, value.y, value.z]),
-                normals.len(),
-                None,
-            )?;
-            attributes.insert("NORMAL".into(), json!(accessor));
-        }
-        if let Some(tangents) = &mesh.attributes().tangents {
-            let accessor = add_f32_accessor(
-                &mut binary,
-                &mut buffer_views,
-                &mut accessors,
-                4,
-                tangents
+                mesh.vertices()
                     .iter()
-                    .map(|value| vec![value.x, value.y, value.z, value.w]),
-                tangents.len(),
-                None,
+                    .map(|value| vec![value.x, value.y, value.z]),
+                mesh.vertices().len(),
+                Some((minimum, maximum)),
             )?;
-            attributes.insert("TANGENT".into(), json!(accessor));
-        }
-        if let Some(uvs) = &mesh.attributes().uvs {
-            let accessor = add_f32_accessor(
+
+            let mut attributes = Map::new();
+            attributes.insert("POSITION".into(), json!(position_accessor));
+            if let Some(normals) = &mesh.attributes().normals {
+                let accessor = add_f32_accessor(
+                    &mut binary,
+                    &mut buffer_views,
+                    &mut accessors,
+                    3,
+                    normals.iter().map(|value| vec![value.x, value.y, value.z]),
+                    normals.len(),
+                    None,
+                )?;
+                attributes.insert("NORMAL".into(), json!(accessor));
+            }
+            if let Some(tangents) = &mesh.attributes().tangents {
+                let accessor = add_f32_accessor(
+                    &mut binary,
+                    &mut buffer_views,
+                    &mut accessors,
+                    4,
+                    tangents
+                        .iter()
+                        .map(|value| vec![value.x, value.y, value.z, value.w]),
+                    tangents.len(),
+                    None,
+                )?;
+                attributes.insert("TANGENT".into(), json!(accessor));
+            }
+            if let Some(uvs) = &mesh.attributes().uvs {
+                let accessor = add_f32_accessor(
+                    &mut binary,
+                    &mut buffer_views,
+                    &mut accessors,
+                    2,
+                    uvs.iter().map(|value| vec![value.x, value.y]),
+                    uvs.len(),
+                    None,
+                )?;
+                attributes.insert("TEXCOORD_0".into(), json!(accessor));
+            }
+            if let Some(colors) = &mesh.attributes().colors {
+                let accessor = add_f32_accessor(
+                    &mut binary,
+                    &mut buffer_views,
+                    &mut accessors,
+                    3,
+                    colors.iter().map(|value| vec![value.r, value.g, value.b]),
+                    colors.len(),
+                    None,
+                )?;
+                attributes.insert("COLOR_0".into(), json!(accessor));
+            }
+
+            let index_view = add_buffer_view(
                 &mut binary,
                 &mut buffer_views,
-                &mut accessors,
-                2,
-                uvs.iter().map(|value| vec![value.x, value.y]),
-                uvs.len(),
-                None,
+                ELEMENT_ARRAY_BUFFER_TARGET,
+                |bytes| {
+                    for &index in mesh.indices() {
+                        append_u32(bytes, index);
+                    }
+                },
             )?;
-            attributes.insert("TEXCOORD_0".into(), json!(accessor));
-        }
-        if let Some(colors) = &mesh.attributes().colors {
-            let accessor = add_f32_accessor(
-                &mut binary,
-                &mut buffer_views,
-                &mut accessors,
-                3,
-                colors.iter().map(|value| vec![value.r, value.g, value.b]),
-                colors.len(),
-                None,
-            )?;
-            attributes.insert("COLOR_0".into(), json!(accessor));
-        }
+            let index_accessor = accessors.len();
+            accessors.push(json!({
+                "bufferView": index_view,
+                "byteOffset": 0,
+                "componentType": COMPONENT_U32,
+                "count": mesh.indices().len(),
+                "type": "SCALAR",
+            }));
 
-        let index_view = add_buffer_view(
-            &mut binary,
-            &mut buffer_views,
-            ELEMENT_ARRAY_BUFFER_TARGET,
-            |bytes| {
-                for &index in mesh.indices() {
-                    append_u32(bytes, index);
-                }
-            },
-        )?;
-        let index_accessor = accessors.len();
-        accessors.push(json!({
-            "bufferView": index_view,
-            "byteOffset": 0,
-            "componentType": COMPONENT_U32,
-            "count": mesh.indices().len(),
-            "type": "SCALAR",
-        }));
-
-        gltf_meshes.push(json!({
-            "name": scene_mesh.id(),
-            "primitives": [{
+            let mut value = json!({
                 "attributes": Value::Object(attributes),
                 "indices": index_accessor,
                 "mode": TRIANGLES_MODE,
-            }],
-        }));
+            });
+            if let Some(material) = primitive.material() {
+                value["material"] = json!(material);
+            }
+            gltf_primitives.push(value);
+        }
+        gltf_meshes.push(json!({ "name": scene_mesh.name(), "primitives": gltf_primitives }));
     }
 
     let mut children = vec![Vec::new(); scene.nodes().len()];
@@ -374,8 +478,9 @@ fn export_normalized_scene_glb(scene: &SceneSnapshot) -> Result<Vec<u8>, SceneEx
         })
         .collect::<Vec<_>>();
 
+    let resource_document = serialize_resources(scene, &mut binary, &mut buffer_views)?;
     let binary_length = binary.len();
-    let document = json!({
+    let mut document = json!({
         "accessors": accessors,
         "asset": {
             "generator": "three-d-export canonical scene exporter v1",
@@ -388,6 +493,12 @@ fn export_normalized_scene_glb(scene: &SceneSnapshot) -> Result<Vec<u8>, SceneEx
         "scene": 0,
         "scenes": [{ "name": "scene", "nodes": roots }],
     });
+    if let Some(resources) = resource_document {
+        document
+            .as_object_mut()
+            .expect("document object")
+            .extend(resources);
+    }
     let mut json_bytes = serde_json::to_vec(&document)?;
     align_four(&mut json_bytes, b' ');
     align_four(&mut binary, 0);

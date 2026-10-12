@@ -191,7 +191,10 @@ impl NormalTextureBinding {
     }
 }
 
-pub(crate) fn validate_resource_references(
+/// Validate references between existing typed material, image, sampler and texture tables.
+/// Asset construction and resource-only scene composition share this authority;
+/// this does not parse source formats or normalize geometry.
+pub fn validate_resource_references(
     materials: &[Material],
     images: &[EncodedImage],
     samplers: &[TextureSampler],

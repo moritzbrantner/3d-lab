@@ -9,6 +9,7 @@ license = "MIT"
 serde_json = "=1.0.151"
 three-d-core = { path = "../three-d-core" }
 three-d-scene = { path = "../three-d-scene" }
+three-d-assets = { path = "../three-d-assets" }
 
 [dev-dependencies]
 gltf = { version = "1.4.1", default-features = false, features = ["names", "utils"] }

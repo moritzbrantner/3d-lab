@@ -10,6 +10,8 @@ use core::fmt;
 use three_d_animation::{SkeletonError, SkinInfluence};
 use three_d_core::Mesh;
 
+pub use resources::validate_resource_references;
+
 pub use resources::{
     EncodedImage, MagnificationFilter, MaterialTextureBinding, MinificationFilter,
     NormalTextureBinding, Texture, TextureSampler, TextureWrap,
@@ -70,6 +72,12 @@ impl Material {
         roughness_factor: f32,
         double_sided: bool,
     ) -> Result<Self, AssetError> {
+        let base_color_factor = BaseColorFactor::new(
+            base_color_factor.r,
+            base_color_factor.g,
+            base_color_factor.b,
+            base_color_factor.a,
+        )?;
         if !metallic_factor.is_finite() || !(0.0..=1.0).contains(&metallic_factor) {
             return Err(AssetError::InvalidMetallicFactor);
         }
@@ -183,6 +191,10 @@ impl MeshPrimitive {
         Ok(self)
     }
 
+    pub fn into_parts(self) -> (Mesh, Option<usize>, Option<Vec<SkinInfluence>>) {
+        (self.mesh, self.material, self.skin_influences)
+    }
+
     pub const fn mesh(&self) -> &Mesh {
         &self.mesh
     }
@@ -214,6 +226,10 @@ impl AssetMesh {
         self.name.as_deref()
     }
 
+    pub fn into_parts(self) -> (Option<String>, Vec<MeshPrimitive>) {
+        (self.name, self.primitives)
+    }
+
     pub fn primitives(&self) -> &[MeshPrimitive] {
         &self.primitives
     }
@@ -226,6 +242,16 @@ pub struct Asset {
     images: Vec<EncodedImage>,
     samplers: Vec<TextureSampler>,
     textures: Vec<Texture>,
+}
+
+/// Owned asset components, moved out without copying geometry or encoded images.
+#[derive(Debug)]
+pub struct AssetParts {
+    pub meshes: Vec<AssetMesh>,
+    pub materials: Vec<Material>,
+    pub images: Vec<EncodedImage>,
+    pub samplers: Vec<TextureSampler>,
+    pub textures: Vec<Texture>,
 }
 
 impl Asset {
@@ -264,6 +290,16 @@ impl Asset {
             samplers,
             textures,
         })
+    }
+
+    pub fn into_parts(self) -> AssetParts {
+        AssetParts {
+            meshes: self.meshes,
+            materials: self.materials,
+            images: self.images,
+            samplers: self.samplers,
+            textures: self.textures,
+        }
     }
 
     pub fn meshes(&self) -> &[AssetMesh] {
