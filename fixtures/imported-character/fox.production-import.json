@@ -1,0 +1,1559 @@
+{
+  "source": {
+    "schemaVersion": 1,
+    "kind": "scene",
+    "mediaType": "model/gltf-binary",
+    "sha256": "d97044e701822bac5a62696459b27d7b375aada5de8574ed4362edbba94771f7",
+    "byteLength": 162852,
+    "metadata": {
+      "license": "CC0-1.0 AND CC-BY-4.0",
+      "path": "Models/Fox/glTF-Binary/Fox.glb",
+      "provider": "khronos-gltf-sample-assets",
+      "revision": "90d7ede14c7e280af263824604b427a1ca02cb66"
+    }
+  },
+  "identity": {
+    "schemaVersion": 1,
+    "operation": {
+      "id": "scene.import.gltf",
+      "version": "2"
+    },
+    "implementation": {
+      "assetTooling": {
+        "name": "asset-tooling",
+        "sourceFingerprint": {
+          "algorithm": "sha256-tree-v1",
+          "sha256": "fd8df5cba3852688a9982613e7e23b51d369f0f0947d639f6f9ca502a281ae7a"
+        },
+        "version": "0.1.0"
+      },
+      "dependencyLockSha256": "15fd3360142f311ffbab71446315bd2bf6487c32ed9869e0df163431567e1214",
+      "gltfTransform": "v4.5.1",
+      "id": "gltf-transform-production",
+      "validator": "2.0.0-dev.3.10",
+      "version": "1"
+    },
+    "parameters": {
+      "policy": {
+        "allowedValidatorWarnings": [],
+        "maxJointsPerSkin": null,
+        "maxTriangles": null,
+        "requireNormals": false,
+        "requiredClipNames": [
+          "Survey",
+          "Walk",
+          "Run"
+        ]
+      },
+      "resourceUris": []
+    },
+    "inputs": {
+      "source": {
+        "schemaVersion": 1,
+        "kind": "scene",
+        "mediaType": "model/gltf-binary",
+        "sha256": "d97044e701822bac5a62696459b27d7b375aada5de8574ed4362edbba94771f7",
+        "byteLength": 162852,
+        "metadata": {
+          "license": "CC0-1.0 AND CC-BY-4.0",
+          "path": "Models/Fox/glTF-Binary/Fox.glb",
+          "provider": "khronos-gltf-sample-assets",
+          "revision": "90d7ede14c7e280af263824604b427a1ca02cb66"
+        }
+      }
+    }
+  },
+  "analysis": {
+    "outputs": {},
+    "observations": {
+      "accepted": true,
+      "animationCount": 3,
+      "clips": [
+        {
+          "channels": [
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 8,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 7,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 11,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 10,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 9,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 14,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 13,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 12,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 6,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 5,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 17,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 16,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 15,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 20,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 19,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 18,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 24,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 23,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 22,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 4,
+              "path": "translation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 4,
+              "path": "rotation"
+            }
+          ],
+          "durationSeconds": 3.4166667461395264,
+          "endSeconds": 3.4166667461395264,
+          "name": "Survey",
+          "startSeconds": 0
+        },
+        {
+          "channels": [
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 8,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 7,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 11,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 10,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 9,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 14,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 13,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 12,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 6,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 5,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 17,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 16,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 15,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 20,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 19,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 18,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 24,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 23,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 22,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 4,
+              "path": "translation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 4,
+              "path": "rotation"
+            }
+          ],
+          "durationSeconds": 0.7083333134651184,
+          "endSeconds": 0.7083333134651184,
+          "name": "Walk",
+          "startSeconds": 0
+        },
+        {
+          "channels": [
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 8,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 7,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 11,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 10,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 9,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 14,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 13,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 12,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 6,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 5,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 17,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 16,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 15,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 20,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 19,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 18,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 24,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 23,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 22,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 4,
+              "path": "translation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 4,
+              "path": "rotation"
+            }
+          ],
+          "durationSeconds": 1.1583333015441895,
+          "endSeconds": 1.1583333015441895,
+          "name": "Run",
+          "startSeconds": 0
+        }
+      ],
+      "coordinateSystem": "right-handed-y-up",
+      "coordinateUnitEvidence": "gltf-2.0-contract",
+      "diagnostics": [],
+      "gltfTransform": "v4.5.1",
+      "materialCount": 1,
+      "materials": [
+        {
+          "alphaCutoff": 0.5,
+          "alphaMode": "OPAQUE",
+          "baseColorFactor": [
+            1,
+            1,
+            1,
+            1
+          ],
+          "doubleSided": false,
+          "emissiveFactor": [
+            0,
+            0,
+            0
+          ],
+          "metallicFactor": 0,
+          "name": "fox_material",
+          "normalScale": 1,
+          "occlusionStrength": 1,
+          "roughnessFactor": 0.58,
+          "textures": [
+            {
+              "colorSpace": "srgb",
+              "magFilter": 9729,
+              "minFilter": 9987,
+              "slot": "baseColor",
+              "texCoord": 0,
+              "texture": 0,
+              "wrapS": 10497,
+              "wrapT": 10497
+            }
+          ]
+        }
+      ],
+      "meshCount": 1,
+      "meshes": [
+        {
+          "name": "fox1",
+          "primitives": [
+            {
+              "attributes": [
+                {
+                  "componentType": 5123,
+                  "count": 1728,
+                  "normalized": false,
+                  "semantic": "JOINTS_0"
+                },
+                {
+                  "componentType": 5126,
+                  "count": 1728,
+                  "normalized": false,
+                  "semantic": "POSITION"
+                },
+                {
+                  "componentType": 5126,
+                  "count": 1728,
+                  "normalized": false,
+                  "semantic": "TEXCOORD_0"
+                },
+                {
+                  "componentType": 5126,
+                  "count": 1728,
+                  "normalized": false,
+                  "semantic": "WEIGHTS_0"
+                }
+              ],
+              "bounds": {
+                "max": [
+                  12.592718124389648,
+                  78.90718841552734,
+                  66.62486267089844
+                ],
+                "min": [
+                  -12.592718124389648,
+                  -0.12174476683139801,
+                  -88.09500122070312
+                ],
+                "space": "mesh-local-bind-pose"
+              },
+              "material": 0,
+              "triangleCount": 576,
+              "vertexCount": 1728
+            }
+          ]
+        }
+      ],
+      "nodeCount": 26,
+      "nodes": [
+        {
+          "mesh": null,
+          "name": "root",
+          "parent": null,
+          "skin": null
+        },
+        {
+          "mesh": 0,
+          "name": "fox",
+          "parent": null,
+          "skin": 0
+        },
+        {
+          "mesh": null,
+          "name": "_rootJoint",
+          "parent": 0,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_Root_00",
+          "parent": 2,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_Hip_01",
+          "parent": 3,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_Spine01_02",
+          "parent": 4,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_Spine02_03",
+          "parent": 5,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_Neck_04",
+          "parent": 6,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_Head_05",
+          "parent": 7,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_RightUpperArm_06",
+          "parent": 6,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_RightForeArm_07",
+          "parent": 9,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_RightHand_08",
+          "parent": 10,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_LeftUpperArm_09",
+          "parent": 6,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_LeftForeArm_010",
+          "parent": 12,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_LeftHand_011",
+          "parent": 13,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_Tail01_012",
+          "parent": 4,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_Tail02_013",
+          "parent": 15,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_Tail03_014",
+          "parent": 16,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_LeftLeg01_015",
+          "parent": 4,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_LeftLeg02_016",
+          "parent": 18,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_LeftFoot01_017",
+          "parent": 19,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_LeftFoot02_018",
+          "parent": 20,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_RightLeg01_019",
+          "parent": 4,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_RightLeg02_020",
+          "parent": 22,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_RightFoot01_021",
+          "parent": 23,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_RightFoot02_022",
+          "parent": 24,
+          "skin": null
+        }
+      ],
+      "normalYConvention": "positive-y",
+      "policy": {
+        "allowedValidatorWarnings": [],
+        "maxJointsPerSkin": null,
+        "maxTriangles": null,
+        "requireNormals": false,
+        "requiredClipNames": [
+          "Survey",
+          "Walk",
+          "Run"
+        ]
+      },
+      "profile": "gltf-core-production-v1",
+      "resources": [
+        {
+          "index": 0,
+          "kind": "buffer",
+          "storage": "embedded"
+        },
+        {
+          "index": 0,
+          "kind": "image",
+          "storage": "embedded"
+        }
+      ],
+      "schemaVersion": 1,
+      "skinCount": 1,
+      "skins": [
+        {
+          "inverseBindMatrixCount": 24,
+          "joints": [
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25
+          ],
+          "name": "",
+          "skeleton": 2
+        }
+      ],
+      "textureCount": 1,
+      "textures": [
+        {
+          "byteLength": 26764,
+          "mimeType": "image/png",
+          "name": "",
+          "sha256": "61c8b109ee7f8bf262791933380fafb1465f7b51cbe6472c2d21eff0b31f83a1"
+        }
+      ],
+      "triangleCount": 576,
+      "unit": "meter",
+      "validator": "2.0.0-dev.3.10",
+      "validatorWarnings": [],
+      "vertexCount": 1728
+    }
+  },
+  "result": {
+    "outputs": {
+      "output": {
+        "schemaVersion": 1,
+        "kind": "scene",
+        "mediaType": "model/gltf-binary",
+        "sha256": "e8f4a6cc4677f7f5942fb6c0c9c639586fb2d6617ec4b2802c82fca72f6ef505",
+        "byteLength": 164252,
+        "metadata": {
+          "coordinateSystem": "right-handed-y-up",
+          "operation": "scene.import.gltf",
+          "operationVersion": "2",
+          "profile": "gltf-core-production-v1",
+          "resourceSha256s": [],
+          "sourceSha256": "d97044e701822bac5a62696459b27d7b375aada5de8574ed4362edbba94771f7",
+          "unit": "meter"
+        }
+      }
+    },
+    "observations": {
+      "accepted": true,
+      "animationCount": 3,
+      "clips": [
+        {
+          "channels": [
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 8,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 7,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 11,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 10,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 9,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 14,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 13,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 12,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 6,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 5,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 17,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 16,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 15,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 20,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 19,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 18,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 24,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 23,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 22,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 4,
+              "path": "translation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 83,
+              "node": 4,
+              "path": "rotation"
+            }
+          ],
+          "durationSeconds": 3.4166667461395264,
+          "endSeconds": 3.4166667461395264,
+          "name": "Survey",
+          "startSeconds": 0
+        },
+        {
+          "channels": [
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 8,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 7,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 11,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 10,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 9,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 14,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 13,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 12,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 6,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 5,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 17,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 16,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 15,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 20,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 19,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 18,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 24,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 23,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 22,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 4,
+              "path": "translation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 18,
+              "node": 4,
+              "path": "rotation"
+            }
+          ],
+          "durationSeconds": 0.7083333134651184,
+          "endSeconds": 0.7083333134651184,
+          "name": "Walk",
+          "startSeconds": 0
+        },
+        {
+          "channels": [
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 8,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 7,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 11,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 10,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 9,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 14,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 13,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 12,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 6,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 5,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 17,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 16,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 15,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 20,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 19,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 18,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 24,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 23,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 22,
+              "path": "rotation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 4,
+              "path": "translation"
+            },
+            {
+              "interpolation": "LINEAR",
+              "keyframeCount": 25,
+              "node": 4,
+              "path": "rotation"
+            }
+          ],
+          "durationSeconds": 1.1583333015441895,
+          "endSeconds": 1.1583333015441895,
+          "name": "Run",
+          "startSeconds": 0
+        }
+      ],
+      "coordinateSystem": "right-handed-y-up",
+      "coordinateUnitEvidence": "gltf-2.0-contract",
+      "diagnostics": [],
+      "gltfTransform": "v4.5.1",
+      "materialCount": 1,
+      "materials": [
+        {
+          "alphaCutoff": 0.5,
+          "alphaMode": "OPAQUE",
+          "baseColorFactor": [
+            1,
+            1,
+            1,
+            1
+          ],
+          "doubleSided": false,
+          "emissiveFactor": [
+            0,
+            0,
+            0
+          ],
+          "metallicFactor": 0,
+          "name": "fox_material",
+          "normalScale": 1,
+          "occlusionStrength": 1,
+          "roughnessFactor": 0.58,
+          "textures": [
+            {
+              "colorSpace": "srgb",
+              "magFilter": 9729,
+              "minFilter": 9987,
+              "slot": "baseColor",
+              "texCoord": 0,
+              "texture": 0,
+              "wrapS": 10497,
+              "wrapT": 10497
+            }
+          ]
+        }
+      ],
+      "meshCount": 1,
+      "meshes": [
+        {
+          "name": "fox1",
+          "primitives": [
+            {
+              "attributes": [
+                {
+                  "componentType": 5123,
+                  "count": 1728,
+                  "normalized": false,
+                  "semantic": "JOINTS_0"
+                },
+                {
+                  "componentType": 5126,
+                  "count": 1728,
+                  "normalized": false,
+                  "semantic": "POSITION"
+                },
+                {
+                  "componentType": 5126,
+                  "count": 1728,
+                  "normalized": false,
+                  "semantic": "TEXCOORD_0"
+                },
+                {
+                  "componentType": 5126,
+                  "count": 1728,
+                  "normalized": false,
+                  "semantic": "WEIGHTS_0"
+                }
+              ],
+              "bounds": {
+                "max": [
+                  12.592718124389648,
+                  78.90718841552734,
+                  66.62486267089844
+                ],
+                "min": [
+                  -12.592718124389648,
+                  -0.12174476683139801,
+                  -88.09500122070312
+                ],
+                "space": "mesh-local-bind-pose"
+              },
+              "material": 0,
+              "triangleCount": 576,
+              "vertexCount": 1728
+            }
+          ]
+        }
+      ],
+      "nodeCount": 26,
+      "nodes": [
+        {
+          "mesh": null,
+          "name": "root",
+          "parent": null,
+          "skin": null
+        },
+        {
+          "mesh": 0,
+          "name": "fox",
+          "parent": null,
+          "skin": 0
+        },
+        {
+          "mesh": null,
+          "name": "_rootJoint",
+          "parent": 0,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_Root_00",
+          "parent": 2,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_Hip_01",
+          "parent": 3,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_Spine01_02",
+          "parent": 4,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_Spine02_03",
+          "parent": 5,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_Neck_04",
+          "parent": 6,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_Head_05",
+          "parent": 7,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_RightUpperArm_06",
+          "parent": 6,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_RightForeArm_07",
+          "parent": 9,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_RightHand_08",
+          "parent": 10,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_LeftUpperArm_09",
+          "parent": 6,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_LeftForeArm_010",
+          "parent": 12,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_LeftHand_011",
+          "parent": 13,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_Tail01_012",
+          "parent": 4,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_Tail02_013",
+          "parent": 15,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_Tail03_014",
+          "parent": 16,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_LeftLeg01_015",
+          "parent": 4,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_LeftLeg02_016",
+          "parent": 18,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_LeftFoot01_017",
+          "parent": 19,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_LeftFoot02_018",
+          "parent": 20,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_RightLeg01_019",
+          "parent": 4,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_RightLeg02_020",
+          "parent": 22,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_RightFoot01_021",
+          "parent": 23,
+          "skin": null
+        },
+        {
+          "mesh": null,
+          "name": "b_RightFoot02_022",
+          "parent": 24,
+          "skin": null
+        }
+      ],
+      "normalYConvention": "positive-y",
+      "outputValidatorWarnings": [],
+      "policy": {
+        "allowedValidatorWarnings": [],
+        "maxJointsPerSkin": null,
+        "maxTriangles": null,
+        "requireNormals": false,
+        "requiredClipNames": [
+          "Survey",
+          "Walk",
+          "Run"
+        ]
+      },
+      "profile": "gltf-core-production-v1",
+      "resources": [
+        {
+          "index": 0,
+          "kind": "buffer",
+          "storage": "embedded"
+        },
+        {
+          "index": 0,
+          "kind": "image",
+          "storage": "embedded"
+        }
+      ],
+      "schemaVersion": 1,
+      "skinCount": 1,
+      "skins": [
+        {
+          "inverseBindMatrixCount": 24,
+          "joints": [
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25
+          ],
+          "name": "",
+          "skeleton": 2
+        }
+      ],
+      "textureCount": 1,
+      "textures": [
+        {
+          "byteLength": 26764,
+          "mimeType": "image/png",
+          "name": "",
+          "sha256": "61c8b109ee7f8bf262791933380fafb1465f7b51cbe6472c2d21eff0b31f83a1"
+        }
+      ],
+      "triangleCount": 576,
+      "unit": "meter",
+      "validator": "2.0.0-dev.3.10",
+      "validatorWarnings": [],
+      "vertexCount": 1728
+    }
+  },
+  "replayExact": true,
+  "assetToolingRevision": "cabe242da90bd62521bfc921af8165236a8ccabb",
+  "purpose": "Technical conformance only; not an approved Knight/humanoid/game asset"
+}

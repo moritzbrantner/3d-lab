@@ -1,0 +1,409 @@
+# Imported character acceptance (#87)
+
+This independent acceptance was established on origin/main
+`a39a673` before production implementation. Shared conventions resolved at
+`46d8793bb3034326561f876dcc67dbaa5aa1e432`. This draft establishes independent acceptance before implementation and uses
+`Refs #87`: a public export alone does not complete the issue.
+
+## Actual source and authority
+
+The fixture is Khronos Fox at source revision
+`90d7ede14c7e280af263824604b427a1ca02cb66`, path
+`Models/Fox/glTF-Binary/Fox.glb`. Source SHA-256 is
+`d97044e701822bac5a62696459b27d7b375aada5de8574ed4362edbba94771f7`
+(162852 bytes). Source model is PixelMannen's CC0 work; rigging/animation is
+attributed to tomkranis and conversion to @AsoboStudio/@scurest, under CC BY 4.0.
+The adjacent upstream README/license preserve those attributions.
+
+This is technical conformance evidence, **not an approved Knight, humanoid,
+medieval art asset, or game consumer approval**. No humanoid mapping is invented.
+The approved game asset remains unavailable to this acceptance.
+
+Actual asset-tooling `scene.import.gltf@2` at
+`cabe242da90bd62521bfc921af8165236a8ccabb` processed the source. Both source and
+output passed the Khronos validator without warnings. The operation's existing
+`requiredClipNames` policy requires Survey/Walk/Run. Two real executions returned
+identical results. The retained output hash is
+`e8f4a6cc4677f7f5942fb6c0c9c639586fb2d6617ec4b2802c82fca72f6ef505`
+(164252 bytes). The complete actual build identity, analysis, result, source
+AssetRef, dependency-lock hash and processor fingerprint are retained in
+`fixtures/imported-character/fox.production-import.json`.
+
+The output retains one nonindexed TRIANGLES skinned primitive, 1728 vertices, 576 triangles,
+24 ordered skin joints, 26 scene nodes, inverse binds, three named LINEAR clips,
+and one embedded base-color texture. Existing format lowering supplies sequential
+indices for this source; retained public geometry remains indexed. Material/resource references must survive
+composition; quietly dropping the texture does not satisfy acceptance.
+
+## Runnable established evidence
+
+- `bun test packages/renderer/acceptance/imported-character.test.ts`: fixture integrity,
+  import/source identity, accepted policy, warnings and clip names pass; the
+  absent public package export fails on the baseline.
+- `cargo test -p three-d-formats --test imported_character_clips`: existing native
+  clip lowering and sampling match independent Three.js reference local matrices
+  at endpoints and quarter intervals of all three clips (15 poses, 24 joints).
+  Exact seek replay and invalid-time atomicity are covered. Tolerance is `2e-5`
+  per local-matrix component, not a screenshot comparison.
+- `bun scripts/replay-imported-character-fixture.ts <asset-tooling-checkout>
+  <explicit-Fox.glb>`: hashes the explicitly acquired original source, delegates
+  two executions to the existing production operation, compares complete recorded
+  identities/results and exact committed GLB bytes. Processor drift fails closed.
+  It performs no network acquisition, fixture edits, or second normalization.
+- Serve the repository root and run
+  `bun scripts/imported-character-reference.ts http://127.0.0.1:4187/
+  target/fox-reference.json` to regenerate the independently evaluated reference.
+  GLTFLoader/AnimationMixer/SkinnedMesh in actual Chromium decode the real output,
+  including its embedded texture. Reference records all joint world matrices and
+  five deformed world vertices per pose, plus local transforms for native clip
+  comparison. It is a reference oracle, **not candidate browser acceptance**.
+
+The reference does not inject output into production or author animation clips.
+All animation/skin data comes from the actual imported source. The test's initial
+local pose uses the reference start pose to supply unanimated defaults; existing
+native clips still own every sampled animated channel.
+
+## Remaining mandatory independent scenarios before implementation merge
+
+1. Public `./imported-character` is a reusable entrypoint. A retained immutable
+   asset handle lowers through existing parser/asset/animation/renderer boundaries
+   once. Routine interface names may be translated independently without weakening
+   these semantics. Consumers do not import private `web/lib` or write local
+   adapters/normalizers. Existing static assets remain compatible.
+2. The original scene-to-skin relation is explicit: skin slots, glTF node indices,
+   parent/non-joint ancestors, inverse binds, root/model transform and named clip
+   targets retain their distinct meanings. Fox's 26 nodes are not silently
+   equated with its 24 palette slots. Existing `RiggedAsset`, `Skeleton`,
+   `SkinInfluence` and format lowering remain the semantic authorities.
+3. Actual public asset instances share immutable indexed geometry, material refs,
+   influence/resource buffers and clip data. Independent pose/skeleton state lets
+   instance A seek Walk while B stays Survey; subsequent A updates never mutate B,
+   asset buffers or resource identity. Test identity and bytes, not claimed labels.
+4. Public sampling and transitions use `three-d-animation`/`three-d-playback`.
+   Native and browser seek all reference poses, compare joint world matrices and
+   deformed world vertices, and prove actual nonzero motion. Browser runtime must
+   support arbitrary deterministic seek and existing crossfade semantics, not
+   merely replay the 15 reference snapshots or use an independent JS sampler.
+5. Real Chromium renders the actual public character on the consumer/lab surface,
+   selects at least Survey and Walk, seeks exact times, transitions, and observes
+   independent instances. Compare live joint/vertex evidence with the independent
+   oracle, require a live render context and nonempty visible character; retain
+   screenshots as visual evidence. Never replace an unavailable texture with an
+   invented shaded substitute and claim complete material rendering.
+6. Invalid joint slots, nonfinite/negative/zero-sum weights, invalid inverse binds,
+   dangling clip targets and unsupported interpolation fail closed through the
+   existing boundaries. Errors leave previous valid asset/pose/resource state
+   intact. Parser/normalizer behavior belongs to its current owner.
+7. Existing #66 animated bounds/culling remains authoritative. Where existing work
+   counters exist, verify pose updates reuse immutable resources rather than
+   rebuilding geometry or publishing React state per frame. Do not invent budgets.
+
+The additional package and actual Chromium contracts below make these runtime
+requirements executable against the proposed routine public seam. Baseline failures
+occur before instance creation: later assertions remain unexecuted, and every
+contract plus the authority audit must pass before implementation merge.
+
+## Explicit baseline gaps
+
+`web/lib/imported-skin.ts` is private, mutates the decoded scene, and exposes
+Three.js clips. The existing lab uses `AnimationMixer`. Other Rust animation labs
+present prepared evidence; no live browser Rust sampling bridge currently exists.
+The prepared oracle here establishes reference values, not that missing bridge.
+
+`three-d-formats::load_gltf_animation_clips` maps numeric scene-node targets and
+preserves clips. Generic mesh import preserves vertex influences, but explicitly
+leaves scene-node skin/skeleton assembly separate. Its material boundary rejects
+base-color textures, so Fox cannot be honestly claimed as a fully native-rendered
+asset through that path. Preserve reference metadata; record #86 material coverage
+and any permitted native adapter follow-up explicitly rather than broadening #87
+into PBR or adding another parser.
+
+Issue #87 permits an explicit native adapter follow-up when payload submission is
+unavailable; renderer-independent pose/skin semantics still need proof. Local
+AGENTS requires one task/branch/PR and prohibits unapproved splits. This acceptance
+does not create a child issue, claim full scope, close #87, or claim downstream
+ARPG #55/#145 ready.
+
+## Additional independent public runtime contract (before implementation)
+
+`packages/renderer/acceptance/imported-character-runtime.test.ts` consumes the
+**actual processed output** `fox.glb` and its complete retained asset-tooling
+proof, not the original source GLB. Proposed routine names
+`adaptImportedCharacter(outputBytes, {provenance})`, retained
+`asset.createInstance({modelMatrix?})`, and instance `seek`, `transition`,
+`advance` may be independently translated to a settled public seam. They do not
+license a competing parser, normalization operation, JavaScript animation sampler
+or `AnimationMixer` runtime. Existing Rust format/rig/animation/playback authorities
+must supply the semantics; Three.js objects only submit/present them.
+
+The new public contract directly inspects the actual returned scene's single
+SkinnedMesh: all 15 source oracle poses (joint world matrices and five deformed
+world vertices), nonzero locomotion, shared geometry/material/influence-buffer
+identity and unchanged bytes, separate skeleton/pose objects, retained embedded
+texture, arbitrary non-oracle seek times, placed joint/vertex composition, invalid
+seek/clip/transition/delta atomicity, and measured-delta crossfade partition
+invariance with a real intermediate pose and target completion. World-matrix
+component tolerance is 0.002 and vertex tolerance 0.02 **Fox source units**, not
+invented meters. The independent native local-matrix tolerance remains 2e-5.
+
+Seven malformed fixtures fault-inject the real processed GLB's active joint,
+nonfinite/negative/zero-sum weights, inverse bind, clip target and unsupported
+interpolation. Their negative trust-boundary receipts retain attribution and match
+the edited bytes' integrity fields; they are explicitly not genuine processor
+results or new source assets. Rejection must identify the violated semantic
+boundary, not merely reject a stale hash/missing receipt. A framing test establishes
+that each mutation preserves valid GLB framing and actually changes input. The
+previous valid instance's pose/resources must remain unchanged and usable.
+
+Baseline: the framing invariant passes; twelve public runtime cases are red at
+missing export **before instance creation**, so their later assertions have not
+executed. This makes runtime requirements executable once the public seam exists;
+it does not demonstrate Rust/WASM/browser execution or candidate rendering now.
+If mandatory upstream receipt verification preempts the fault-fixture semantic
+boundary, independently translate these negatives to the existing authoritative
+validator seam rather than accepting provenance-only rejection as skin coverage.
+
+### Remaining exact consumer gap
+
+There is no public live Rust/WASM imported-character sampling/transition bridge or
+settled browser consumer surface on the baseline. Existing private imported-skin
+lab uses AnimationMixer; existing Chromium script is an independent source oracle.
+Neither is a candidate pass. Package tests inspect actual renderer resources but
+create no WebGL context and cannot prove draw submission, visible animated pixels,
+texture rendering, per-frame publication ownership, or Rust sampling authority.
+The current package runner is Bun. If production texture decoding or the public
+WASM bridge requires browser facilities, independently move these same scenarios
+to actual Chromium; do not fabricate DOM/image decoders to make Bun green or force
+a browser-only production adapter into an inappropriate universal shape.
+
+Before #87 merge, a distinct implementation context must settle the existing
+public bridge and consumer route within this same issue/PR, then independent
+acceptance must exercise actual Chromium against it: load processed Fox once,
+select Survey/Walk, arbitrary seek and fade, compare live joints/vertices, and
+verify independent instances plus a nonempty visible textured character. No
+placeholder window state, prepared-oracle replay, fake canvas or new child issue
+is authorized. Native renderer submission may remain the explicit issue-permitted
+adapter gap; shared runtime semantics may not. This expanded draft remains
+partial; it does not close #87 or establish approved ARPG Knight assets.
+
+
+## Actual public Chromium consumer acceptance (before implementation)
+
+Run `bun scripts/imported-character-browser-acceptance.ts [ignored-output-dir]`.
+This uses existing Playwright/Chromium, a disposable localhost port0 fixture server,
+and the actual public `createThreeSceneRenderer` on a real canvas. That renderer is
+the existing JavaScript/Three rendering backend, not a Rust renderer. The candidate
+imported-character path must extend/reuse it, not create a parallel renderer. The
+routine proposed submission name
+`renderImportedCharacterInstances(existingRenderer,{camera,instances})` may be
+translated independently together with the existing asset/instance method names.
+No new product direction, parser, reconstruction, framework or private lab adapter
+is introduced by this acceptance consumer. Asset-tooling still owns the actual
+processed GLB/bundle and receipt; Rust owns pose/clip/rig/playback semantics.
+
+The script verifies actual processed Fox integrity, initializes the public WebGL2
+renderer, imports only the proposed public module, and requires:
+
+- all15 live sampled world-joint/vertex reference poses; actual24-joint palette;
+- arbitrary0.321s seek, invalid-time/unknown-clip/delta/transition atomicity;
+- unchanged geometry/material/influence buffers shared across distinct skeletons;
+- a decoded actual embedded texture, not a replacement material;
+- actual draw submission measured by framebuffer differences from an empty frame,
+  and visible motion between Survey and Walk (no DOM or prepared-pixel proxy);
+- placed source-unit skinned vertices retaining root/ancestor/bind composition;
+- measured-delta fade partition equivalence, intermediate pose and target endpoint;
+- real WebAssembly instantiation during candidate module initialization/adaptation/
+  sampling, and retained hash/length of the actual compiled artifact response;
+- a screenshot and numeric/resource evidence from the real public rendered consumer.
+
+The WebAssembly observer forwards every invocation to the real browser API and
+never replaces execution or returned values. It is not an animation implementation.
+An inline/synchronous bridge can receive an independently verified observer
+translation that preserves real compiled-module execution/artifact identity.
+The test camera and pixel/joint inspections are independent acceptance inputs and
+measurements, not gameplay/presentation pose authorities. Rendering the same
+submitted state in RAF only keeps the actual canvas available for screenshot.
+
+**Mandatory source audit:** bind the observed compiled artifact to the existing
+`three-d-animation`/`three-d-playback`/rig hierarchy and format lowering. Follow the
+public `seek`, transition and measured-delta call graph into compiled Rust and back
+into renderer pose submission. No Three AnimationMixer, JS interpolation/clock,
+15-pose replay table, dummy or unrelated WASM module can satisfy authority, even if
+it happens to pass numeric/pixel assertions. Geometry, skin and resource lowering
+remain retained; source hash/provenance cannot silently change. Submission uses
+one existing renderer/context, with no private preview, new shader stand-in or
+second renderer. Inspect existing work observations where exposed, not invented
+performance thresholds. Browser/renderer ownership and candidate source audit are
+both required before #87 merge.
+
+Observed baseline `d06fc58` plus this test: actual Chromium and public renderer
+WebGL initialized successfully, then the missing `./imported-character` export
+caused expected RED. No later seek/texture/draw/fade/WASM assertion executed. This
+is a meaningful missing-capability acceptance failure, not a reason to omit the
+browser contract. The previous private source oracle remains independent reference
+only. The existing runtime-evidence lane must execute this protected command once
+the public candidate is implemented; no green partial/package-only merge is
+allowed. Full browser acceptance is now specified as an executable consumer, but
+candidate behavior and authority are still unproven until implementation and audit.
+No approved Knight/Sword/Shield bundle, native skin submission or ARPG readiness is
+claimed.
+
+## Author-owned Chromium translation of the retained runtime contracts
+
+The runtime cases originally authored in `imported-character-runtime.test.ts`
+now execute in the existing `scripts/imported-character-browser-acceptance.ts`.
+The actual texture-bearing Fox is adapted in Chromium: Bun does not provide the
+browser image decoder required by the real presentation adapter. No pending
+texture API, fake DOM, placeholder image, or alternate runtime was introduced.
+Bun retains the public-export requirement and actual negative-GLB framing checks;
+its prior runtime RED count is historical, not current runtime evidence.
+
+The browser report records these twelve completed cases only after their assertions
+execute successfully:
+
+| Original contract | Preserved browser assertions |
+| --- | --- |
+| All Fox oracle poses | All 15 named joint/world matrices and five world vertices with unchanged tolerances; actual Walk motion |
+| Shared resources and independent poses | Exact geometry/material/influence-array identity, separate skeleton/bones, unchanged buffers and B pose during A seeks including nonoracle Walk0.321/Run0.117; real decoded texture |
+| Model placement | Rotation Y0.37 plus translation(7,-3,11) composes outside every joint world matrix and skinned vertex; 26 scene nodes remain distinct from 24 skin slots |
+| Invalid runtime input | NaN/Infinity seek, unknown clip, negative transition/delta reject and preserve exact pose/buffers |
+| Live crossfade | Measured0.2 versus20×0.01 partition equivalence, intermediate pose differs from immediate target, final0.4 endpoint matches |
+| Dangling active joint | Actual JOINTS_0 slot24; joint/skin rejection |
+| Nonfinite weight | Actual NaN weight; weight/influence rejection |
+| Negative weight | Actual-1 weight; weight/influence rejection |
+| Zero weight tuple | Actual four zero weights; weight/influence rejection |
+| Nonfinite inverse bind | Actual Infinity matrix element; bind/matrix rejection |
+| Dangling clip target | Actual target node26; target/node rejection |
+| Unsupported cubic interpolation | Actual CUBICSPLINE; interpolation/cubic rejection |
+
+Each of the seven negative cases preserves valid GLB framing, updates the negative
+fixture receipt hash/length to match its actual damaged bytes, and requires the
+semantic rejection reason. A previously retained valid instance must preserve its
+exact pose and buffers, then successfully seek Run0.117 with changed pose. This
+prevents stale-checksum-only rejection or failed asset adaptation damaging other
+instances from satisfying acceptance. Fault receipts remain negative test inputs,
+not real producer receipts or independently approved assets.
+
+The existing `renderer-runtime-evidence.yml` now discovers these surfaces and
+mandatorily runs `bun run build:imported-character-wasm` followed by the browser
+script on the candidate. The producer owns the real Rust build command/bridge
+wiring, not these protected assertions. The gate retains actual compiled WASM
+response identity, instantiation and the mandatory source-authority audit above;
+inline/dummy/unrelated artifacts cannot bypass the required compiled Rust proof.
+Browser evidence is uploaded by the same existing workflow, outside benchmark
+capture. No second renderer, framework, fixture stream or partial child issue.
+
+At frozen `ba9cf1d` before any #87 production, the translated browser command again
+initializes actual Chromium and the existing public WebGL renderer, then fails RED
+at the missing public imported-character export. All twelve downstream runtime
+cases remain unexecuted. Bun metadata/framing are 2 GREEN; both public-export
+checks are 2 RED. `git diff --check` passes. These results do not prove imported
+runtime behavior, rendered Fox, real texture decode or compiled Rust authority.
+
+
+## Supplemental inactive-slot contract before the adjacent GPU repair
+
+Authored after the first #87 implementation WIP, before its inactive-slot repair:
+actual Fox vertex0 has weights[0.6,0.4,0,0]. The protected browser script changes
+only existing zero-weight JOINTS_0 lane2 to65535, preserves all geometry and weights,
+and updates the negative-fault integrity receipt to match the exact bytes. This is
+a positive active-slot-domain fixture, not new approved content or a real receipt.
+`animation-model.md` requires rejecting invalid **active** indices; inactive slots
+may not incorrectly reject an otherwise valid character.
+
+The public adapter must accept this real mutation, preserve all measured joint
+matrices and five world vertices, retain shared immutable geometry per asset, and
+produce the identical nonempty actual rendered Walk frame. Finite numeric checks
+and real frame readback remain required. The current stock Three skinbase_vertex
+fetches all four bone matrices unconditionally; therefore its public GPU palette
+indices must be bounded even for zero weights. An actual guarded shader alternative
+is permitted only through independently source-verified acceptance translation
+preserving the same safety/pose/render invariants; no specific normalization
+algorithm, fake decoder or unchecked bypass is prescribed.
+
+The source primitive has no indices accessor, independently verified from the exact
+processed GLB JSON. Existing `three-d-formats` sequential-index lowering preserves
+its1728 vertices/576 triangles; the public retained indexed-geometry expectation
+remains unchanged. Earlier indexed-source wording is corrected, not acceptance
+relaxed. Source safety must hold even when GPU out-of-range sampling accidentally
+hides a visible fault. No supplemental pass is claimed before its actual execution.
+
+Actual current-WIP supplemental baseline ran RED at `inactive slot reaches
+unguarded GPU palette fetch`. The public adapter accepted the real mutation and
+its measured joint/vertex pose comparisons executed successfully first. Earlier
+valid-oracle/resource/runtime checks and original rendered motion also executed;
+the supplemental identical-frame/sharing checks after the unsafe-palette failure
+remain unexecuted, as do later malformed/placement/fade assertions in this run.
+Observed JS adapter hash `212746430b91d3841c1157723a3a494e56f683492846d39c2b6fe766ccb8a121`
+and actual candidate WASM hash `f970ab2e0a1b2a094620344adc8f6c312b4d5d3607353b158f2b5cdf24c197b2`.
+This independently authored supplemental RED precedes the adjacent safety fix;
+it is not represented as pre-initial-production acceptance chronology.
+
+## Supplemental image acquisition boundary before the adjacent closure repair
+
+Independently authored at production checkpoint `d3fb36d`, before its image-URI
+closure repair. The exact processed Fox GLB is mutated only by replacing image0's
+embedded bufferView with an external URI. The fixture receipt hash/length match
+these exact altered bytes, so integrity rejection cannot stand in for resource
+validation. The disposable real local server serves the original embedded PNG
+bytes at that unapproved URI: actual successful image decoding does not authorize
+acquisition outside the imported asset/provenance boundary.
+
+The existing public Chromium adapter must reject with an image/URI/external
+semantic reason **before any request** to that image resource. Playwright's real
+request observer records every attempted unapproved resource request; no image
+network mock, fake failure, substituted pixels or runtime state is used. Requests
+are retained even on failed acceptance in `resource-observations.json`. A prior
+valid instance must keep its exact pose and immutable buffers and subsequently
+seek Run0.117 successfully with changed pose. Generic network failure is not proof
+of semantic closure. Existing `gltf_resources::load_images` rejects non-data URIs;
+production must reuse that existing resource owner, not introduce a second image
+parser/decoder or weaken the imported provenance boundary.
+
+Actual baseline command `bun scripts/imported-character-browser-acceptance.ts
+ target/imported-character-external-image-baseline` is genuinely RED: Chromium
+requests `/unapproved-fox-image.png` and the local server serves the real original
+PNG. The zero-request assertion fails with the recorded actual URL. Earlier valid
+runtime/render and supplemental inactive-slot assertions execute; later semantic
+rejection/prior-instance checks and remaining malformed/placement/fade assertions
+are unexecuted in this failing run. This supplemental case was authored after
+initial production but before its adjacent closure patch; no all-tests-first or
+complete browser success claim is made. Prior twelve runtime and inactive-slot
+expectations remain unchanged.
+
+## Supplemental selected-scene and instantaneous-clip review contracts
+
+These contracts were authored after the initial implementation and before the
+corresponding review repairs, against frozen `ba37ed2`. They extend the same
+actual Chromium/public-renderer/compiled-Rust harness; the original twelve cases
+and inactive-slot/external-resource contracts remain unchanged.
+
+Three matching-integrity mutations retain the actual processed Fox binary data:
+
+- An empty default scene with the complete original scene retained separately.
+- A default scene containing the original mesh node while the original root and
+  required rig hierarchy remain in a separate scene. No joint, transform, mesh,
+  skin slot or inverse bind is invented or altered.
+- Survey reduced to each sampler's actual first input/output key. Inputs have
+  count one and exact min/max zero; output count one retains the actual authored
+  first transform. This is a valid instantaneous clip, not duplicate key times.
+
+The existing animation authority supports instantaneous sampling. The public
+adapter may either support these capabilities coherently or reject the asset
+at adaptation with a useful scene/hierarchy or clip/duration capability reason.
+Accepted scene variants must retain a usable skinned primitive and the original
+Survey-zero world-joint/deformed-vertex oracle. Accepted instantaneous Survey
+must be advertised with duration zero and sample its actual first-key pose at
+zero and a later seek. Accepted geometry must be visibly submitted by the same
+public renderer and retain shared immutable resources between instances.
+A late instance-creation or seek exception is not an adaptation rejection.
+Prior valid poses/buffers and subsequent Run sampling must remain usable.
+
+Baseline `/tmp/3dlab87-capability-baseline/evidence.json` executes all original
+cases successfully, then independently records all three new failures: empty
+scene accepted with no skinned primitive; rig-excluded scene accepted with an
+undefined bone during instance creation; instantaneous Survey advertised but
+seek rejected by positive-duration playback validation. The later support-path
+numeric/render/sharing assertions are unexecuted in those failing cases. This
+is additional review coverage, not a claim that all acceptance preceded initial
+production. The fixture remains technical Fox evidence, not approved game art.

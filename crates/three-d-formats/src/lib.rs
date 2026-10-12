@@ -5,6 +5,8 @@
 //! silently discarded.
 
 mod gltf_resources;
+mod imported_character;
+pub use imported_character::{ImportedCharacter, load_gltf_imported_character};
 
 use std::fmt;
 use std::io::Cursor;
@@ -274,16 +276,20 @@ pub fn load_gltf(bytes: &[u8]) -> Result<Asset, FormatError> {
     let gltf = gltf::Gltf::from_slice(bytes)
         .map_err(|error| FormatError::InvalidGltf(error.to_string()))?;
     let buffers = load_gltf_buffers(&gltf)?;
-    let images = gltf_resources::load_images(&gltf, &buffers)?;
-    let samplers = gltf_resources::load_samplers(&gltf);
-    let textures = gltf_resources::load_textures(&gltf);
+    load_gltf_asset(&gltf, &buffers)
+}
+
+fn load_gltf_asset(gltf: &gltf::Gltf, buffers: &[Vec<u8>]) -> Result<Asset, FormatError> {
+    let images = gltf_resources::load_images(gltf, buffers)?;
+    let samplers = gltf_resources::load_samplers(gltf);
+    let textures = gltf_resources::load_textures(gltf);
     let materials = gltf
         .materials()
         .map(convert_gltf_material)
         .collect::<Result<Vec<_>, _>>()?;
     let meshes = gltf
         .meshes()
-        .map(|mesh| convert_gltf_mesh(mesh, &buffers))
+        .map(|mesh| convert_gltf_mesh(mesh, buffers))
         .collect::<Result<Vec<_>, _>>()?;
 
     if meshes.is_empty() {
@@ -352,6 +358,19 @@ fn aligned_keyframes<T: Copy>(
 pub fn load_gltf_animation_clips(bytes: &[u8]) -> Result<Vec<AnimationClip>, FormatError> {
     let gltf = gltf::Gltf::from_slice(bytes)
         .map_err(|error| FormatError::InvalidGltf(error.to_string()))?;
+    // glTF's typed target accessor assumes valid node references; diagnose before
+    // accessing it so malformed imported clips never trap the browser bridge.
+    for (animation, definition) in gltf.as_json().animations.iter().enumerate() {
+        for (channel, definition) in definition.channels.iter().enumerate() {
+            if definition.target.node.value() >= gltf.as_json().nodes.len() {
+                return Err(animation_error(
+                    animation,
+                    channel,
+                    "clip target node out of range",
+                ));
+            }
+        }
+    }
     let buffers = load_gltf_buffers(&gltf)?;
 
     gltf.animations()

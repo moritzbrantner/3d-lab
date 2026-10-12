@@ -6,6 +6,9 @@ on:
     paths:
       - "package.json"
       - "packages/renderer/**"
+      - "crates/**"
+      - "fixtures/imported-character/**"
+      - "scripts/imported-character-browser-acceptance.ts"
       - "web/app/renderer-performance/**"
       - "web/components/renderer-performance-canary.tsx"
       - "web/app/skeletal-animation/**"
@@ -109,6 +112,14 @@ jobs:
         working-directory: candidate
         run: bun scripts/renderer-presentation-smoke.mjs "$RUNNER_TEMP/renderer-presentation-smoke"
 
+      - name: Build real Rust imported-character WASM and verify public runtime
+        working-directory: candidate
+        # Producer supplies the actual compiled Rust adapter; this gate cannot
+        # be satisfied by a dummy WASM artifact or JavaScript pose authority.
+        run: |
+          bun run build:imported-character-wasm
+          bun scripts/imported-character-browser-acceptance.ts "$RUNNER_TEMP/imported-character-browser-acceptance"
+
       - name: Build static benchmark sites
         run: |
           (cd reference/web && GITHUB_ACTIONS=false bun run build)
@@ -200,6 +211,7 @@ jobs:
             ${{ runner.temp }}/skeletal-inspection-browser-smoke
             ${{ runner.temp }}/editor-snapshot-browser-smoke
             ${{ runner.temp }}/renderer-presentation-smoke
+            ${{ runner.temp }}/imported-character-browser-acceptance
             ${{ runner.temp }}/reference-renderer-server.log
             ${{ runner.temp }}/candidate-renderer-server.log
           if-no-files-found: warn
