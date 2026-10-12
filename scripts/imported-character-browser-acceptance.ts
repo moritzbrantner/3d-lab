@@ -69,6 +69,18 @@ const externalImageReceipt=structuredClone(proof);
 externalImageReceipt.result.outputs.output.sha256=createHash("sha256").update(externalImageBytes).digest("hex");
 externalImageReceipt.result.outputs.output.byteLength=externalImageBytes.byteLength;
 const externalImageFixture={bytes:Array.from(externalImageBytes),receipt:externalImageReceipt};
+// Supplemental review contracts: real source structure/keys, no invented data.
+const capabilityFixtures = [
+  {name:"empty selected scene", reason:"scene|hierarchy|mesh|unsupported", change:(j:any)=>{j.scenes=[{nodes:[]},...j.scenes];j.scene=0;}},
+  {name:"required rig outside selected mesh scene", reason:"scene|hierarchy|joint|skin|node|unsupported", change:(j:any)=>{j.scenes=[{nodes:[1]},{nodes:[0]}];j.scene=0;}},
+  {name:"instantaneous single-key Survey", reason:"clip|duration|instant|animation|unsupported", change:(j:any,b:Buffer)=>{
+    for(const sampler of j.animations[0].samplers){const input=j.accessors[sampler.input];const first=b.readFloatLE(accessorOffset(j,sampler.input));assert.equal(first,0);input.count=1;input.min=[first];input.max=[first];j.accessors[sampler.output].count=1;}
+  }},
+].map(({name,reason,change})=>{
+  const bytes=mutate(change);const receipt=structuredClone(proof);
+  receipt.result.outputs.output.sha256=createHash("sha256").update(bytes).digest("hex");receipt.result.outputs.output.byteLength=bytes.byteLength;
+  return {name,reason,bytes:Array.from(bytes),receipt};
+});
 const unapprovedRequests: string[]=[];
 const wasm: Array<{url: string; sha256: string; bytes: number}> = [];
 const pageErrors: string[] = [];
@@ -103,7 +115,7 @@ try {
     map.textContent=JSON.stringify({imports:{three:"/node_modules/three/build/three.module.js","three/":"/node_modules/three/"}});
     document.head.appendChild(map);
   });
-  const result = await page.evaluate(async ({ importedPath, negativeFixtures, inactiveFixture, externalImageFixture }) => {
+  const result = await page.evaluate(async ({ importedPath, negativeFixtures, inactiveFixture, externalImageFixture, capabilityFixtures }) => {
     const THREE = await import("three");
     const publicRenderer = await import("/packages/renderer/index.js");
     const canvas=document.querySelector("canvas")!;
@@ -236,18 +248,48 @@ try {
     await a.advance(0.2);await target.seek('Walk',0.4);pose(a).joints.forEach((matrix,i)=>close(matrix,pose(target).joints[i],0.002));
     completedCases.push("live public crossfade uses measured deltas, is partition invariant and reaches target clip");
     check(completedCases.length===12,'runtime case coverage incomplete');
+    const capabilities=[];
+    for(const fixture of capabilityFixtures){
+      await a.seek('Walk',0.321);const prior=JSON.stringify(pose(a)),buffers=immutable(a);
+      let candidate,rejection;
+      try{candidate=await module.adaptImportedCharacter(new Uint8Array(fixture.bytes),{provenance:fixture.receipt});}catch(error){rejection=error;}
+      let error;
+      try{
+        if(rejection){check(new RegExp(fixture.reason,'i').test(String(rejection)),`${fixture.name}: useful adaptation capability rejection missing`);}
+        else{
+          const live=candidate.createInstance();
+          if(fixture.name==='instantaneous single-key Survey'){
+            check(candidate.clips.some(clip=>clip.name==='Survey'&&clip.duration===0),'actual single-key clip metadata lost');
+          }
+          // These mutations preserve every original bind/rest/key value. A
+          // supported consumer must retain the original Survey first-key pose.
+          for(const time of fixture.name==='instantaneous single-key Survey'?[0,1]:[0]){
+            await live.seek('Survey',time);const actual=pose(live),expected=oracle.samples.find(sample=>sample.clip==='Survey'&&sample.time===0);
+            expected.joints.forEach((joint,i)=>close(actual.joints[i],joint.matrixWorld,0.002));
+            expected.vertices.forEach((vertex,i)=>close(actual.vertices[i],vertex.world,0.02));
+          }
+          const sibling=candidate.createInstance();check(mesh(sibling).geometry===mesh(live).geometry,`${fixture.name}: shared resources lost`);
+          const rendered=draw([live]);let visibleGeometry=0;for(let i=0;i<rendered.length;i+=4){if(rendered[i]!==empty[i]||rendered[i+1]!==empty[i+1]||rendered[i+2]!==empty[i+2]){visibleGeometry++;}}
+          check(visibleGeometry>64,`${fixture.name}: accepted geometry not visibly submitted`);
+        }
+        check(JSON.stringify(pose(a))===prior&&immutable(a)===buffers,`${fixture.name}: damaged retained valid instance`);
+        await a.seek('Run',0.117);check(JSON.stringify(pose(a))!==prior,`${fixture.name}: retained valid Run unusable`);
+      }catch(failure){error=String(failure);}
+      capabilities.push({name:fixture.name,adaptationRejected:!!rejection,rejection:rejection?String(rejection):undefined,error});
+    }
     check(instantiated>0,'candidate path never instantiated actual compiled WebAssembly');
     check(immutable(a)===fixed && am.geometry===bm.geometry,'fade rebuilt immutable resource');
     draw([a,placed]);
     // Presentation-only draw loop keeps a real submitted frame available for screenshot.
     const present=()=>{module.renderImportedCharacterInstances(renderer,{camera:renderCamera,instances:[a,placed]});requestAnimationFrame(present);};requestAnimationFrame(present);
-    return {externalImage:{semanticRejection:true,outboundRequests:0,priorInstanceUsable:true},inactiveSlot:{accepted:true,finitePose:true,boundedGpuPalette:true,unchangedFrame:true},completedCases,samples,visiblePixels:visible,movingPixels:changed,wasmInstances:instantiated,sharedGeometry:true,sharedInfluences:true,independentPoses:true};
-  }, {importedPath,negativeFixtures,inactiveFixture,externalImageFixture});
+    return {capabilities,externalImage:{semanticRejection:true,outboundRequests:0,priorInstanceUsable:true},inactiveSlot:{accepted:true,finitePose:true,boundedGpuPalette:true,unchangedFrame:true},completedCases,samples,visiblePixels:visible,movingPixels:changed,wasmInstances:instantiated,sharedGeometry:true,sharedInfluences:true,independentPoses:true};
+  }, {importedPath,negativeFixtures,inactiveFixture,externalImageFixture,capabilityFixtures});
   await Promise.all(responses);
   assert(wasm.some(resource=>resource.bytes>8),"actual compiled Rust WASM artifact bytes were not observed; inline bridge requires independent source-bound translation");
   assert.deepEqual(pageErrors,[]);
   await page.locator("canvas").screenshot({path:resolve(output,"actual-public-character.png")});
   await writeFile(resolve(output,"evidence.json"),JSON.stringify({assetSha256:proof.result.outputs.output.sha256,...result,wasm},null,2)+'\n');
+  assert(result.capabilities.every(item=>!item.error),JSON.stringify(result.capabilities));
   console.log('imported-character-browser-acceptance=passed (source authority audit also mandatory)');
 } finally {
   await writeFile(resolve(output,"resource-observations.json"),JSON.stringify({unapprovedRequests},null,2)+'\n');

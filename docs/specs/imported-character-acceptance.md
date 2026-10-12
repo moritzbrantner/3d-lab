@@ -370,3 +370,40 @@ are unexecuted in this failing run. This supplemental case was authored after
 initial production but before its adjacent closure patch; no all-tests-first or
 complete browser success claim is made. Prior twelve runtime and inactive-slot
 expectations remain unchanged.
+
+## Supplemental selected-scene and instantaneous-clip review contracts
+
+These contracts were authored after the initial implementation and before the
+corresponding review repairs, against frozen `ba37ed2`. They extend the same
+actual Chromium/public-renderer/compiled-Rust harness; the original twelve cases
+and inactive-slot/external-resource contracts remain unchanged.
+
+Three matching-integrity mutations retain the actual processed Fox binary data:
+
+- An empty default scene with the complete original scene retained separately.
+- A default scene containing the original mesh node while the original root and
+  required rig hierarchy remain in a separate scene. No joint, transform, mesh,
+  skin slot or inverse bind is invented or altered.
+- Survey reduced to each sampler's actual first input/output key. Inputs have
+  count one and exact min/max zero; output count one retains the actual authored
+  first transform. This is a valid instantaneous clip, not duplicate key times.
+
+The existing animation authority supports instantaneous sampling. The public
+adapter may either support these capabilities coherently or reject the asset
+at adaptation with a useful scene/hierarchy or clip/duration capability reason.
+Accepted scene variants must retain a usable skinned primitive and the original
+Survey-zero world-joint/deformed-vertex oracle. Accepted instantaneous Survey
+must be advertised with duration zero and sample its actual first-key pose at
+zero and a later seek. Accepted geometry must be visibly submitted by the same
+public renderer and retain shared immutable resources between instances.
+A late instance-creation or seek exception is not an adaptation rejection.
+Prior valid poses/buffers and subsequent Run sampling must remain usable.
+
+Baseline `/tmp/3dlab87-capability-baseline/evidence.json` executes all original
+cases successfully, then independently records all three new failures: empty
+scene accepted with no skinned primitive; rig-excluded scene accepted with an
+undefined bone during instance creation; instantaneous Survey advertised but
+seek rejected by positive-duration playback validation. The later support-path
+numeric/render/sharing assertions are unexecuted in those failing cases. This
+is additional review coverage, not a claim that all acceptance preceded initial
+production. The fixture remains technical Fox evidence, not approved game art.
