@@ -29,9 +29,10 @@ identical results. The retained output hash is
 AssetRef, dependency-lock hash and processor fingerprint are retained in
 `fixtures/imported-character/fox.production-import.json`.
 
-The output retains one indexed skinned primitive, 1728 vertices, 576 triangles,
+The output retains one nonindexed TRIANGLES skinned primitive, 1728 vertices, 576 triangles,
 24 ordered skin joints, 26 scene nodes, inverse binds, three named LINEAR clips,
-and one embedded base-color texture. Material/resource references must survive
+and one embedded base-color texture. Existing format lowering supplies sequential
+indices for this source; retained public geometry remains indexed. Material/resource references must survive
 composition; quietly dropping the texture does not satisfy acceptance.
 
 ## Runnable established evidence
@@ -298,3 +299,42 @@ at the missing public imported-character export. All twelve downstream runtime
 cases remain unexecuted. Bun metadata/framing are 2 GREEN; both public-export
 checks are 2 RED. `git diff --check` passes. These results do not prove imported
 runtime behavior, rendered Fox, real texture decode or compiled Rust authority.
+
+
+## Supplemental inactive-slot contract before the adjacent GPU repair
+
+Authored after the first #87 implementation WIP, before its inactive-slot repair:
+actual Fox vertex0 has weights[0.6,0.4,0,0]. The protected browser script changes
+only existing zero-weight JOINTS_0 lane2 to65535, preserves all geometry and weights,
+and updates the negative-fault integrity receipt to match the exact bytes. This is
+a positive active-slot-domain fixture, not new approved content or a real receipt.
+`animation-model.md` requires rejecting invalid **active** indices; inactive slots
+may not incorrectly reject an otherwise valid character.
+
+The public adapter must accept this real mutation, preserve all measured joint
+matrices and five world vertices, retain shared immutable geometry per asset, and
+produce the identical nonempty actual rendered Walk frame. Finite numeric checks
+and real frame readback remain required. The current stock Three skinbase_vertex
+fetches all four bone matrices unconditionally; therefore its public GPU palette
+indices must be bounded even for zero weights. An actual guarded shader alternative
+is permitted only through independently source-verified acceptance translation
+preserving the same safety/pose/render invariants; no specific normalization
+algorithm, fake decoder or unchecked bypass is prescribed.
+
+The source primitive has no indices accessor, independently verified from the exact
+processed GLB JSON. Existing `three-d-formats` sequential-index lowering preserves
+its1728 vertices/576 triangles; the public retained indexed-geometry expectation
+remains unchanged. Earlier indexed-source wording is corrected, not acceptance
+relaxed. Source safety must hold even when GPU out-of-range sampling accidentally
+hides a visible fault. No supplemental pass is claimed before its actual execution.
+
+Actual current-WIP supplemental baseline ran RED at `inactive slot reaches
+unguarded GPU palette fetch`. The public adapter accepted the real mutation and
+its measured joint/vertex pose comparisons executed successfully first. Earlier
+valid-oracle/resource/runtime checks and original rendered motion also executed;
+the supplemental identical-frame/sharing checks after the unsafe-palette failure
+remain unexecuted, as do later malformed/placement/fade assertions in this run.
+Observed JS adapter hash `212746430b91d3841c1157723a3a494e56f683492846d39c2b6fe766ccb8a121`
+and actual candidate WASM hash `f970ab2e0a1b2a094620344adc8f6c312b4d5d3607353b158f2b5cdf24c197b2`.
+This independently authored supplemental RED precedes the adjacent safety fix;
+it is not represented as pre-initial-production acceptance chronology.

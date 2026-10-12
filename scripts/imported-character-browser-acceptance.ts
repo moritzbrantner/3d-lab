@@ -47,6 +47,17 @@ const negativeFixtures = malformed.map(([name,reason,change]) => {
   receipt.result.outputs.output.byteLength=damaged.byteLength;
   return {name,reason:reason.source,bytes:Array.from(damaged),receipt};
 });
+// Existing active-slot contract permits out-of-range indices only at zero weight.
+const inactiveDamaged=mutate((json,binary)=>{
+  const primitive=json.meshes[0].primitives[0];
+  const weights=accessorOffset(json,primitive.attributes.WEIGHTS_0);
+  assert.equal(binary.readFloatLE(weights+8),0,"selected real source lane must already be inactive");
+  binary.writeUInt16LE(65535,accessorOffset(json,primitive.attributes.JOINTS_0)+4);
+});
+const inactiveReceipt=structuredClone(proof);
+inactiveReceipt.result.outputs.output.sha256=createHash("sha256").update(inactiveDamaged).digest("hex");
+inactiveReceipt.result.outputs.output.byteLength=inactiveDamaged.byteLength;
+const inactiveFixture={bytes:Array.from(inactiveDamaged),receipt:inactiveReceipt};
 const wasm: Array<{url: string; sha256: string; bytes: number}> = [];
 const pageErrors: string[] = [];
 // Disposable fixture server, no application state, decoder or model implementation.
@@ -77,7 +88,7 @@ try {
     map.textContent=JSON.stringify({imports:{three:"/node_modules/three/build/three.module.js","three/":"/node_modules/three/"}});
     document.head.appendChild(map);
   });
-  const result = await page.evaluate(async ({ importedPath, negativeFixtures }) => {
+  const result = await page.evaluate(async ({ importedPath, negativeFixtures, inactiveFixture }) => {
     const THREE = await import("three");
     const publicRenderer = await import("/packages/renderer/index.js");
     const canvas=document.querySelector("canvas")!;
@@ -141,16 +152,6 @@ try {
       check(rejected,'invalid runtime input succeeded');check(JSON.stringify(pose(a))===before && immutable(a)===fixed,'invalid input was not atomic');
     }
     completedCases.push("invalid seek, unknown clip and invalid transition/delta preserve valid pose and resources");
-    for(const fixture of negativeFixtures) {
-      const retained=await module.adaptImportedCharacter(bytes,{provenance:proof});
-      const valid=retained.createInstance();await valid.seek('Walk',0.321);
-      const priorPose=JSON.stringify(pose(valid)),priorBuffers=immutable(valid);
-      let failure;try {await module.adaptImportedCharacter(new Uint8Array(fixture.bytes),{provenance:fixture.receipt});} catch(error) {failure=error;}
-      check(failure && new RegExp(fixture.reason,'i').test(String(failure)),`${fixture.name}: semantic rejection reason missing`);
-      check(JSON.stringify(pose(valid))===priorPose && immutable(valid)===priorBuffers,`${fixture.name}: damaged prior retained instance`);
-      await valid.seek('Run',0.117);check(JSON.stringify(pose(valid))!==priorPose,`${fixture.name}: prior valid instance cannot be reused`);
-      completedCases.push(`malformed actual Fox ${fixture.name} is rejected without damaging a retained valid instance`);
-    }
     // Explicit source-unit camera fixture; no gameplay/camera authority created.
     await a.seek('Survey',0);
     const bounds=new THREE.Box3().setFromObject(a.root);const center=bounds.getCenter(new THREE.Vector3());const span=bounds.getSize(new THREE.Vector3()).length();
@@ -171,6 +172,33 @@ try {
     for(let i=0;i<moving.length;i+=4){if(moving[i]!==first[i]||moving[i+1]!==first[i+1]||moving[i+2]!==first[i+2]){changed++;}}
     check(changed>8,'actual rendered clip has no visible motion');
     const placement=new THREE.Matrix4().makeRotationY(0.37).setPosition(7,-3,11);
+    // Positive inactive-lane fault: mutate only one existing zero-weight slot.
+    const inactiveAsset=await module.adaptImportedCharacter(new Uint8Array(inactiveFixture.bytes),{provenance:inactiveFixture.receipt});
+    const inactive=inactiveAsset.createInstance();await inactive.seek('Walk',0.321);
+    const inactivePose=pose(inactive),normalPose=pose(a);
+    inactivePose.joints.forEach((matrix,i)=>close(matrix,normalPose.joints[i],0.002));
+    inactivePose.vertices.forEach((vertex,i)=>close(vertex,normalPose.vertices[i],0.02));
+    const inactiveMesh=mesh(inactive),palette=inactiveMesh.skeleton.bones.length;
+    const unsafeSlots=Array.from(inactiveMesh.geometry.attributes.skinIndex.array).filter(index=>!Number.isInteger(index)||index<0||index>=palette);
+    // Existing renderer uses stock Three skinbase_vertex: it unconditionally
+    // fetches all four matrices. A real guarded shader alternative requires an
+    // independent source-bound assertion translation, never an unsafe allowlist.
+    check(unsafeSlots.length===0,'inactive slot reaches unguarded GPU palette fetch; bounded indices or independently verified actual shader guard required');
+    const inactivePixels=draw([inactive]);
+    check(inactivePixels.every((value,index)=>value===moving[index]),'inactive zero-weight slot changed actual rendered frame');
+    const inactiveSibling=inactiveAsset.createInstance();
+    check(mesh(inactiveSibling).geometry===inactiveMesh.geometry,'inactive accepted asset did not retain shared geometry');
+    draw([a]);
+    for(const fixture of negativeFixtures) {
+      const retained=await module.adaptImportedCharacter(bytes,{provenance:proof});
+      const valid=retained.createInstance();await valid.seek('Walk',0.321);
+      const priorPose=JSON.stringify(pose(valid)),priorBuffers=immutable(valid);
+      let failure;try {await module.adaptImportedCharacter(new Uint8Array(fixture.bytes),{provenance:fixture.receipt});} catch(error) {failure=error;}
+      check(failure && new RegExp(fixture.reason,'i').test(String(failure)),`${fixture.name}: semantic rejection reason missing`);
+      check(JSON.stringify(pose(valid))===priorPose && immutable(valid)===priorBuffers,`${fixture.name}: damaged prior retained instance`);
+      await valid.seek('Run',0.117);check(JSON.stringify(pose(valid))!==priorPose,`${fixture.name}: prior valid instance cannot be reused`);
+      completedCases.push(`malformed actual Fox ${fixture.name} is rejected without damaging a retained valid instance`);
+    }
     const placed=asset.createInstance({modelMatrix:placement.elements});
     await a.seek('Walk',0.321);await placed.seek('Walk',0.321);const canonical=pose(a),shifted=pose(placed);
     canonical.joints.forEach((matrix,i)=>close(shifted.joints[i],new THREE.Matrix4().multiplyMatrices(placement,new THREE.Matrix4().fromArray(matrix)).elements,0.002));
@@ -189,8 +217,8 @@ try {
     draw([a,placed]);
     // Presentation-only draw loop keeps a real submitted frame available for screenshot.
     const present=()=>{module.renderImportedCharacterInstances(renderer,{camera:renderCamera,instances:[a,placed]});requestAnimationFrame(present);};requestAnimationFrame(present);
-    return {completedCases,samples,visiblePixels:visible,movingPixels:changed,wasmInstances:instantiated,sharedGeometry:true,sharedInfluences:true,independentPoses:true};
-  }, {importedPath,negativeFixtures});
+    return {inactiveSlot:{accepted:true,finitePose:true,boundedGpuPalette:true,unchangedFrame:true},completedCases,samples,visiblePixels:visible,movingPixels:changed,wasmInstances:instantiated,sharedGeometry:true,sharedInfluences:true,independentPoses:true};
+  }, {importedPath,negativeFixtures,inactiveFixture});
   await Promise.all(responses);
   assert(wasm.some(resource=>resource.bytes>8),"actual compiled Rust WASM artifact bytes were not observed; inline bridge requires independent source-bound translation");
   assert.deepEqual(pageErrors,[]);
