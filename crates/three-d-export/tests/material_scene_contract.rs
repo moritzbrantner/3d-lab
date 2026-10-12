@@ -61,6 +61,14 @@ fn caller_resources() -> SceneResources {
 fn assert_resources(bytes: &[u8]) {
     let glb = gltf::Gltf::from_slice(bytes).unwrap();
     let binary = glb.blob.as_ref().unwrap();
+    assert_eq!(glb.buffers().count(), 1);
+    assert!(
+        matches!(
+            glb.buffers().next().unwrap().source(),
+            gltf::buffer::Source::Bin
+        ),
+        "portable output must not resolve any original source buffer URI"
+    );
     assert_eq!(
         glb.meshes().count(),
         1,
