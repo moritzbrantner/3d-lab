@@ -13,10 +13,34 @@ function verifyPin(bytes, pin) {
   if (sha256Hex(bytes) !== pin.sha256) fail("source SHA-256 does not match the pin")
 }
 
+/** Animation count declared by a GLB or glTF JSON document, or undefined when it cannot be read. */
+function declaredAnimationCount(bytes) {
+  let text
+  try {
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    if (bytes.byteLength >= 20 && view.getUint32(0, true) === 0x46546c67) {
+      const length = view.getUint32(12, true)
+      if (view.getUint32(16, true) !== 0x4e4f534a || 20 + length > bytes.byteLength) return undefined
+      text = new TextDecoder().decode(bytes.subarray(20, 20 + length))
+    } else {
+      text = new TextDecoder().decode(bytes)
+    }
+    const json = JSON.parse(text)
+    // Only a skinned glTF character (asset.version, meshes and skins) counts as clipless; anything
+    // else is left to the runtime and reported as an invalid source.
+    if (typeof json !== "object" || json === null || typeof json.asset?.version !== "string"
+      || !Array.isArray(json.meshes) || json.meshes.length === 0
+      || !Array.isArray(json.skins) || json.skins.length === 0) return undefined
+    return Array.isArray(json.animations) ? json.animations.length : 0
+  } catch { return undefined }
+}
+
 /** Verify the pin over a private copy of exactly these bytes, then load for inspection. */
 export async function adaptPinnedCharacterSource(source, pin) {
   const bytes = copyBytes(source, fail)
   verifyPin(bytes, pin)
+  // Classify clipless sources before the runtime rejects them as invalid.
+  if (declaredAnimationCount(bytes) === 0) fail("source has no animation clips")
   let runtime
   try { runtime = await loadCharacterRuntime(bytes, fail) }
   catch (error) {
@@ -37,6 +61,7 @@ export async function adaptPinnedCharacterSource(source, pin) {
       if (!Number.isInteger(clip) || clip < 0 || clip >= clips.length) fail(`clip index ${clip} is out of range 0..${clips.length - 1}`)
       return metadata.clips[clip].name
     }
+    if (typeof clip !== "string") fail(`clip selector must be an index or an authored name, got ${typeof clip}`)
     const index = clips.findIndex(entry => entry.name === clip)
     if (index < 0) fail(`unknown clip ${String(clip)}`)
     return metadata.clips[index].name
