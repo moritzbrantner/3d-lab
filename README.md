@@ -159,3 +159,11 @@ Build its live Rust browser bridge with `bun run build:imported-character-wasm`;
 run the actual consumer contract with
 `bun scripts/imported-character-browser-acceptance.ts target/imported-character-browser-acceptance`.
 See the browser renderer contract for retained resources, independent poses and native adapter limits.
+
+Original character source bytes pinned only by SHA-256 and byte length (for example a
+catalog viewer) use the separate, inspection-only
+`@moritzbrantner/three-d-renderer/inspection-character` entry point
+(`adaptPinnedCharacterSource(bytes, {sha256, byteLength})`). It shares the same Rust
+bridge and render call, but is not a production import and carries no provenance. Its
+Chromium contract runs with
+`bun scripts/inspection-character-browser-acceptance.ts target/inspection-character-browser-acceptance`.
