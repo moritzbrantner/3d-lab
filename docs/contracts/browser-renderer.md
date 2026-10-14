@@ -191,3 +191,34 @@ The native renderer-independent hierarchy/clip/rig lowering is available to cons
 but submitting the same embedded-texture character through the native wgpu adapter is
 an explicit #87-permitted gap alongside #86 material coverage. This technical Fox proof
 is not approved ARPG Knight content, gameplay state, asset acquisition or normalization.
+
+## Inspection-only characters
+
+`./inspection-character` exposes `adaptPinnedCharacterSource(bytes,{sha256,byteLength})`
+for **original** character source bytes (GLB, or `.gltf` with embedded data URIs) that
+are pinned only by hash and length, for example a catalog viewer. It is inspection-only:
+it is not a production import, implies no asset-tooling acceptance and never substitutes
+for an `ImportedCharacterAsset`. The `./imported-character` boundary and its provenance
+gate are unchanged.
+
+The bytes are copied first; the pin (lowercase 64-hex SHA-256, non-negative integer
+byte length) is verified over exactly that copy before any parsing, and a mismatch or
+malformed pin fails closed. The verified copy is what gets parsed. Unparsable sources
+and sources without animation clips are rejected with a clear error.
+
+The result is a frozen asset with `validation: "inspection-only"`, no `provenance`,
+`clips: {index, duration, name?}[]` (`name` only for authored names), `createInstance`
+and `dispose`. Instances `seek(clip, seconds)` by index or authored name; a non-integer
+or out-of-range index or an unknown name throws and leaves the pose unchanged. They also
+`advance` and `dispose`. A fresh instance is the rest pose (no clip applied).
+
+Decode, rig/clip lowering, pose sampling and GPU resources are the same internal runtime
+as `./imported-character` (`character-runtime.js`, the same `three-d-character-wasm`
+bridge and GLTFLoader/SkeletonUtils decode); there is no second skin or animation stack.
+Unnamed clips keep the `three-d-formats` substitute identity internally and are addressed
+by index. The module re-exports the identical `renderImportedCharacterInstances`.
+
+Evidence: `bun test packages/renderer/acceptance/inspection-character.test.ts` and the
+Chromium script `bun scripts/inspection-character-browser-acceptance.ts [OUTPUT_DIR]`
+(run by the renderer runtime evidence workflow after building the WASM bridge); see
+[`docs/specs/inspection-character-acceptance.md`](../specs/inspection-character-acceptance.md).

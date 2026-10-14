@@ -30,6 +30,10 @@
     "./imported-character": {
       "types": "./packages/renderer/imported-character.d.ts",
       "import": "./packages/renderer/imported-character.js"
+    },
+    "./inspection-character": {
+      "types": "./packages/renderer/inspection-character.d.ts",
+      "import": "./packages/renderer/inspection-character.js"
     }
   },
   "scripts": {
