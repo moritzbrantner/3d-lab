@@ -412,6 +412,20 @@ describe("unnamed clips are addressable by index (RiggedFigure)", () => {
     asset.dispose?.();
   });
 
+  test("non-string, non-number clip selectors never match an unnamed clip", async () => {
+    // Regression (Codex P2 on #119): an unnamed clip has no authored name, so
+    // `undefined` (or any other non-selector) must not select it.
+    const { adaptPinnedCharacterSource } = await inspection();
+    const asset = await adaptPinnedCharacterSource(figure, figurePin);
+    const instance = asset.createInstance();
+    instance.seek(0, 0.9); const before = ordered(instance);
+    for (const bad of [undefined, null, {}]) {
+      await rejection(() => instance.seek(bad, 0.3));
+      expect(ordered(instance)).toEqual(before);
+    }
+    asset.dispose?.();
+  });
+
   test("index seek and rest pose match an independent three.js AnimationMixer reference", async () => {
     const { adaptPinnedCharacterSource } = await inspection();
     const asset = await adaptPinnedCharacterSource(figure, figurePin);
@@ -449,7 +463,9 @@ describe("clear errors", () => {
     for (const change of [(json: any) => { delete json.animations; }, (json: any) => { json.animations = []; }]) {
       const noClips = mutate(source, change);
       const error = await rejection(() => adaptPinnedCharacterSource(noClips, { sha256: sha256(noClips), byteLength: noClips.byteLength }));
-      expect(String(error)).toMatch(/clip|animation/i);
+      // Reported as missing clips, not as an unparsable source (Codex P2 on #119).
+      expect(String(error)).toMatch(/\bno (animation )?clips\b|\bno animations?\b|without (animation )?clips|zero (animation )?clips/i);
+      expect(String(error)).not.toMatch(/unparsable|invalid gltf/i);
       expect(String(error)).not.toMatch(PIN_ONLY_WORDS);
     }
   });
