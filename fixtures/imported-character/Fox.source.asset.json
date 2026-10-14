@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "catalogId": "khronos.fox-glb",
+  "source": {
+    "provider": "khronos-gltf-sample-assets",
+    "revision": "90d7ede14c7e280af263824604b427a1ca02cb66",
+    "path": "Models/Fox/glTF-Binary/Fox.glb",
+    "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/90d7ede14c7e280af263824604b427a1ca02cb66/Models/Fox/glTF-Binary/Fox.glb",
+    "gitBlobSha": "1ef5c0d05658caea339680fe581aa2c8302b3365",
+    "sha256": "d97044e701822bac5a62696459b27d7b375aada5de8574ed4362edbba94771f7",
+    "byteLength": 162852
+  },
+  "license": {
+    "spdx": "CC0-1.0 AND CC-BY-4.0",
+    "attribution": "Model: PixelMannen (CC0-1.0). Rigging and animation: tomkranis (CC-BY-4.0). Conversion to glTF: @AsoboStudio and @scurest (CC-BY-4.0).",
+    "evidenceUrl": "https://github.com/KhronosGroup/glTF-Sample-Assets/blob/90d7ede14c7e280af263824604b427a1ca02cb66/Models/Fox/LICENSE.md",
+    "localCopies": ["Fox.LICENSE.md", "Fox.source.md"]
+  },
+  "vendoring": {
+    "file": "Fox.source.glb",
+    "reason": "Original pinned source bytes for the inspection-only character entry point (#118); the same source processed into fox.glb (fox.production-import.json source AssetRef)",
+    "policy": "Keep byte-identical to the pinned canonical catalog source; do not hand-edit or re-export the GLB fixture"
+  }
+}
