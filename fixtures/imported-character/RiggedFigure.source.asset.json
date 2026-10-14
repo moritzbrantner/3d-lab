@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "catalogId": "khronos.riggedfigure-glb",
+  "source": {
+    "provider": "khronos-gltf-sample-assets",
+    "revision": "90d7ede14c7e280af263824604b427a1ca02cb66",
+    "path": "Models/RiggedFigure/glTF-Binary/RiggedFigure.glb",
+    "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/90d7ede14c7e280af263824604b427a1ca02cb66/Models/RiggedFigure/glTF-Binary/RiggedFigure.glb",
+    "gitBlobSha": "c505a33dfa5ba84bd5f3dd0a85f74ee4c9978322",
+    "sha256": "d6be85417d3e256861ee733eea6916093a7af7c79c16366181fd8abcaeb38cf5",
+    "byteLength": 50116
+  },
+  "license": {
+    "spdx": "CC-BY-4.0",
+    "attribution": "© 2017, Cesium (everything). Creative Commons Attribution 4.0 International.",
+    "evidenceUrl": "https://github.com/KhronosGroup/glTF-Sample-Assets/blob/90d7ede14c7e280af263824604b427a1ca02cb66/Models/RiggedFigure/LICENSE.md"
+  },
+  "vendoring": {
+    "file": "RiggedFigure.source.glb",
+    "reason": "Original pinned catalog source with one unnamed 1.25 s clip for the inspection-only character entry point (#118, asset-tooling#111)",
+    "policy": "Keep byte-identical to the pinned canonical catalog source; do not hand-edit or re-export the GLB fixture"
+  }
+}

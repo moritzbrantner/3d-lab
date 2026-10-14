@@ -3,7 +3,9 @@
 // `./inspection-character` export, verifies the pin rejection in the browser,
 // renders a rest-pose and a seeked instance through the existing public
 // renderer, and compares live poses with the production `./imported-character`
-// path on the accepted import of the same source. Usage:
+// path on the accepted import of the same source. It also loads RiggedFigure
+// (one unnamed clip) and SimpleSkin (embedded .gltf), seeks their clip by index
+// and compares with a three.js AnimationMixer reference. Usage:
 //   bun scripts/inspection-character-browser-acceptance.ts [output-dir]
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -24,6 +26,16 @@ const source = await readFile(resolve(root, "fixtures/imported-character/Fox.sou
 assert.equal(createHash("sha256").update(source).digest("hex"), proof.source.sha256);
 assert.equal(source.byteLength, proof.source.byteLength);
 const pin = { sha256: proof.source.sha256, byteLength: proof.source.byteLength };
+// Catalog sources without a production import: unnamed clips, embedded .gltf.
+const catalog = await Promise.all([
+  { label: "RiggedFigure", path: "fixtures/imported-character/RiggedFigure.source.glb", sha256: "d6be85417d3e256861ee733eea6916093a7af7c79c16366181fd8abcaeb38cf5", byteLength: 50116, duration: 1.25 },
+  { label: "SimpleSkin", path: "fixtures/catalog/khronos-simpleskin-embedded.gltf", sha256: "7d0c3f48d0510d101269cb4fdd3ee035eaada0e04809a0899e0b4cfe8c38e68f", byteLength: 3566, duration: 5.5 },
+].map(async entry => {
+  const bytes = await readFile(resolve(root, entry.path));
+  assert.equal(createHash("sha256").update(bytes).digest("hex"), entry.sha256, `${entry.label} fixture hash`);
+  assert.equal(bytes.byteLength, entry.byteLength, `${entry.label} fixture length`);
+  return entry;
+}));
 
 const pageErrors: string[] = [];
 const wasm: Array<{ url: string; sha256: string; bytes: number }> = [];
@@ -55,7 +67,7 @@ try {
     map.textContent = JSON.stringify({ imports: { three: "/node_modules/three/build/three.module.js", "three/": "/node_modules/three/" } });
     document.head.appendChild(map);
   });
-  const result = await page.evaluate(async ({ inspectionPath, productionPath, pin }) => {
+  const result = await page.evaluate(async ({ inspectionPath, productionPath, pin, catalog }) => {
     const THREE = await import("three");
     const publicRenderer = await import("/packages/renderer/index.js");
     const canvas = document.querySelector("canvas")!;
@@ -156,10 +168,55 @@ try {
     const moving = differing(walkFrame, restFrame);
     check(differing(walkFrame, empty) > 64, "seeked inspection character is not visibly rendered");
     check(moving > 8, "seeked clip is visually indistinguishable from the rest pose");
+
+    // Unnamed clips addressable by index, against an independent three.js
+    // GLTFLoader + AnimationMixer reference (no production import exists).
+    const { GLTFLoader } = await import("three/examples/jsm/loaders/GLTFLoader.js");
+    const ordered = (instance: any) => mesh(instance).skeleton.bones.map((bone: any) => bone.matrixWorld.toArray());
+    const catalogResults = [];
+    for (const entry of catalog) {
+      const sourceBytes = new Uint8Array(await (await fetch("/" + entry.path)).arrayBuffer());
+      const pinned = await inspection.adaptPinnedCharacterSource(sourceBytes, { sha256: entry.sha256, byteLength: entry.byteLength });
+      check(pinned.validation === "inspection-only", `${entry.label}: not inspection-only`);
+      check(pinned.clips.length === 1 && pinned.clips[0].index === 0 && Math.abs(pinned.clips[0].duration - entry.duration) < 1e-6, `${entry.label}: clip index/duration ${JSON.stringify(pinned.clips)}`);
+      const referenceAt = async (time: number | null) => {
+        const gltf = await new GLTFLoader().parseAsync(sourceBytes.slice().buffer, "");
+        if (time !== null) { const mixer = new THREE.AnimationMixer(gltf.scene); mixer.clipAction(gltf.animations[0]).play(); mixer.setTime(time); }
+        gltf.scene.updateMatrixWorld(true);
+        let skinned: any; gltf.scene.traverse((node: any) => { if (node.isSkinnedMesh) { skinned = node; } });
+        return skinned.skeleton.bones.map((bone: any) => bone.matrixWorld.toArray());
+      };
+      const restInstance = pinned.createInstance(), live = pinned.createInstance();
+      const restExpected = await referenceAt(null);
+      ordered(restInstance).forEach((m: number[], j: number) => close(m, restExpected[j], 0.002, `${entry.label} rest joint ${j}`));
+      const times = [0.1, 0.4 * entry.duration, 0.8 * entry.duration];
+      for (const time of times) {
+        live.seek(0, time);
+        const expected = await referenceAt(time);
+        ordered(live).forEach((m: number[], j: number) => close(m, expected[j], 0.002, `${entry.label} clip 0 @${time} joint ${j}`));
+      }
+      live.seek(0, times[1]); const first = JSON.stringify(ordered(live));
+      live.seek(0, times[2]); const second = JSON.stringify(ordered(live));
+      check(first !== second, `${entry.label}: two index-seek times give the same pose`);
+      live.seek(0, times[1]); check(JSON.stringify(ordered(live)) === first, `${entry.label}: re-seek is not exact`);
+      let badIndex: unknown; try { live.seek(1, 0.1); } catch (error) { badIndex = error; }
+      check(badIndex && JSON.stringify(ordered(live)) === first, `${entry.label}: out-of-range index accepted or not atomic`);
+      // Visible render through the same shared call, framed on this asset.
+      const box = new THREE.Box3().setFromObject(live.root); const mid = box.getCenter(new THREE.Vector3()); const size = Math.max(box.getSize(new THREE.Vector3()).length(), 1e-3);
+      const view = new THREE.PerspectiveCamera(45, 640 / 480, size / 1000, size * 20);
+      view.position.copy(mid).add(new THREE.Vector3(size * 0.3, size * 0.2, size * 1.4)); view.lookAt(mid); view.updateMatrixWorld(true);
+      const assetCamera = { viewMatrix: view.matrixWorldInverse.toArray(), projectionMatrix: view.projectionMatrix.toArray() };
+      const frame = (instances: any[]) => { render(renderer, { camera: assetCamera, instances }); const px = new Uint8Array(640 * 480 * 4); gl.readPixels(0, 0, 640, 480, gl.RGBA, gl.UNSIGNED_BYTE, px); return px; };
+      const blank = frame([]); const shown = differing(frame([live]), blank);
+      check(shown > 64, `${entry.label}: not visibly rendered (${shown})`);
+      catalogResults.push({ label: entry.label, clips: pinned.clips, referenceTimes: times, visiblePixels: shown });
+      restInstance.dispose(); live.dispose();
+    }
+
     draw([rest, walk]);
     const present = () => { render(renderer, { camera: renderCamera, instances: [walk] }); requestAnimationFrame(present); }; requestAnimationFrame(present);
-    return { validation: asset.validation, clips: asset.clips, samples, visiblePixels: visible, movingPixels: moving, wasmInstances: instantiated };
-  }, { inspectionPath, productionPath, pin });
+    return { validation: asset.validation, clips: asset.clips, samples, catalog: catalogResults, visiblePixels: visible, movingPixels: moving, wasmInstances: instantiated };
+  }, { inspectionPath, productionPath, pin, catalog });
   await Promise.all(responses);
   assert(wasm.some(resource => resource.bytes > 8), "compiled Rust WASM artifact bytes were not observed");
   assert.deepEqual(pageErrors, []);

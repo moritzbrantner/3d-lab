@@ -280,8 +280,7 @@ describe("clips, seek parity, rest pose", () => {
     const accepted = await adaptImportedCharacter(output, { provenance: proof });
     expect(asset.clips.length).toBe(3);
     asset.clips.forEach((clip: any, i: number) => {
-      expect(typeof clip.name === "string" || Number.isInteger(clip.index)).toBe(true);
-      if (clip.index !== undefined) expect(clip.index).toBe(i);
+      expect(clip.index, "every clip is addressable by index").toBe(i);
       expect(clip.name).toBe(accepted.clips[i].name);
       expect(Math.abs(clip.duration - accepted.clips[i].duration)).toBeLessThan(1e-6);
     });
@@ -352,6 +351,95 @@ describe("clips, seek parity, rest pose", () => {
     survey.seek("Walk", 0.321); survey.advance(0.1);
     expectSameJoints(joints(rest), restJoints, "rest after sibling playback");
     asset.dispose?.(); accepted.dispose();
+  });
+});
+
+describe("unnamed clips are addressable by index (RiggedFigure)", () => {
+  // Khronos RiggedFigure: one clip without an authored name, 1.25 s, no textures.
+  // No production import exists, so an independent three.js GLTFLoader +
+  // AnimationMixer reference is the oracle. SimpleSkin (.gltf with data URIs)
+  // needs browser fetch facilities and is covered in the Chromium script.
+  const figure = readFileSync(new URL("RiggedFigure.source.glb", fixtures));
+  const figureRecord = JSON.parse(readFileSync(new URL("RiggedFigure.source.asset.json", fixtures), "utf8"));
+  const figurePin = { sha256: figureRecord.source.sha256 as string, byteLength: figureRecord.source.byteLength as number };
+  const figureJson = (() => { const length = figure.readUInt32LE(12); return JSON.parse(figure.subarray(20, 20 + length).toString()); })();
+  const ordered = (instance: any) => mesh(instance).skeleton.bones.map((bone: any) => bone.matrixWorld.toArray() as number[]);
+  async function reference(time: number): Promise<number[][]> {
+    const buffer = figure.buffer.slice(figure.byteOffset, figure.byteOffset + figure.byteLength);
+    const gltf = await new GLTFLoader().parseAsync(buffer, "");
+    const mixer = new THREE.AnimationMixer(gltf.scene);
+    mixer.clipAction(gltf.animations[0]).play();
+    mixer.setTime(time);
+    gltf.scene.updateMatrixWorld(true);
+    let skinned: any; gltf.scene.traverse((node: any) => { if (node.isSkinnedMesh) skinned = node; });
+    return skinned.skeleton.bones.map((bone: any) => bone.matrixWorld.toArray());
+  }
+
+  test("fixture is byte-identical to the pinned Khronos source, and its clip has no authored name (passes on baseline)", () => {
+    expect(figure.byteLength).toBe(50116);
+    expect(sha256(figure)).toBe("d6be85417d3e256861ee733eea6916093a7af7c79c16366181fd8abcaeb38cf5");
+    expect(figurePin).toEqual({ sha256: sha256(figure), byteLength: figure.byteLength });
+    expect(figureRecord.license.spdx).toBe("CC-BY-4.0");
+    expect(figureJson.animations.length).toBe(1);
+    expect(figureJson.animations[0].name).toBeUndefined();
+  });
+
+  test("loads under its pin and exposes the unnamed clip by index and duration", async () => {
+    const { adaptPinnedCharacterSource } = await inspection();
+    const asset = await adaptPinnedCharacterSource(figure, figurePin);
+    expect(asset.validation).toBe("inspection-only");
+    expect(asset.clips.length).toBe(1);
+    expect(asset.clips[0].index).toBe(0);
+    expect(Math.abs(asset.clips[0].duration - 1.25)).toBeLessThan(1e-6);
+    // `name` is optional for an unnamed clip; when present it is a string.
+    if (asset.clips[0].name !== undefined) expect(typeof asset.clips[0].name).toBe("string");
+    asset.dispose?.();
+  });
+
+  test("seek by index: distinct times differ, re-seeking a time is exact, invalid indices fail atomically", async () => {
+    const { adaptPinnedCharacterSource } = await inspection();
+    const asset = await adaptPinnedCharacterSource(figure, figurePin);
+    const instance = asset.createInstance();
+    instance.seek(0, 0.3); const early = ordered(instance);
+    instance.seek(0, 0.9); const late = ordered(instance);
+    expect(early.some((m, j) => m.some((v, i) => Math.abs(v - late[j][i]) > 1e-4)), "two times must give different joints").toBe(true);
+    instance.seek(0, 0.3);
+    expect(ordered(instance)).toEqual(early);
+    for (const bad of [1, -1, 0.5, Number.NaN]) {
+      await rejection(() => instance.seek(bad, 0.3));
+      expect(ordered(instance)).toEqual(early);
+    }
+    asset.dispose?.();
+  });
+
+  test("index seek and rest pose match an independent three.js AnimationMixer reference", async () => {
+    const { adaptPinnedCharacterSource } = await inspection();
+    const asset = await adaptPinnedCharacterSource(figure, figurePin);
+    const rest = asset.createInstance(), playing = asset.createInstance();
+    const restReference = await (async () => {
+      const buffer = figure.buffer.slice(figure.byteOffset, figure.byteOffset + figure.byteLength);
+      const gltf = await new GLTFLoader().parseAsync(buffer, ""); gltf.scene.updateMatrixWorld(true);
+      let skinned: any; gltf.scene.traverse((node: any) => { if (node.isSkinnedMesh) skinned = node; });
+      return skinned.skeleton.bones.map((bone: any) => bone.matrixWorld.toArray());
+    })();
+    ordered(rest).forEach((m: number[], j: number) => expectClose(m, restReference[j], MATRIX_TOLERANCE, `rest joint ${j}`));
+    for (const time of [0, 0.3, 0.625, 1.1]) {
+      playing.seek(0, time);
+      const expected = await reference(time);
+      ordered(playing).forEach((m: number[], j: number) => expectClose(m, expected[j], MATRIX_TOLERANCE, `clip 0 @${time} joint ${j}`));
+    }
+    asset.dispose?.();
+  });
+
+  test("named sources accept index seek equal to name seek (Fox)", async () => {
+    const { adaptPinnedCharacterSource } = await inspection();
+    const asset = await adaptPinnedCharacterSource(source, pin);
+    const byName = asset.createInstance(), byIndex = asset.createInstance();
+    for (const [index, name, time] of [[0, "Survey", 1.2], [1, "Walk", 0.321], [2, "Run", 0.117]] as const) {
+      byName.seek(name, time); byIndex.seek(index, time);
+      expect(ordered(byIndex)).toEqual(ordered(byName));
+    }
+    asset.dispose?.();
   });
 });
 
