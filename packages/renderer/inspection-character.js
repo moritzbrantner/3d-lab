@@ -31,7 +31,8 @@ function declaredAnimationCount(bytes) {
     if (typeof json !== "object" || json === null || typeof json.asset?.version !== "string"
       || !Array.isArray(json.meshes) || json.meshes.length === 0
       || !Array.isArray(json.skins) || json.skins.length === 0) return undefined
-    return Array.isArray(json.animations) ? json.animations.length : 0
+    if (json.animations === undefined) return 0
+    return Array.isArray(json.animations) ? json.animations.length : undefined
   } catch { return undefined }
 }
 
@@ -39,13 +40,16 @@ function declaredAnimationCount(bytes) {
 export async function adaptPinnedCharacterSource(source, pin) {
   const bytes = copyBytes(source, fail)
   verifyPin(bytes, pin)
-  // Classify clipless sources before the runtime rejects them as invalid.
-  if (declaredAnimationCount(bytes) === 0) fail("source has no animation clips")
   let runtime
   try { runtime = await loadCharacterRuntime(bytes, fail) }
   catch (error) {
     // The Rust bridge reports plain strings; give callers a real Error.
     const reason = error instanceof Error ? error.message : String(error)
+    // Clipless only when the parser itself failed on the clip list of a well-formed skinned
+    // document declaring no animations; every other failure stays an invalid-source error.
+    if (/\bclip/i.test(reason) && declaredAnimationCount(bytes) === 0) {
+      throw new Error("inspection character: source has no animation clips", {cause: error})
+    }
     throw new Error(`inspection character: unparsable or invalid glTF/GLB source: ${reason}`, {cause: error})
   }
   const {metadata} = runtime
