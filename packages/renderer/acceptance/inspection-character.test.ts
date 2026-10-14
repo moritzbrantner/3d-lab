@@ -470,6 +470,18 @@ describe("clear errors", () => {
     }
   });
 
+  test("malformed animations (object or null) are an invalid source, not a missing-clips source", async () => {
+    // Regression (Codex P2 on #119): only an absent or empty `animations` list means "no clips".
+    const { adaptPinnedCharacterSource } = await inspection();
+    for (const animations of [{}, null]) {
+      const malformed = mutate(source, json => { json.animations = animations; });
+      const error = await rejection(() => adaptPinnedCharacterSource(malformed, { sha256: sha256(malformed), byteLength: malformed.byteLength }));
+      expect(String(error)).toMatch(/unparsable|invalid/i);
+      expect(String(error)).not.toMatch(/\bno (animation )?clips\b|\bno animations?\b|without (animation )?clips|zero (animation )?clips/i);
+      expect(String(error)).not.toMatch(PIN_ONLY_WORDS);
+    }
+  });
+
   test("malformed bytes under their own correct pin are rejected as unparsable, not as a pin failure", async () => {
     const { adaptPinnedCharacterSource } = await inspection();
     const truncated = Buffer.from(source.subarray(0, 5000));
