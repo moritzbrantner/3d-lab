@@ -47,7 +47,9 @@ export async function adaptPinnedCharacterSource(source, pin) {
     const reason = error instanceof Error ? error.message : String(error)
     // Clipless only when the parser itself failed on the clip list of a well-formed skinned
     // document declaring no animations; every other failure stays an invalid-source error.
-    if (/\bclip/i.test(reason) && declaredAnimationCount(bytes) === 0) {
+    // Only the formats crate's empty/duplicate clip-name rejection; its generic "glTF node/skin/clip:"
+    // validation prefix covers unrelated malformed input and must stay an invalid-source error.
+    if (reason.includes("clip names must be present and unique") && declaredAnimationCount(bytes) === 0) {
       throw new Error("inspection character: source has no animation clips", {cause: error})
     }
     throw new Error(`inspection character: unparsable or invalid glTF/GLB source: ${reason}`, {cause: error})
