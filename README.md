@@ -106,6 +106,26 @@ Repeated content can be submitted as instance batches (one draw call per batch);
 
 Cosmetic impact/puff effects can be submitted as bounded baked flipbooks (`frame.effects`); fixed-time frame sampling is also available renderer-independently from `@moritzbrantner/three-d-renderer/flipbook`. See [`docs/contracts/browser-renderer.md`](docs/contracts/browser-renderer.md#cosmetic-flipbook-effects).
 
+#### Imported characters: capability proof versus consumer adoption
+
+The `@moritzbrantner/three-d-renderer/imported-character` export accepts
+validated, provenance-bearing skinned GLB assets and exposes named animation
+clips for independent character instances. Its
+[acceptance evidence](docs/specs/imported-character-acceptance.md)
+uses the real Khronos **Fox** asset, deterministic poses and a Three.js
+`GLTFLoader`/`AnimationMixer` reference in Chromium
+([#87](https://github.com/moritzbrantner/3d-lab/issues/87)).
+That demonstrates this **browser library capability**, not approved humanoid
+visual quality or normal-gameplay integration in a consumer.
+
+Native `wgpu` submission of the same imported skins is still
+[tracked separately in #115](https://github.com/moritzbrantner/3d-lab/issues/115).
+Each consumer owns its exact revision, its actual imports, gameplay-camera
+acceptance and any decision to use a direct mature-renderer path instead:
+see [MMORPG's adoption record](https://github.com/moritzbrantner/mmorpg/blob/main/docs/ARCHITECTURE.md#rendering-and-asset-provider-adoption).
+A tested 3D Lab feature does not mean that a game has upgraded its pin,
+loaded a production-approved asset or verified native/browser parity.
+
 ### Web
 
 ```bash
