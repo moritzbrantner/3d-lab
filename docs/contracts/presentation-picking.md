@@ -2,7 +2,7 @@
 
 Independent acceptance for [#125](https://github.com/moritzbrantner/3d-lab/issues/125),
 established against `3ad582f7e288a40792155e41b27611804e254dc8` before implementation.
-The API below is specified by the acceptance tests; it is not implemented at that baseline.
+The API below is specified by the acceptance tests; it was absent at that baseline.
 
 `three_d_projective::picking` composes the existing projective, camera, transform
 and validated `Mesh` owners. It does not introduce a renderer or physics solver.
