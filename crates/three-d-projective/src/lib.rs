@@ -8,6 +8,8 @@ use core::fmt;
 use three_d_animation::Mat4;
 use three_d_core::Vec3;
 
+pub mod picking;
+
 const SINGULAR_PIVOT_SCALE_FACTOR: f64 = 64.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

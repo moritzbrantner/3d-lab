@@ -166,6 +166,11 @@ See [`docs/contracts/screen-space-lod.md`](docs/contracts/screen-space-lod.md) f
 
 See [`docs/contracts/renderer-parity.md`](docs/contracts/renderer-parity.md) for the cross-renderer mesh, matrix, and camera evidence contract.
 
+Native adapters can query transformed presentation meshes through
+[`three-d-projective::picking`](docs/contracts/presentation-picking.md). Run
+`cargo run -p three-d-projective --example presentation_picking` for a bounded
+viewport ray and nearest-surface example; consumers retain selection and gameplay authority.
+
 See [`docs/contracts/browser-renderer.md`](docs/contracts/browser-renderer.md) for the reusable browser renderer's frame, environment, and material contract.
 
 See [`docs/contracts/asset-model.md`](docs/contracts/asset-model.md) for asset/material ownership and the glTF/OBJ adapter boundary.
