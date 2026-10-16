@@ -1,16 +1,10 @@
 name: pages
 
+# ci.yml already tests, typechecks and builds the same web/renderer inputs on PRs.
+# Only main builds the publishable Pages artifact.
 on:
   push:
     branches: [main]
-    paths:
-      - "package.json"
-      - "packages/renderer/**"
-      - "web/**"
-      - "fixtures/lod/**"
-      - "fixtures/playback/**"
-      - ".github/workflows/pages.yml"
-  pull_request:
     paths:
       - "package.json"
       - "packages/renderer/**"
