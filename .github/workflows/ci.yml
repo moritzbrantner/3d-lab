@@ -34,7 +34,7 @@ jobs:
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.2
+          bun-version: 1.4.3
       - uses: dtolnay/rust-toolchain@stable
       - name: Verify hydrated canonical LFS storage
         run: git -C .catalog/asset-tooling lfs fsck
@@ -54,7 +54,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.2
+          bun-version: 1.4.3
       - name: Install reusable renderer dependencies
         working-directory: .
         run: bun install
