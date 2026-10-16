@@ -18,7 +18,12 @@ and validated `Mesh` owners. It does not introduce a renderer or physics solver.
   from the near-plane point, not camera-eye distances, local distances or depth values.
   Reuse existing trusted projective inversion; do not add another inverse solver.
 - `ray.intersect_mesh(&Mesh, model: Mat4, CullMode) -> Result<Option<PickHit>, _>`
-  returns the nearest triangle surface on the inclusive bounded segment. A miss
+  returns the nearest triangle surface on the inclusive bounded segment. Its
+  endpoints come from the supplied, represented view-projection matrix, which
+  can differ from the camera's nominal near/far parameters after f32 rounding.
+  A longer far range must not expand the near bound or admit geometry outside
+  the actual segment. Do not clamp an off-segment intersection into a hit at a
+  position that is not on the triangle surface. A miss
   is `Ok(None)`. `PickHit` exposes `distance: f64`, `position: [f64; 3]` and
   `triangle_index: usize`. Equal-depth triangles choose the lowest index.
 - Model matrices are finite, nonsingular affine transforms. Translation, rotation,

@@ -179,8 +179,63 @@ fn clipping_rejects_surfaces_before_near_beyond_far_and_behind_camera() {
             "z={z}"
         );
     }
-    close(hit(&ray, &plane(4.0), Mat4::IDENTITY).distance, 0.0);
-    close(hit(&ray, &plane(-6.0), Mat4::IDENTITY).distance, 10.0);
+    // The API accepts the represented VP matrix, not nominal camera parameters.
+    // This perspective has exactly representable depth coefficients A=B=-2,
+    // so both inclusive boundaries are exact even after matrix construction.
+    let camera = PerspectiveCamera::new(
+        Vec3::ZERO,
+        Vec3::new(0.0, 0.0, -1.0),
+        Vec3::new(0.0, 1.0, 0.0),
+        std::f32::consts::FRAC_PI_2,
+        2.0,
+        1.0,
+        2.0,
+    )
+    .unwrap();
+    let exact = PickRay::from_viewport(camera.view_projection_matrix(), VIEWPORT, CENTER).unwrap();
+    close(hit(&exact, &plane(-1.0), Mat4::IDENTITY).distance, 0.0);
+    close(hit(&exact, &plane(-2.0), Mat4::IDENTITY).distance, 1.0);
+}
+
+fn large_far_span() -> PickRay {
+    let camera = PerspectiveCamera::new(
+        Vec3::ZERO,
+        Vec3::new(0.0, 0.0, -1.0),
+        Vec3::new(0.0, 1.0, 0.0),
+        std::f32::consts::FRAC_PI_2,
+        2.0,
+        1.0,
+        1_000_000.0,
+    )
+    .unwrap();
+    PickRay::from_viewport(camera.view_projection_matrix(), VIEWPORT, CENTER).unwrap()
+}
+
+#[test]
+fn large_far_span_never_expands_the_near_plane_or_clamps_an_off_surface_hit() {
+    let ray = large_far_span();
+    point_close(ray.origin(), [0.0, 0.0, -1.0]);
+    assert!(ray.max_distance() > 1_000_000.0);
+    assert!(
+        ray.intersect_mesh(&plane(-0.75), Mat4::IDENTITY, CullMode::None)
+            .unwrap()
+            .is_none(),
+        "a longer far range must not admit a surface 0.25 before near"
+    );
+}
+
+#[test]
+fn large_far_span_never_expands_the_represented_far_plane() {
+    let ray = large_far_span();
+    let endpoint = ray.origin()[2] + ray.direction()[2] * ray.max_distance();
+    let outside = (endpoint - 0.25) as f32;
+    assert!(f64::from(outside) < endpoint - 0.1);
+    assert!(
+        ray.intersect_mesh(&plane(outside), Mat4::IDENTITY, CullMode::None)
+            .unwrap()
+            .is_none(),
+        "a surface beyond the actual unprojected endpoint must not become a clamped hit"
+    );
 }
 
 #[test]
