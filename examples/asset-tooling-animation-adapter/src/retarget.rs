@@ -671,6 +671,24 @@ mod tests {
     }
 
     #[test]
+    fn upper_chest_binding_id_is_accepted_and_retargeted() {
+        let mut parameters = parameters(RootMotion::Keep);
+        parameters
+            .source
+            .bindings
+            .insert("upper-chest".into(), SOURCE_FINGER);
+        parameters
+            .target
+            .bindings
+            .insert("upper-chest".into(), TARGET_FINGER);
+        let (output, _) = retarget_document(&source_animation(), &parameters).unwrap();
+        assert!(output.channels.iter().any(|channel| matches!(
+            channel,
+            ChannelDocument::Rotation { node, .. } if *node == TARGET_FINGER
+        )));
+    }
+
+    #[test]
     fn scale_channels_follow_source_scale_animation_on_mapped_nodes() {
         let mut source = source_animation();
         source.channels.push(ChannelDocument::Scale {

@@ -40,10 +40,13 @@ pub enum HumanoidBone {
     RightShoulder,
     LeftToes,
     RightToes,
+    /// Optional upper-chest joint between `Chest` and `Neck` for rigs with a
+    /// three-segment spine (hips -> spine -> chest -> upper-chest -> neck).
+    UpperChest,
 }
 
 impl HumanoidBone {
-    pub const COUNT: usize = 22;
+    pub const COUNT: usize = 23;
     pub const ALL: [Self; Self::COUNT] = [
         Self::Hips,
         Self::Spine,
@@ -67,6 +70,7 @@ impl HumanoidBone {
         Self::RightShoulder,
         Self::LeftToes,
         Self::RightToes,
+        Self::UpperChest,
     ];
 
     const REQUIRED: [Self; 11] = [
@@ -111,6 +115,7 @@ impl HumanoidBone {
             Self::RightShoulder => "right-shoulder",
             Self::LeftToes => "left-toes",
             Self::RightToes => "right-toes",
+            Self::UpperChest => "upper-chest",
         }
     }
 
@@ -484,6 +489,61 @@ mod tests {
 
         let hand = target.node(HumanoidBone::LeftHand).unwrap();
         assert_eq!(output[hand], target.rest_pose()[hand]);
+    }
+
+    /// Three-segment spine: required nodes, then chest, upper-chest and neck.
+    fn three_segment_spine_rig(height: f32, map_upper_chest: bool) -> HumanoidRig {
+        let chest = REQUIRED.len();
+        let upper_chest = chest + 1;
+        let neck = chest + 2;
+        let mut rest = vec![Transform::IDENTITY; neck + 1];
+        rest[1].translation = Vec3::new(0.0, 0.1 * height, 0.0);
+        rest[chest].translation = Vec3::new(0.0, 0.1 * height, 0.0);
+        rest[upper_chest].translation = Vec3::new(0.0, 0.1 * height, 0.0);
+        rest[upper_chest].rotation = Quat::from_euler_xyz(0.05, 0.0, 0.0);
+        rest[neck].translation = Vec3::new(0.0, 0.1 * height, 0.0);
+        let mut map = bindings();
+        map.push(HumanoidBinding {
+            bone: HumanoidBone::Chest,
+            node: chest,
+        });
+        if map_upper_chest {
+            map.push(HumanoidBinding {
+                bone: HumanoidBone::UpperChest,
+                node: upper_chest,
+            });
+        }
+        map.push(HumanoidBinding {
+            bone: HumanoidBone::Neck,
+            node: neck,
+        });
+        HumanoidRig::new(rest, &map, height).unwrap()
+    }
+
+    #[test]
+    fn upper_chest_bend_reaches_target_middle_spine_joint_only_when_mapped() {
+        let source = three_segment_spine_rig(2.0, true);
+        let upper_chest = source.node(HumanoidBone::UpperChest).unwrap();
+        let mut source_pose = source.rest_pose().to_vec();
+        let bend = Quat::from_euler_xyz(0.4, 0.0, 0.1);
+        source_pose[upper_chest].rotation = quat_mul(source_pose[upper_chest].rotation, bend);
+
+        let mapped = three_segment_spine_rig(3.0, true);
+        let mut output = vec![Transform::IDENTITY; mapped.rest_pose().len()];
+        retarget_pose(&source, &source_pose, &mapped, &mut output).unwrap();
+        let target_node = mapped.node(HumanoidBone::UpperChest).unwrap();
+        assert_quat_equivalent(
+            output[target_node].rotation,
+            quat_mul(mapped.rest_pose()[target_node].rotation, bend),
+        );
+        let chest = mapped.node(HumanoidBone::Chest).unwrap();
+        assert_eq!(output[chest], mapped.rest_pose()[chest]);
+
+        let unmapped = three_segment_spine_rig(3.0, false);
+        assert_eq!(unmapped.node(HumanoidBone::UpperChest), None);
+        let mut output = vec![Transform::IDENTITY; unmapped.rest_pose().len()];
+        retarget_pose(&source, &source_pose, &unmapped, &mut output).unwrap();
+        assert_eq!(output, unmapped.rest_pose());
     }
 
     #[test]
