@@ -1,5 +1,6 @@
 import {copyBytes, loadCharacterRuntime, renderImportedCharacterInstances} from "./character-runtime.js"
 import {sha256Hex} from "./content-hash.js"
+import {assembleGlb, bundleEntry, referencedResources} from "./bundle-glb.js"
 
 function fail(message) { throw new Error(`imported character: ${message}`) }
 function provenanceOf(bytes, provenance) {
@@ -27,5 +28,47 @@ export async function adaptImportedCharacter(source, options = {}) {
     dispose: runtime.dispose,
   }
   return Object.freeze(retained)
+}
+function toBytes(value, what) {
+  if (value instanceof ArrayBuffer) return new Uint8Array(value)
+  if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
+  return fail(`${what} must resolve to bytes`)
+}
+/**
+ * Load one character from an unpacked asset-tooling `gltf-resources-v1` bundle. Only the
+ * entry's glTF and the resources it declares are read, through the caller's
+ * `readResource(path)`; there is no implicit network access. Byte lengths are checked;
+ * content verification (asset-tooling `verifyAssetBundle`) stays the consumer's choice.
+ */
+export async function adaptImportedCharacterBundle(bundle, options = {}) {
+  const {manifest, key, variant = "default", readResource} = bundle ?? {}
+  if (typeof readResource !== "function") fail("bundle readResource must be a function")
+  const onProgress = typeof options.onProgress === "function" ? options.onProgress : () => {}
+  const entry = bundleEntry(manifest, key, variant, fail)
+  const document = toBytes(await readResource(entry.path), "bundle glTF")
+  let json
+  try { json = JSON.parse(new TextDecoder().decode(document)) } catch { fail(`bundle glTF ${entry.path} is not JSON`) }
+  const resources = referencedResources(json, entry, fail)
+  const totalBytes = resources.reduce((sum, resource) => sum + resource.byteLength, 0)
+  let loadedBytes = 0
+  onProgress({loadedBytes, totalBytes})
+  const bytesByUri = new Map()
+  for (const resource of resources) {
+    const bytes = toBytes(await readResource(resource.path), `bundle resource ${resource.path}`)
+    if (bytes.byteLength !== resource.byteLength) fail(`bundle resource ${resource.path} has ${bytes.byteLength} bytes, declared ${resource.byteLength}`)
+    bytesByUri.set(resource.uri, bytes)
+    loadedBytes += bytes.byteLength
+    onProgress({loadedBytes, totalBytes})
+  }
+  const runtime = await loadCharacterRuntime(assembleGlb(json, bytesByUri, fail), fail)
+  const {metadata} = runtime
+  return Object.freeze({
+    resourceKey: `bundle:${key}/${variant}:${entry.sha256}`,
+    provenance: Object.freeze(structuredClone({bundle: {profile: manifest.profile, key, variant, sha256: entry.sha256, source: entry.source}})),
+    skinNodes: Object.freeze([...metadata.skinNodes]),
+    clips: Object.freeze(metadata.clips.map(clip => Object.freeze(clip))),
+    createInstance: runtime.createInstance,
+    dispose: runtime.dispose,
+  })
 }
 export {renderImportedCharacterInstances}

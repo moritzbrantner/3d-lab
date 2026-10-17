@@ -30,15 +30,22 @@ export async function loadCharacterRuntime(bytes, fail) {
   catch (error) { authority.free(); throw error }
   const metadata = JSON.parse(authority.metadata_json())
   const mapping = new Map()
-  let primitive = 0
+  // Rust reports each skinned primitive by glTF mesh/primitive index; match decoded meshes
+  // through the loader's own associations rather than traversal order.
+  const primitiveOf = new Map(metadata.primitives.map((p, index) => [`${p.mesh}/${p.primitive}`, index]))
+  let skinned = 0
   gltf.scene.traverse(node => { if (node.isSkinnedMesh) {
+    const association = gltf.parser.associations.get(node)
+    const primitive = primitiveOf.get(`${association?.meshes}/${association?.primitives ?? 0}`)
+    if (primitive === undefined) { authority.free(); fail("decoded skinned mesh has no Rust-validated primitive") }
     // Existing weighted-skin policy: bind bounds are not conservative animated bounds (#66).
     node.frustumCulled = false
     if (!node.geometry.index) node.geometry.setIndex(new THREE.Uint32BufferAttribute(metadata.primitiveIndices[primitive], 1))
     // Consume Rust-normalized authored palette slots; never reinterpret active weights here.
     node.geometry.setAttribute("skinIndex", new THREE.Uint16BufferAttribute(metadata.gpuSkinIndices[primitive].flat(), 4))
-    primitive += 1
+    skinned += 1
   } })
+  if (skinned !== metadata.primitives.length) { authority.free(); fail("decoded skinned meshes do not match the Rust-validated primitives") }
   gltf.scene.traverse(node => {
     const index = gltf.parser.associations.get(node)?.nodes
     if (index !== undefined) mapping.set(node, index)
