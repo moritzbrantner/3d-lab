@@ -4,6 +4,7 @@
 // render go through the same shared runtime as `./imported-character`.
 import {copyBytes, loadCharacterRuntime, renderImportedCharacterInstances} from "./character-runtime.js"
 import {sha256Hex} from "./content-hash.js"
+import {assembleGlb} from "./bundle-glb.js"
 
 function fail(message) { throw new Error(`inspection character: ${message}`) }
 function verifyPin(bytes, pin) {
@@ -36,10 +37,41 @@ function declaredAnimationCount(bytes) {
   } catch { return undefined }
 }
 
-/** Verify the pin over a private copy of exactly these bytes, then load for inspection. */
-export async function adaptPinnedCharacterSource(source, pin) {
-  const bytes = copyBytes(source, fail)
-  verifyPin(bytes, pin)
+/**
+ * A `.gltf` document with external buffer/image URIs, assembled with its pinned resources into
+ * in-memory GLB bytes. Every external URI must be supplied and every resource pin verified first.
+ */
+function assemblePinnedGltf(document, resources) {
+  if (typeof resources !== "object" || resources === null || Array.isArray(resources)) fail("resources must map glTF URIs to pinned bytes")
+  let json
+  try { json = JSON.parse(new TextDecoder().decode(document)) } catch { fail("a source with external resources must be glTF JSON") }
+  const external = new Set()
+  for (const item of [...(json?.buffers ?? []), ...(json?.images ?? [])]) {
+    if (typeof item?.uri !== "string" || item.uri.startsWith("data:")) fail("a source with external resources must reference every buffer and image by external URI")
+    external.add(item.uri)
+  }
+  const supplied = Object.keys(resources)
+  for (const uri of supplied) if (!external.has(uri)) fail(`resource ${uri} is not referenced by the source`)
+  const bytesByUri = new Map()
+  for (const uri of external) {
+    if (!Object.hasOwn(resources, uri)) fail(`external resource ${uri} was not supplied`)
+    const resource = resources[uri]
+    const bytes = copyBytes(resource?.bytes, fail)
+    try { verifyPin(bytes, resource) } catch (error) { fail(`resource ${uri}: ${error.message.replace(/^inspection character: /, "")}`) }
+    bytesByUri.set(uri, bytes)
+  }
+  return assembleGlb(json, bytesByUri, fail)
+}
+
+/**
+ * Verify the pin over a private copy of exactly these bytes, then load for inspection. A `.gltf`
+ * with external buffers/images also needs `options.resources`: each URI mapped to
+ * `{bytes, sha256, byteLength}`, all verified before parsing.
+ */
+export async function adaptPinnedCharacterSource(source, pin, options = {}) {
+  const document = copyBytes(source, fail)
+  verifyPin(document, pin)
+  const bytes = options.resources === undefined ? document : assemblePinnedGltf(document, options.resources)
   let runtime
   try { runtime = await loadCharacterRuntime(bytes, fail) }
   catch (error) {
