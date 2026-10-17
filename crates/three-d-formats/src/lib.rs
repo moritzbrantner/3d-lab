@@ -6,7 +6,7 @@
 
 mod gltf_resources;
 mod imported_character;
-pub use imported_character::{ImportedCharacter, load_gltf_imported_character};
+pub use imported_character::{ImportedCharacter, ImportedPrimitive, load_gltf_imported_character};
 
 use std::fmt;
 use std::io::Cursor;
@@ -591,6 +591,17 @@ fn convert_gltf_primitive(
             primitive_index,
         });
     }
+    // Additional colour/UV sets are authored-tool leftovers unless a material samples them:
+    // they are skipped, and a material that needs a set other than 0 stays unsupported.
+    let material = primitive.material();
+    let pbr = material.pbr_metallic_roughness();
+    let sampled_sets = [
+        pbr.base_color_texture().map(|t| t.tex_coord()),
+        pbr.metallic_roughness_texture().map(|t| t.tex_coord()),
+        material.normal_texture().map(|t| t.tex_coord()),
+        material.occlusion_texture().map(|t| t.tex_coord()),
+        material.emissive_texture().map(|t| t.tex_coord()),
+    ];
     for (semantic, _) in primitive.attributes() {
         match semantic {
             Semantic::Positions
@@ -600,6 +611,8 @@ fn convert_gltf_primitive(
             | Semantic::TexCoords(0)
             | Semantic::Joints(0)
             | Semantic::Weights(0) => {}
+            Semantic::Colors(_) => {}
+            Semantic::TexCoords(set) if !sampled_sets.contains(&Some(set)) => {}
             other => {
                 return Err(FormatError::UnsupportedVertexAttribute {
                     mesh_index,

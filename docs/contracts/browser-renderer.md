@@ -192,6 +192,26 @@ but submitting the same embedded-texture character through the native wgpu adapt
 an explicit #87-permitted gap alongside #86 material coverage. This technical Fox proof
 is not approved ARPG Knight content, gameplay state, asset acquisition or normalization.
 
+### asset-tooling bundles
+
+`adaptImportedCharacterBundle({manifest, key, variant = "default", readResource}, {onProgress})`
+loads one entry of an unpacked asset-tooling `gltf-resources-v1` (schema 4) bundle (#132).
+Only the entry's glTF and the resources it declares are read through the caller's
+`readResource(path)`. Every glTF buffer/image URI must be a declared resource, each
+declared byte length must match, and `onProgress({loadedBytes,totalBytes})` reports
+resource bytes. The resources are assembled into one in-memory GLB and use the same Rust
+runtime as `adaptImportedCharacter`. Provenance is the bundle entry (profile, key, variant,
+sha256, source AssetRef). Content hashing is asset-tooling's `verifyAssetBundle`, which
+stays the consumer's choice.
+
+A character may consist of several skinned mesh nodes, each with its own skin (outfit
+pieces, head, eyes). Rust validates every skinned primitive and reports it by glTF
+mesh/primitive index (`primitives`, `meshNodes`); the browser matches decoded meshes
+through the loader's associations. Per-skin inverse binds remain GPU metadata. The
+canonical rig takes each joint's bind from the first skin naming it. Extra colour and UV
+sets are skipped unless a material samples a UV set other than 0, which is still
+unsupported.
+
 ## Inspection-only characters
 
 `./inspection-character` exposes `adaptPinnedCharacterSource(bytes,{sha256,byteLength})`

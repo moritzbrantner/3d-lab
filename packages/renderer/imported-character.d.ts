@@ -16,4 +16,13 @@ export interface ImportedCharacterAsset {
   dispose(): void
 }
 export function adaptImportedCharacter(source: ArrayBuffer | ArrayBufferView, options: {provenance:unknown}): Promise<ImportedCharacterAsset>
+export interface GltfResourcesBundleSource {
+  /** Parsed `manifest.json` of an unpacked asset-tooling `gltf-resources-v1` bundle. */
+  manifest: unknown
+  key: string
+  variant?: string
+  /** Reads one bundle-relative path (the entry's glTF or a declared resource). */
+  readResource(path: string): Promise<ArrayBuffer | ArrayBufferView>
+}
+export function adaptImportedCharacterBundle(bundle: GltfResourcesBundleSource, options?: {onProgress?(progress: {loadedBytes: number; totalBytes: number}): void}): Promise<ImportedCharacterAsset>
 export function renderImportedCharacterInstances(renderer: ThreeSceneRenderer, frame: {camera:RendererCamera; instances:readonly ImportedCharacterInstance[]}): unknown
