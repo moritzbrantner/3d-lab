@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 use three_d_animation::{Interpolate, Interpolation, Keyframe, KeyframeTrack, Quat};
 use three_d_core::Vec3;
 
+mod retarget;
+
 const PROTOCOL: &str = "asset-tooling-process-adapter-v1";
 const CODEC: &str = "three-d-animation-json-v1";
 const ANIMATION_SCHEMA_VERSION: u32 = 1;
@@ -18,6 +20,7 @@ const REDUCTION_COMPARISON_FACTOR: usize = 64;
 pub enum AdapterOperation {
     Resample,
     Reduce,
+    Retarget,
 }
 
 impl AdapterOperation {
@@ -25,6 +28,7 @@ impl AdapterOperation {
         match self {
             Self::Resample => "animation.resample",
             Self::Reduce => "animation.reduce",
+            Self::Retarget => "animation.retarget",
         }
     }
 
@@ -32,6 +36,7 @@ impl AdapterOperation {
         match self {
             Self::Resample => "three-d-animation-resample",
             Self::Reduce => "three-d-animation-reduce",
+            Self::Retarget => "three-d-animation-retarget",
         }
     }
 
@@ -39,6 +44,7 @@ impl AdapterOperation {
         match self {
             Self::Resample => "three-d-animation-resample-v1",
             Self::Reduce => "three-d-animation-key-reduction-v1",
+            Self::Retarget => "three-d-animation-humanoid-retarget-v1",
         }
     }
 }
@@ -792,7 +798,7 @@ fn write_result<T: Serialize>(path: &Path, value: &T, label: &str) -> Result<(),
     fs::write(path, bytes).map_err(|error| format!("failed to write {label}: {error}"))
 }
 
-fn probe(operation: AdapterOperation) -> Result<(), String> {
+fn probe_json(operation: AdapterOperation) -> Result<String, String> {
     let components = [ProbeComponent {
         id: operation.processor_id(),
         version: env!("CARGO_PKG_VERSION"),
@@ -806,12 +812,31 @@ fn probe(operation: AdapterOperation) -> Result<(), String> {
         },
         cargo_lock: CARGO_LOCK,
     }];
-    println!(
-        "{}",
-        serde_json::to_string(&components)
-            .map_err(|error| format!("failed to serialize probe: {error}"))?
-    );
+    serde_json::to_string(&components)
+        .map_err(|error| format!("failed to serialize probe: {error}"))
+}
+
+fn probe(operation: AdapterOperation) -> Result<(), String> {
+    println!("{}", probe_json(operation)?);
     Ok(())
+}
+
+fn parse_request<T: serde::de::DeserializeOwned>(
+    operation: AdapterOperation,
+    request_bytes: &[u8],
+) -> Result<Request<T>, String> {
+    let request: Request<T> = serde_json::from_slice(request_bytes)
+        .map_err(|error| format!("invalid request JSON: {error}"))?;
+    if request.schema_version != 1 {
+        return Err(format!(
+            "request schemaVersion must be 1, got {}",
+            request.schema_version
+        ));
+    }
+    if request.operation != operation.operation() {
+        return Err(format!("unsupported operation '{}'", request.operation));
+    }
+    Ok(request)
 }
 
 fn generate(
@@ -824,36 +849,24 @@ fn generate(
         fs::read(request_path).map_err(|error| format!("failed to read request: {error}"))?;
     match operation {
         AdapterOperation::Resample => {
-            let request: Request<ResampleParameters> = serde_json::from_slice(&request_bytes)
-                .map_err(|error| format!("invalid request JSON: {error}"))?;
-            if request.schema_version != 1 {
-                return Err(format!(
-                    "request schemaVersion must be 1, got {}",
-                    request.schema_version
-                ));
-            }
-            if request.operation != operation.operation() {
-                return Err(format!("unsupported operation '{}'", request.operation));
-            }
+            let request: Request<ResampleParameters> = parse_request(operation, &request_bytes)?;
             let source = read_animation(&request.input_path)?;
             let (output, observations) = resample_document(&source, &request.parameters)?;
             write_result(output_path, &output, "output animation")?;
             write_result(observations_path, &observations, "observations")
         }
         AdapterOperation::Reduce => {
-            let request: Request<ReduceParameters> = serde_json::from_slice(&request_bytes)
-                .map_err(|error| format!("invalid request JSON: {error}"))?;
-            if request.schema_version != 1 {
-                return Err(format!(
-                    "request schemaVersion must be 1, got {}",
-                    request.schema_version
-                ));
-            }
-            if request.operation != operation.operation() {
-                return Err(format!("unsupported operation '{}'", request.operation));
-            }
+            let request: Request<ReduceParameters> = parse_request(operation, &request_bytes)?;
             let source = read_animation(&request.input_path)?;
             let (output, observations) = reduce_document(&source, &request.parameters)?;
+            write_result(output_path, &output, "output animation")?;
+            write_result(observations_path, &observations, "observations")
+        }
+        AdapterOperation::Retarget => {
+            let request: Request<retarget::RetargetParameters> =
+                parse_request(operation, &request_bytes)?;
+            let source = read_animation(&request.input_path)?;
+            let (output, observations) = retarget::retarget_document(&source, &request.parameters)?;
             write_result(output_path, &output, "output animation")?;
             write_result(observations_path, &observations, "observations")
         }
