@@ -14,3 +14,7 @@ three-d-core = { path = "../../crates/three-d-core" }
 [[bin]]
 name = "animation_reduce"
 path = "src/bin/animation_reduce.rs"
+
+[[bin]]
+name = "animation_retarget"
+path = "src/bin/animation_retarget.rs"
