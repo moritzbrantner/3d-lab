@@ -17,6 +17,14 @@
 - The browser renderer adapts those semantics to Three.js/GPU resources and must not become an alternate authority for simulation, camera, transforms, placement, or product scene composition.
 - Interactive teaching surfaces may visualize and edit authoritative state but must not create a second semantic model merely for presentation.
 
+## External reference and consumer-scoped parity
+
+- For imported characters, use **plain three.js** (`GLTFLoader`, `AnimationMixer`, `SkeletonUtils`) running real, versioned asset-tooling character bundles as the independent behavior reference. Authored characters/clips are the content reference; their appearance is not a source of gameplay authority. Reuse the existing Fox reference and [the first real Ranger comparison](https://github.com/moritzbrantner/3d-lab/issues/141).
+- Consumers continue using established runtimes while 3d-lab experiments. Do not block MMORPG, ARPG, or asset-tooling on a custom parser, skinning, animation, or renderer implementation, and do not switch their providers without their own acceptance and decision.
+- Extend 3d-lab **one capability at a time** only for a named consumer requirement or demonstrated advantage. Check existing issues before opening a gap; state the consumer, reference case, smallest internal subset and unsupported behavior. Do not aim at wholesale Three.js feature parity.
+- Compare equal inputs for supported semantics (clips, poses, joint/socket transforms, materials, picking) and relevant resource/performance costs; judge visual quality separately. Do not equate byte/pixel equality with correctness or describe missing evidence as parity.
+- Keep first-party candidates opt-in and retain the external reference for comparison or fallback where useful. Remove superseded production adapters only after their consumers migrate; existing teaching and inspection surfaces may remain independently useful.
+
 ## Verification
 
 Use the repository-owned Rust, browser renderer, and web validation commands documented in `README.md`, starting with the narrowest affected scope.
