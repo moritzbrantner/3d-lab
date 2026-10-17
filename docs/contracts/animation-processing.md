@@ -46,7 +46,7 @@ At each sample time the source pose is the source rest pose with every channel o
 - translation channels only for target `hips` and `root` (when mapped in both), scaled by the reference-height ratio per `retarget_pose`; translation deltas on other bones are not emitted;
 - a scale channel only where the source animates scale on a mapped node.
 
-Unmapped target nodes get no channel and stay at rest. `in-place` removes model-space horizontal motion from the hips/root translation: with `up` the model +Y axis expressed in the node's parent space (from the static target rest chain), each key becomes `rest + ((key - rest) · up) · up`, keeping vertical bob. Invalid rigs (missing required bone, bad node index, non-finite values, parent cycles), channels outside the source rig and invalid sample times fail with the `RetargetError` text where applicable. Observations report source keyframe count, sample count, mapped bone count, result channel/keyframe counts and the root-motion mode.
+Unmapped target nodes get no channel and stay at rest. `in-place` removes model-space horizontal motion from the hips/root translation: with `M` the model-space linear part (rotation and scale) of the node's static target rest ancestor chain, each key becomes `rest + M⁻¹·e_y · (e_y · M·(key - rest))`, i.e. the delta is mapped into model space, its horizontal part dropped and the vertical bob mapped back. Invalid rigs (missing required bone, bad node index, non-finite values, parent cycles), channels outside the source rig and invalid sample times fail with the `RetargetError` text where applicable. Observations report source keyframe count, sample count, mapped bone count, result channel/keyframe counts and the root-motion mode.
 
 ## Ownership boundary
 

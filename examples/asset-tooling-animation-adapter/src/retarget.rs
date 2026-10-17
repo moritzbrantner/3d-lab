@@ -144,6 +144,7 @@ fn validate_sample_times(times: &[f32]) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(test)]
 fn quat_mul(left: Quat, right: Quat) -> Quat {
     Quat::new(
         left.w * right.x + left.x * right.w + left.y * right.z - left.z * right.y,
@@ -159,24 +160,41 @@ fn rotate(rotation: Quat, value: Vec3) -> Vec3 {
     value + twice * rotation.w + axis.cross(twice)
 }
 
-/// Model-space up axis expressed in `node`'s parent space, from the static rest chain.
-fn parent_space_up(rig: &DecodedRig, node: usize) -> Vec3 {
+/// Vertical projection of `node`'s local translation deltas through the static rest
+/// chain of its ancestors, whose model-space linear part is `M = L_0 * ... * L_k`
+/// (`L_i = R_i * S_i`, root-most first). A local delta `d` has model-space height
+/// `e_y . (M d) = (M^T e_y) . d`, and a model-space vertical offset `h` maps back to
+/// `M^-1 e_y * h`. Returns `(M^-1 e_y, M^T e_y)`; both are `e_y` for an unrotated,
+/// unscaled chain.
+fn parent_space_vertical(rig: &DecodedRig, node: usize) -> (Vec3, Vec3) {
     let rest = rig.rig.rest_pose();
-    let mut model_rotation = Quat::IDENTITY;
+    let mut ancestors = Vec::new();
     let mut current = rig.parents[node];
     while let Some(parent) = current {
-        let rotation = rest[parent].rotation.normalized().unwrap_or(Quat::IDENTITY);
-        model_rotation = quat_mul(rotation, model_rotation);
+        ancestors.push(parent);
         current = rig.parents[parent];
     }
-    let model_rotation = model_rotation.normalized().unwrap_or(Quat::IDENTITY);
-    let inverse = Quat::new(
-        -model_rotation.x,
-        -model_rotation.y,
-        -model_rotation.z,
-        model_rotation.w,
-    );
-    rotate(inverse, Vec3::new(0.0, 1.0, 0.0))
+    let mut inverse_up = Vec3::new(0.0, 1.0, 0.0);
+    let mut height_row = Vec3::new(0.0, 1.0, 0.0);
+    for ancestor in ancestors.into_iter().rev() {
+        let transform = rest[ancestor];
+        let rotation = transform.rotation.normalized().unwrap_or(Quat::IDENTITY);
+        let inverse_rotation = Quat::new(-rotation.x, -rotation.y, -rotation.z, rotation.w);
+        let scale = transform.scale;
+        let unrotated = rotate(inverse_rotation, inverse_up);
+        inverse_up = Vec3::new(
+            unrotated.x / scale.x,
+            unrotated.y / scale.y,
+            unrotated.z / scale.z,
+        );
+        let unrotated = rotate(inverse_rotation, height_row);
+        height_row = Vec3::new(
+            unrotated.x * scale.x,
+            unrotated.y * scale.y,
+            unrotated.z * scale.z,
+        );
+    }
+    (inverse_up, height_row)
 }
 
 enum SourceTrack {
@@ -253,7 +271,7 @@ pub(crate) fn retarget_document(
     for ((target_node, bone, source_node), values) in mapped.iter().zip(&samples) {
         if matches!(bone, HumanoidBone::Hips | HumanoidBone::Root) {
             let rest = target.rig.rest_pose()[*target_node].translation;
-            let up = parent_space_up(&target, *target_node);
+            let (inverse_up, height_row) = parent_space_vertical(&target, *target_node);
             channels.push(ChannelDocument::Translation {
                 node: *target_node,
                 keyframes: times
@@ -262,7 +280,9 @@ pub(crate) fn retarget_document(
                     .map(|(time, value)| {
                         let translation = match parameters.root_motion {
                             RootMotion::Keep => value.translation,
-                            RootMotion::InPlace => rest + up * (value.translation - rest).dot(up),
+                            RootMotion::InPlace => {
+                                rest + inverse_up * (value.translation - rest).dot(height_row)
+                            }
                         };
                         Vec3KeyframeDocument {
                             time: *time,
@@ -709,6 +729,34 @@ mod tests {
         for key in translation_keys(&in_place_output, 0) {
             assert_close(key, Vec3::ZERO);
         }
+    }
+
+    #[test]
+    fn in_place_projects_through_non_uniform_ancestor_scale() {
+        let root = z_up_root();
+        let scale = Vec3::new(2.0, 3.0, 0.5);
+        let model = |key: Vec3| {
+            rotate(
+                root,
+                Vec3::new(key.x * scale.x, key.y * scale.y, key.z * scale.z),
+            )
+        };
+        let run = |root_motion| {
+            let mut parameters = parameters(root_motion);
+            parameters.target.nodes[0].scale = [scale.x, scale.y, scale.z];
+            let (output, _) = retarget_document(&source_animation(), &parameters).unwrap();
+            translation_keys(&output, TARGET_HIPS)
+        };
+        let kept = run(RootMotion::Keep);
+        let in_place = run(RootMotion::InPlace);
+        let rest_model = model(Vec3::new(0.0, 0.0, 1.5));
+        for (key, kept_key) in in_place.iter().zip(&kept) {
+            let actual = model(*key);
+            assert!((actual.x - rest_model.x).abs() < 1.0e-5, "{actual:?}");
+            assert!((actual.z - rest_model.z).abs() < 1.0e-5, "{actual:?}");
+            assert!((actual.y - model(*kept_key).y).abs() < 1.0e-5, "{actual:?}");
+        }
+        assert!((model(in_place[1]).y - rest_model.y - 0.0375).abs() < 1.0e-5);
     }
 
     #[test]
