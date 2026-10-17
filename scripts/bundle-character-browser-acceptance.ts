@@ -13,11 +13,18 @@ const output = resolve(process.argv[2] ?? "target/bundle-character-browser-accep
 await mkdir(output, { recursive: true });
 const fox = new Uint8Array(await readFile(resolve(root, "fixtures/imported-character/fox.glb")));
 const bundle = splitGlbToBundle(fox);
+const items = splitGlbToBundle(new Uint8Array(await readFile(resolve(root, "fixtures/static-glb/tree.glb"))), "equipment.tree");
 const requests: string[] = [];
 const pageErrors: string[] = [];
 const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
   const url = new URL(request.url);
   if (url.pathname === "/") return new Response('<!doctype html><html><body><canvas width="640" height="480"></canvas></body></html>', { headers: { "Content-Type": "text/html" } });
+  if (url.pathname.startsWith("/items/")) {
+    const path = decodeURIComponent(url.pathname.slice("/items/".length));
+    if (path === "manifest.json") return Response.json(items.manifest);
+    const bytes = items.files.get(path);
+    return bytes ? new Response(bytes) : new Response("missing", { status: 404 });
+  }
   if (url.pathname.startsWith("/bundle/")) {
     const path = decodeURIComponent(url.pathname.slice("/bundle/".length));
     requests.push(path);
@@ -55,6 +62,8 @@ try {
       if (!response.ok) throw Error(`missing bundle file ${path}`);
       return response.arrayBuffer();
     };
+    const itemManifest = await (await fetch("/items/manifest.json")).json();
+    const readItem = async (path: string) => (await fetch(`/items/${path}`)).arrayBuffer();
     const progress: Array<{ loadedBytes: number; totalBytes: number }> = [];
     const asset = await module.adaptImportedCharacterBundle({ manifest, key: "fixture.character", readResource }, { onProgress: (p: any) => progress.push(p) });
     const proof = await (await fetch("/fixtures/imported-character/fox.production-import.json")).json();
@@ -101,7 +110,30 @@ try {
     await expectRejection("short resource", /declared/, { manifest, key: "fixture.character", readResource: async (path: string) => path === binPath ? (await readResource(path)).slice(0, 64) : readResource(path) });
     await expectRejection("undeclared resource", /not a declared bundle resource/, { manifest: { ...manifest, assets: [{ ...entry, resources: entry.resources.filter((res: any) => res.path !== binPath) }] }, key: "fixture.character", readResource });
     await a.seek("Walk", 0.321); check(pose(a).joints.length === 24, "retained bundle instance unusable after rejections");
-    a.dispose(); b.dispose(); r.dispose(); asset.dispose(); reference.dispose();
+    // Joint attachment (#134): an item's frame lands on the joint's socket transform and follows the pose.
+    const tree = await module.adaptImportedItemBundle({ manifest: itemManifest, key: "equipment.tree", readResource: readItem });
+    const holderJoint = mesh(a).skeleton.bones[12];
+    const socket = new THREE.Matrix4().compose(new THREE.Vector3(0.2, -0.1, 0.1), new THREE.Quaternion().setFromEuler(new THREE.Euler(0.4, 1.2, -0.3)), new THREE.Vector3(12, 12, 12));
+    const item = tree.createInstance();
+    const attachment = a.attach(item, { joint: holderJoint.name, socket: socket.toArray(), frame: "canopy" });
+    const frameWorld = () => { a.root.updateMatrixWorld(true); return item.root.matrixWorld.clone().multiply(new THREE.Matrix4().fromArray(item.frames.canopy)).toArray(); };
+    const expected = () => holderJoint.matrixWorld.clone().multiply(socket).toArray();
+    close(frameWorld(), expected(), 1e-3);
+    const before = frameWorld();
+    await a.seek("Run", 0.117);
+    close(frameWorld(), expected(), 1e-3);
+    check(frameWorld().some((v: number, i: number) => Math.abs(v - before[i]) > 1e-3), "attached item does not follow the joint");
+    item.root.updateMatrixWorld(true); const itemBox = new THREE.Box3().setFromObject(item.root);
+    const attachedPixels = draw([a]);
+    attachment.detach(); check(item.root.parent === null, "detach must release the item");
+    const detachedPixels = draw([a]);
+    let itemPixels = 0; for (let i = 0; i < attachedPixels.length; i += 4) if (attachedPixels[i] !== detachedPixels[i] || attachedPixels[i + 1] !== detachedPixels[i + 1] || attachedPixels[i + 2] !== detachedPixels[i + 2]) itemPixels++;
+    check(itemPixels > 16, `attached item is not visibly rendered with the character (${itemPixels} px, item ${JSON.stringify(itemBox)}, span ${span})`);
+    let unknownJoint; try { a.attach(tree.createInstance(), { joint: "no-such-joint" }); } catch (e) { unknownJoint = e; }
+    check(/no unique joint/.test(String(unknownJoint)), "unknown joint must be rejected");
+    const second = tree.createInstance(); a.attach(second, { joint: holderJoint.name, frame: "trunk" });
+    a.dispose(); check(second.root.parent === null, "disposing a character detaches its items");
+    b.dispose(); r.dispose(); asset.dispose(); reference.dispose(); tree.dispose();
     return { clips: asset.clips, progress, visiblePixels: visible, rejections, samples: oracle.samples.length };
   });
   const declared = new Set(["manifest.json", ...bundle.files.keys(), "absent.bin"]);

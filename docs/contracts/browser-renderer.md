@@ -212,6 +212,14 @@ canonical rig takes each joint's bind from the first skin naming it. Extra colou
 sets are skipped unless a material samples a UV set other than 0, which is still
 unsupported.
 
+### Attachable items
+
+`adaptImportedItemBundle(bundle, {onProgress})` loads a static, unskinned bundle entry, such as a weapon, shield or prop (#134). It goes through the existing static GLB adapter, which validates it and lowers it to factor materials. Instances share geometry and materials. Every named node is an item **frame** (for example `grip`, or `grip.offhand` on a two-handed weapon), exposed in item space.
+
+`ImportedCharacterInstance.attach(item, {joint, socket, frame = "grip"})` parents an item instance under a named character joint. The item's `frame` lands on `socket`, a column-major transform in the joint's frame (identity when omitted): holder = socket × inverse(frame). The item then follows the Rust-sampled pose. `detach()` removes it, and disposing the character instance detaches all of its items. `readBundleAttachment` reads a JSON attachment of a bundle entry, such as asset-tooling's `humanoid-sockets` descriptor.
+
+The renderer composes only the given transforms. Which item goes to which joint, socket and frame (loadouts, handedness, stowed places, multi-grip items) is consumer data, so new items and places need no renderer change.
+
 ## Inspection-only characters
 
 `./inspection-character` exposes `adaptPinnedCharacterSource(bytes,{sha256,byteLength})`

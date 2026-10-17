@@ -1,6 +1,7 @@
 import {copyBytes, loadCharacterRuntime, renderImportedCharacterInstances} from "./character-runtime.js"
 import {sha256Hex} from "./content-hash.js"
 import {assembleGlb, bundleEntry, referencedResources} from "./bundle-glb.js"
+import {loadImportedItem} from "./imported-item.js"
 
 function fail(message) { throw new Error(`imported character: ${message}`) }
 function provenanceOf(bytes, provenance) {
@@ -41,9 +42,24 @@ function toBytes(value, what) {
  * content verification (asset-tooling `verifyAssetBundle`) stays the consumer's choice.
  */
 export async function adaptImportedCharacterBundle(bundle, options = {}) {
+  const onProgress = typeof options.onProgress === "function" ? options.onProgress : () => {}
+  const {entry, key, variant, glb} = await readBundleGlb(bundle, onProgress)
+  const manifest = bundle.manifest
+  const runtime = await loadCharacterRuntime(glb, fail)
+  const {metadata} = runtime
+  return Object.freeze({
+    resourceKey: `bundle:${key}/${variant}:${entry.sha256}`,
+    provenance: Object.freeze(structuredClone({bundle: {profile: manifest.profile, key, variant, sha256: entry.sha256, source: entry.source}})),
+    skinNodes: Object.freeze([...metadata.skinNodes]),
+    clips: Object.freeze(metadata.clips.map(clip => Object.freeze(clip))),
+    createInstance: runtime.createInstance,
+    dispose: runtime.dispose,
+  })
+}
+/** Read one bundle entry's glTF and declared resources into in-memory GLB bytes. */
+async function readBundleGlb(bundle, onProgress) {
   const {manifest, key, variant = "default", readResource} = bundle ?? {}
   if (typeof readResource !== "function") fail("bundle readResource must be a function")
-  const onProgress = typeof options.onProgress === "function" ? options.onProgress : () => {}
   const entry = bundleEntry(manifest, key, variant, fail)
   const document = toBytes(await readResource(entry.path), "bundle glTF")
   let json
@@ -60,15 +76,26 @@ export async function adaptImportedCharacterBundle(bundle, options = {}) {
     loadedBytes += bytes.byteLength
     onProgress({loadedBytes, totalBytes})
   }
-  const runtime = await loadCharacterRuntime(assembleGlb(json, bytesByUri, fail), fail)
-  const {metadata} = runtime
-  return Object.freeze({
-    resourceKey: `bundle:${key}/${variant}:${entry.sha256}`,
-    provenance: Object.freeze(structuredClone({bundle: {profile: manifest.profile, key, variant, sha256: entry.sha256, source: entry.source}})),
-    skinNodes: Object.freeze([...metadata.skinNodes]),
-    clips: Object.freeze(metadata.clips.map(clip => Object.freeze(clip))),
-    createInstance: runtime.createInstance,
-    dispose: runtime.dispose,
-  })
+  return {entry, key, variant, glb: assembleGlb(json, bytesByUri, fail)}
+}
+/**
+ * Load one static, unskinned item (weapon, shield, prop) from an unpacked asset-tooling
+ * `gltf-resources-v1` bundle. Instances share geometry and materials and expose the item's
+ * named frames (for example `grip`) for `ImportedCharacterInstance.attach`.
+ */
+export async function adaptImportedItemBundle(bundle, options = {}) {
+  const onProgress = typeof options.onProgress === "function" ? options.onProgress : () => {}
+  const {entry, key, variant, glb} = await readBundleGlb(bundle, onProgress)
+  return loadImportedItem(glb, `bundle:${key}/${variant}:${entry.sha256}`, fail)
+}
+/** Read one named attachment (for example `humanoid-sockets`) of a bundle entry as JSON. */
+export async function readBundleAttachment({manifest, key, variant = "default", name, readResource}) {
+  if (typeof readResource !== "function") fail("bundle readResource must be a function")
+  const entry = bundleEntry(manifest, key, variant, fail)
+  const attachment = (entry.attachments ?? []).find(item => item?.name === name) ?? fail(`bundle entry ${key}/${variant} has no ${name} attachment`)
+  if (attachment.mediaType !== "application/json") fail(`bundle attachment ${name} is not JSON`)
+  const bytes = toBytes(await readResource(attachment.path), `bundle attachment ${name}`)
+  if (bytes.byteLength !== attachment.byteLength) fail(`bundle attachment ${name} has ${bytes.byteLength} bytes, declared ${attachment.byteLength}`)
+  try { return JSON.parse(new TextDecoder().decode(bytes)) } catch { return fail(`bundle attachment ${name} is not JSON`) }
 }
 export {renderImportedCharacterInstances}

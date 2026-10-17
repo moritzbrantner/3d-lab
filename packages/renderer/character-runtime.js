@@ -5,6 +5,7 @@ import * as THREE from "three"
 import {GLTFLoader} from "three/examples/jsm/loaders/GLTFLoader.js"
 import {clone as cloneSkeleton} from "three/examples/jsm/utils/SkeletonUtils.js"
 import init, {CharacterAsset} from "./imported-character-wasm/character.js"
+import {attachToJoint, matrixFrom} from "./imported-item.js"
 
 let initialized
 function initialize() {
@@ -88,11 +89,26 @@ export async function loadCharacterRuntime(bytes, fail) {
         pose[method](...args)
         apply()
       }
+      const attachments = new Set()
+      const jointNode = name => {
+        const canonical = metadata.nodeNames.indexOf(name)
+        if (canonical < 0 || metadata.nodeNames.lastIndexOf(name) !== canonical) fail(`character has no unique joint ${name}`)
+        return sourceNodes.get(metadata.sourceNodes[canonical]) ?? fail(`joint ${name} has no decoded node`)
+      }
       const instance = {root,
+        /** Parent an item instance under `joint`; its `frame` lands on the `socket` transform. */
+        attach(item, {joint, socket, frame = "grip"} = {}) {
+          if (instanceDisposed || disposed) fail("instance disposed")
+          if (typeof joint !== "string") fail("attachment joint must be a joint name")
+          const handle = attachToJoint(jointNode(joint), item, {frame, socketMatrix: socket === undefined ? new THREE.Matrix4() : matrixFrom(socket, "socket", fail)}, fail)
+          const attachment = Object.freeze({joint, frame, detach() { handle.detach(); attachments.delete(attachment) }})
+          attachments.add(attachment)
+          return attachment
+        },
         seek: (clip, seconds) => update("seek", clip, seconds),
         transition: (clip, seconds) => update("transition", clip, seconds),
         advance: seconds => update("advance", seconds),
-        dispose() { if (instanceDisposed) return; instanceDisposed = true; root.removeFromParent(); pose.free(); instances.delete(instance) },
+        dispose() { if (instanceDisposed) return; for (const attachment of [...attachments]) attachment.detach(); instanceDisposed = true; root.removeFromParent(); pose.free(); instances.delete(instance) },
       }
       apply()
       instances.add(instance)

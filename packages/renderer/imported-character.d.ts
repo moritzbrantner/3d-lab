@@ -1,7 +1,31 @@
 import type {Object3D} from "three"
 import type {RendererCamera, ThreeSceneRenderer} from "./index.js"
+export interface ImportedItemInstance {
+  readonly root: Object3D
+  /** The item's named frames in item space, column-major (shared with its asset). */
+  readonly frames: Readonly<Record<string, readonly number[]>>
+  dispose(): void
+}
+export interface ImportedItemAsset {
+  readonly resourceKey: string
+  /** Named item frames (for example `grip`, `grip.offhand`) in item space, column-major. */
+  readonly frames: Readonly<Record<string, readonly number[]>>
+  createInstance(): ImportedItemInstance
+  dispose(): void
+}
+export interface ImportedCharacterAttachment {
+  readonly joint: string
+  readonly frame: string
+  detach(): void
+}
 export interface ImportedCharacterInstance {
   readonly root: Object3D
+  /**
+   * Parent an item instance under the named joint so the item's `frame` (default `grip`) lands
+   * on the `socket` transform (column-major, in the joint's frame; identity when omitted).
+   * Which item, joint, socket and frame to use is consumer data.
+   */
+  attach(item: ImportedItemInstance, attachment: {joint: string; socket?: readonly number[]; frame?: string}): ImportedCharacterAttachment
   seek(clip: string, seconds: number): void
   transition(clip: string, durationSeconds: number): void
   advance(deltaSeconds: number): void
@@ -25,4 +49,6 @@ export interface GltfResourcesBundleSource {
   readResource(path: string): Promise<ArrayBuffer | ArrayBufferView>
 }
 export function adaptImportedCharacterBundle(bundle: GltfResourcesBundleSource, options?: {onProgress?(progress: {loadedBytes: number; totalBytes: number}): void}): Promise<ImportedCharacterAsset>
+export function adaptImportedItemBundle(bundle: GltfResourcesBundleSource, options?: {onProgress?(progress: {loadedBytes: number; totalBytes: number}): void}): Promise<ImportedItemAsset>
+export function readBundleAttachment(source: {manifest: unknown; key: string; variant?: string; name: string; readResource(path: string): Promise<ArrayBuffer | ArrayBufferView>}): Promise<unknown>
 export function renderImportedCharacterInstances(renderer: ThreeSceneRenderer, frame: {camera:RendererCamera; instances:readonly ImportedCharacterInstance[]}): unknown
