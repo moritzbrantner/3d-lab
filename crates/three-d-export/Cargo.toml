@@ -12,6 +12,6 @@ three-d-scene = { path = "../three-d-scene" }
 three-d-assets = { path = "../three-d-assets" }
 
 [dev-dependencies]
-gltf = { version = "1.4.1", default-features = false, features = ["names", "utils"] }
+gltf = { version = "=1.4.1", default-features = false, features = ["names", "utils"] }
 three-d-animation = { path = "../three-d-animation" }
 three-d-formats = { path = "../three-d-formats" }
