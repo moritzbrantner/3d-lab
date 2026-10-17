@@ -1,9 +1,11 @@
-// Inspection-only entry point (#118): original character source bytes pinned
-// only by SHA-256 and byte length. Not a production import; it never carries
+// Inspection-only entry point (#118, #137): original character source bytes pinned
+// only by SHA-256 and byte length, optionally with pinned external .gltf resources,
+// and possibly without clips (rest pose only). Not a production import; it never carries
 // provenance and cannot pass `adaptImportedCharacter`'s gate. Decode, pose and
 // render go through the same shared runtime as `./imported-character`.
 import {copyBytes, loadCharacterRuntime, renderImportedCharacterInstances} from "./character-runtime.js"
 import {sha256Hex} from "./content-hash.js"
+import {assembleGlb} from "./bundle-glb.js"
 
 function fail(message) { throw new Error(`inspection character: ${message}`) }
 function verifyPin(bytes, pin) {
@@ -13,49 +15,57 @@ function verifyPin(bytes, pin) {
   if (sha256Hex(bytes) !== pin.sha256) fail("source SHA-256 does not match the pin")
 }
 
-/** Animation count declared by a GLB or glTF JSON document, or undefined when it cannot be read. */
-function declaredAnimationCount(bytes) {
-  let text
-  try {
-    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-    if (bytes.byteLength >= 20 && view.getUint32(0, true) === 0x46546c67) {
-      const length = view.getUint32(12, true)
-      if (view.getUint32(16, true) !== 0x4e4f534a || 20 + length > bytes.byteLength) return undefined
-      text = new TextDecoder().decode(bytes.subarray(20, 20 + length))
-    } else {
-      text = new TextDecoder().decode(bytes)
-    }
-    const json = JSON.parse(text)
-    // Only a skinned glTF character (asset.version, meshes and skins) counts as clipless; anything
-    // else is left to the runtime and reported as an invalid source.
-    if (typeof json !== "object" || json === null || typeof json.asset?.version !== "string"
-      || !Array.isArray(json.meshes) || json.meshes.length === 0
-      || !Array.isArray(json.skins) || json.skins.length === 0) return undefined
-    if (json.animations === undefined) return 0
-    return Array.isArray(json.animations) ? json.animations.length : undefined
-  } catch { return undefined }
+/**
+ * A `.gltf` document with external buffer/image URIs, assembled with its pinned resources into
+ * in-memory GLB bytes. Every external URI must be supplied and every resource pin verified first.
+ */
+function assemblePinnedGltf(document, resources) {
+  if (typeof resources !== "object" || resources === null || Array.isArray(resources)) fail("resources must map glTF URIs to pinned bytes")
+  let json
+  try { json = JSON.parse(new TextDecoder().decode(document)) } catch { fail("a source with external resources must be glTF JSON") }
+  const external = new Set()
+  for (const item of json?.buffers ?? []) {
+    if (typeof item?.uri !== "string" || item.uri.startsWith("data:")) fail("a source with external resources must reference every buffer by external URI")
+    external.add(item.uri)
+  }
+  for (const image of json?.images ?? []) {
+    // Images stored in a bufferView travel with their buffer; data: URIs are not pinned resources.
+    if (image?.uri === undefined) continue
+    if (typeof image.uri !== "string" || image.uri.startsWith("data:")) fail("a source with external resources must reference images by external URI or bufferView")
+    external.add(image.uri)
+  }
+  const supplied = Object.keys(resources)
+  for (const uri of supplied) if (!external.has(uri)) fail(`resource ${uri} is not referenced by the source`)
+  const bytesByUri = new Map()
+  for (const uri of external) {
+    if (!Object.hasOwn(resources, uri)) fail(`external resource ${uri} was not supplied`)
+    const resource = resources[uri]
+    const bytes = copyBytes(resource?.bytes, fail)
+    try { verifyPin(bytes, resource) } catch (error) { fail(`resource ${uri}: ${error.message.replace(/^inspection character: /, "")}`) }
+    bytesByUri.set(uri, bytes)
+  }
+  return assembleGlb(json, bytesByUri, fail)
 }
 
-/** Verify the pin over a private copy of exactly these bytes, then load for inspection. */
-export async function adaptPinnedCharacterSource(source, pin) {
-  const bytes = copyBytes(source, fail)
-  verifyPin(bytes, pin)
+/**
+ * Verify the pin over a private copy of exactly these bytes, then load for inspection. A `.gltf`
+ * with external buffers/images also needs `options.resources`: each URI mapped to
+ * `{bytes, sha256, byteLength}`, all verified before parsing.
+ */
+export async function adaptPinnedCharacterSource(source, pin, options = {}) {
+  const document = copyBytes(source, fail)
+  verifyPin(document, pin)
+  const bytes = options.resources === undefined ? document : assemblePinnedGltf(document, options.resources)
   let runtime
   try { runtime = await loadCharacterRuntime(bytes, fail) }
   catch (error) {
     // The Rust bridge reports plain strings; give callers a real Error.
     const reason = error instanceof Error ? error.message : String(error)
-    // Clipless only when the parser itself failed on the clip list of a well-formed skinned
-    // document declaring no animations; every other failure stays an invalid-source error.
-    // Only the formats crate's empty/duplicate clip-name rejection; its generic "glTF node/skin/clip:"
-    // validation prefix covers unrelated malformed input and must stay an invalid-source error.
-    if (reason.includes("clip names must be present and unique") && declaredAnimationCount(bytes) === 0) {
-      throw new Error("inspection character: source has no animation clips", {cause: error})
-    }
     throw new Error(`inspection character: unparsable or invalid glTF/GLB source: ${reason}`, {cause: error})
   }
+  // A source without clips (e.g. a body or outfit that ships none) loads with `clips: []` and
+  // shows its rest pose; production adapters still require clips.
   const {metadata} = runtime
-  if (metadata.clips.length === 0) { runtime.dispose(); fail("source has no animation clips") }
   const authored = runtime.json.animations ?? []
   const clips = Object.freeze(metadata.clips.map((clip, index) => {
     const name = authored[index]?.name
@@ -63,6 +73,7 @@ export async function adaptPinnedCharacterSource(source, pin) {
   }))
   // Index (or authored name) to the bridge's clip identity.
   const clipId = clip => {
+    if (clips.length === 0) fail("source has no animation clips; only the rest pose is available")
     if (typeof clip === "number") {
       if (!Number.isInteger(clip) || clip < 0 || clip >= clips.length) fail(`clip index ${clip} is out of range 0..${clips.length - 1}`)
       return metadata.clips[clip].name

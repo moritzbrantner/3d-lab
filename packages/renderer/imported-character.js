@@ -19,6 +19,7 @@ export async function adaptImportedCharacter(source, options = {}) {
   const provenance = provenanceOf(bytes, options.provenance)
   const runtime = await loadCharacterRuntime(bytes, fail)
   const {metadata} = runtime
+  if (metadata.clips.length === 0) { runtime.dispose(); fail("character has no animation clips") }
   const retained = {
     resourceKey: `glb-sha256:${sha256Hex(bytes)}`,
     provenance: Object.freeze(provenance),
@@ -47,6 +48,7 @@ export async function adaptImportedCharacterBundle(bundle, options = {}) {
   const manifest = bundle.manifest
   const runtime = await loadCharacterRuntime(glb, fail)
   const {metadata} = runtime
+  if (metadata.clips.length === 0) { runtime.dispose(); fail("character has no animation clips") }
   return Object.freeze({
     resourceKey: `bundle:${key}/${variant}:${entry.sha256}`,
     provenance: Object.freeze(structuredClone({bundle: {profile: manifest.profile, key, variant, sha256: entry.sha256, source: entry.source}})),

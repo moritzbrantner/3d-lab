@@ -354,6 +354,57 @@ describe("clips, seek parity, rest pose", () => {
   });
 });
 
+describe("clipless sources load in rest pose (#137)", () => {
+  test("a pinned source without animations loads with clips: [] and the source rest pose", async () => {
+    const { adaptPinnedCharacterSource } = await inspection();
+    for (const change of [(json: any) => { delete json.animations; }, (json: any) => { json.animations = []; }]) {
+      const noClips = mutate(source, change);
+      const asset = await adaptPinnedCharacterSource(noClips, { sha256: sha256(noClips), byteLength: noClips.byteLength });
+      expect(asset.validation).toBe("inspection-only");
+      expect(asset.clips).toEqual([]);
+      const rest = asset.createInstance();
+      expectSameJoints(joints(rest), sourceRestWorld(), "clipless rest vs source node transforms");
+      expect(() => rest.seek(0, 0)).toThrow(/no animation clips/);
+      rest.dispose(); asset.dispose?.();
+    }
+  });
+});
+
+describe("pinned external resources for .gltf sources (#137)", () => {
+  // Split the Fox GLB into a .gltf document plus one external .bin, as Quaternius ships its sources.
+  const length = source.readUInt32LE(12);
+  const json = JSON.parse(source.subarray(20, 20 + length).toString());
+  const bin = Buffer.from(source.subarray(28 + length));
+  json.buffers = [{ uri: "Fox.bin", byteLength: json.buffers[0].byteLength }];
+  const gltf = Buffer.from(JSON.stringify(json));
+  const gltfPin = { sha256: sha256(gltf), byteLength: gltf.byteLength };
+  const resources = () => ({ "Fox.bin": { bytes: bin, sha256: sha256(bin), byteLength: bin.byteLength } });
+
+  test("a .gltf with pinned external buffers loads like the GLB source", async () => {
+    const { adaptPinnedCharacterSource } = await inspection();
+    const asset = await adaptPinnedCharacterSource(gltf, gltfPin, { resources: resources() });
+    const reference = await adaptPinnedCharacterSource(source, pin);
+    expect(asset.clips).toEqual(reference.clips);
+    const a = asset.createInstance(), b = reference.createInstance();
+    a.seek("Walk", 0.321); b.seek("Walk", 0.321);
+    expectSameJoints(joints(a), joints(b), ".gltf vs GLB source");
+    asset.dispose?.(); reference.dispose?.();
+  });
+
+  test("missing, extra or mispinned resources are rejected before parsing", async () => {
+    const { adaptPinnedCharacterSource } = await inspection();
+    const cases: Array<[Record<string, unknown>, RegExp]> = [
+      [{}, /Fox\.bin was not supplied/],
+      [{ ...resources(), "extra.png": { bytes: bin, sha256: sha256(bin), byteLength: bin.byteLength } }, /extra\.png is not referenced/],
+      [{ "Fox.bin": { ...resources()["Fox.bin"], sha256: "0".repeat(64) } }, /Fox\.bin: .*SHA-256/],
+    ];
+    for (const [given, message] of cases) {
+      const error = await rejection(() => adaptPinnedCharacterSource(gltf, gltfPin, { resources: given }));
+      expect(String(error)).toMatch(message);
+    }
+  });
+});
+
 describe("unnamed clips are addressable by index (RiggedFigure)", () => {
   // Khronos RiggedFigure: one clip without an authored name, 1.25 s, no textures.
   // No production import exists, so an independent three.js GLTFLoader +
@@ -458,20 +509,17 @@ describe("unnamed clips are addressable by index (RiggedFigure)", () => {
 });
 
 describe("clear errors", () => {
-  test("a pinned source without clips is rejected with a clip error", async () => {
-    const { adaptPinnedCharacterSource } = await inspection();
-    for (const change of [(json: any) => { delete json.animations; }, (json: any) => { json.animations = []; }]) {
-      const noClips = mutate(source, change);
-      const error = await rejection(() => adaptPinnedCharacterSource(noClips, { sha256: sha256(noClips), byteLength: noClips.byteLength }));
-      // Reported as missing clips, not as an unparsable source (Codex P2 on #119).
-      expect(String(error)).toMatch(/\bno (animation )?clips\b|\bno animations?\b|without (animation )?clips|zero (animation )?clips/i);
-      expect(String(error)).not.toMatch(/unparsable|invalid gltf/i);
-      expect(String(error)).not.toMatch(PIN_ONLY_WORDS);
-    }
+  test("production adapters still reject a character without clips", async () => {
+    const { adaptImportedCharacter } = await production();
+    const noClips = mutate(output, json => { delete json.animations; });
+    const forged = structuredClone(proof);
+    forged.result.outputs.output = { ...forged.result.outputs.output, sha256: sha256(noClips), byteLength: noClips.byteLength };
+    const error = await rejection(() => adaptImportedCharacter(noClips, { provenance: forged }));
+    expect(String(error)).toMatch(/no animation clips/i);
   });
 
   test("malformed animations (object or null) are an invalid source, not a missing-clips source", async () => {
-    // Regression (Codex P2 on #119): only an absent or empty `animations` list means "no clips".
+    // Regression (Codex P2 on #119): only an absent or empty `animations` list is a clipless source.
     const { adaptPinnedCharacterSource } = await inspection();
     for (const animations of [{}, null]) {
       const malformed = mutate(source, json => { json.animations = animations; });
@@ -483,7 +531,7 @@ describe("clear errors", () => {
   });
 
   test("a clipless source with another malformed field is an invalid source, not a missing-clips source", async () => {
-    // Regression (Codex P2 on #119): only the clip-list failure itself may be reported as "no clips".
+    // Regression (Codex P2 on #119): dropping clips never hides another malformed field.
     const { adaptPinnedCharacterSource } = await inspection();
     for (const dropClips of [(json: any) => { delete json.animations; }, (json: any) => { json.animations = []; }]) {
       const malformed = mutate(source, json => { dropClips(json); json.scenes[json.scene ?? 0].nodes = [999]; });
