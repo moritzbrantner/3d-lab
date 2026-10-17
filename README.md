@@ -117,6 +117,8 @@ uses the real Khronos **Fox** asset, deterministic poses and a Three.js
 ([#87](https://github.com/moritzbrantner/3d-lab/issues/87)).
 That demonstrates this **browser library capability**, not approved humanoid
 visual quality or normal-gameplay integration in a consumer.
+The published asset-tooling Ranger is compared against plain three.js in the
+[Ranger three.js reference](docs/specs/ranger-three-reference.md) (manual run, #141).
 
 Native `wgpu` submission of the same imported skins is still
 [tracked separately in #115](https://github.com/moritzbrantner/3d-lab/issues/115).
