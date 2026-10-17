@@ -324,3 +324,472 @@ pub(crate) fn retarget_document(
         },
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{AdapterOperation, Request, parse_request, probe_json, validate_document};
+    use core::f32::consts::FRAC_PI_2;
+
+    const SOURCE_FINGER: usize = 12;
+    const TARGET_HIPS: usize = 1;
+    const TARGET_CHEST: usize = 7;
+    const TARGET_LEFT_UPPER_ARM: usize = 9;
+    const TARGET_LEFT_HAND: usize = 11;
+    const TARGET_FINGER: usize = 12;
+
+    fn z_up_root() -> Quat {
+        Quat::from_axis_angle(Vec3::new(1.0, 0.0, 0.0), -FRAC_PI_2).unwrap()
+    }
+
+    fn quat_array(value: Quat) -> [f32; 4] {
+        [value.x, value.y, value.z, value.w]
+    }
+
+    fn node(parent: Option<usize>, translation: [f32; 3], rotation: Quat) -> RigNodeDocument {
+        RigNodeDocument {
+            parent,
+            translation,
+            rotation: quat_array(rotation),
+            scale: [1.0, 1.0, 1.0],
+        }
+    }
+
+    fn bindings(entries: &[(&str, usize)]) -> BTreeMap<String, usize> {
+        entries
+            .iter()
+            .map(|(bone, node)| ((*bone).to_owned(), *node))
+            .collect()
+    }
+
+    /// Blender-style Z-up armature (root -90 deg about X), 1.0 hip height, plus an unmapped finger.
+    fn source_rig() -> RigDocument {
+        let id = Quat::IDENTITY;
+        RigDocument {
+            nodes: vec![
+                node(None, [0.0, 0.0, 0.0], z_up_root()),
+                node(Some(0), [0.0, 0.0, 1.0], id),
+                node(Some(1), [0.0, 0.0, 0.2], id),
+                node(Some(2), [0.0, 0.0, 0.5], id),
+                node(
+                    Some(2),
+                    [0.2, 0.0, 0.4],
+                    Quat::from_euler_xyz(0.0, 0.0, 0.3),
+                ),
+                node(Some(4), [0.25, 0.0, 0.0], id),
+                node(Some(2), [-0.2, 0.0, 0.4], id),
+                node(Some(6), [-0.25, 0.0, 0.0], id),
+                node(Some(1), [0.1, 0.0, -0.1], id),
+                node(Some(8), [0.0, 0.0, -0.45], id),
+                node(Some(1), [-0.1, 0.0, -0.1], id),
+                node(Some(10), [0.0, 0.0, -0.45], id),
+                node(Some(5), [0.05, 0.0, 0.0], id),
+            ],
+            bindings: bindings(&[
+                ("root", 0),
+                ("hips", 1),
+                ("spine", 2),
+                ("head", 3),
+                ("left-upper-arm", 4),
+                ("left-lower-arm", 5),
+                ("right-upper-arm", 6),
+                ("right-lower-arm", 7),
+                ("left-upper-leg", 8),
+                ("left-lower-leg", 9),
+                ("right-upper-leg", 10),
+                ("right-lower-leg", 11),
+            ]),
+            reference_height: 1.8,
+        }
+    }
+
+    /// Different node order, 1.5 hip height, different arm rest rotation, target-only
+    /// chest/left-hand semantics and an unmapped finger.
+    fn target_rig() -> RigDocument {
+        let id = Quat::IDENTITY;
+        RigDocument {
+            nodes: vec![
+                node(None, [0.0, 0.0, 0.0], z_up_root()),
+                node(Some(0), [0.0, 0.0, 1.5], id),
+                node(Some(1), [0.15, 0.0, -0.1], id),
+                node(Some(2), [0.0, 0.0, -0.7], id),
+                node(Some(1), [-0.15, 0.0, -0.1], id),
+                node(Some(4), [0.0, 0.0, -0.7], id),
+                node(Some(1), [0.0, 0.0, 0.25], id),
+                node(Some(6), [0.0, 0.0, 0.3], id),
+                node(Some(7), [0.0, 0.0, 0.4], id),
+                node(
+                    Some(7),
+                    [0.3, 0.0, 0.2],
+                    Quat::from_euler_xyz(0.0, 0.0, -0.5),
+                ),
+                node(Some(9), [0.35, 0.0, 0.0], id),
+                node(Some(10), [0.3, 0.0, 0.0], id),
+                node(Some(11), [0.08, 0.0, 0.0], id),
+                node(Some(7), [-0.3, 0.0, 0.2], id),
+                node(Some(13), [-0.35, 0.0, 0.0], id),
+            ],
+            bindings: bindings(&[
+                ("root", 0),
+                ("hips", TARGET_HIPS),
+                ("left-upper-leg", 2),
+                ("left-lower-leg", 3),
+                ("right-upper-leg", 4),
+                ("right-lower-leg", 5),
+                ("spine", 6),
+                ("chest", TARGET_CHEST),
+                ("head", 8),
+                ("left-upper-arm", TARGET_LEFT_UPPER_ARM),
+                ("left-lower-arm", 10),
+                ("left-hand", TARGET_LEFT_HAND),
+                ("right-upper-arm", 13),
+                ("right-lower-arm", 14),
+            ]),
+            reference_height: 2.7,
+        }
+    }
+
+    fn arm_delta() -> Quat {
+        Quat::from_euler_xyz(0.0, 0.0, 0.6)
+    }
+
+    fn source_animation() -> AnimationDocument {
+        let arm_rest = Quat::from_euler_xyz(0.0, 0.0, 0.3);
+        let vec3_keys = |keys: &[(f32, [f32; 3])]| {
+            keys.iter()
+                .map(|(time, value)| Vec3KeyframeDocument {
+                    time: *time,
+                    value: *value,
+                })
+                .collect()
+        };
+        let quat_keys = |keys: &[(f32, Quat)]| {
+            keys.iter()
+                .map(|(time, value)| QuatKeyframeDocument {
+                    time: *time,
+                    value: quat_array(*value),
+                })
+                .collect()
+        };
+        let document = AnimationDocument {
+            schema_version: 1,
+            channels: vec![
+                ChannelDocument::Translation {
+                    node: 1,
+                    keyframes: vec3_keys(&[
+                        (0.0, [0.0, 0.0, 1.0]),
+                        (0.5, [0.2, -0.3, 1.05]),
+                        (1.0, [0.4, -0.6, 1.0]),
+                    ]),
+                },
+                ChannelDocument::Rotation {
+                    node: 4,
+                    keyframes: quat_keys(&[
+                        (0.0, arm_rest),
+                        (1.0, quat_mul(arm_rest, arm_delta()).normalized().unwrap()),
+                    ]),
+                },
+                ChannelDocument::Rotation {
+                    node: SOURCE_FINGER,
+                    keyframes: quat_keys(&[
+                        (0.0, Quat::IDENTITY),
+                        (1.0, Quat::from_euler_xyz(0.0, 0.4, 0.0)),
+                    ]),
+                },
+            ],
+        };
+        validate_document(&document).unwrap();
+        document
+    }
+
+    fn parameters(root_motion: RootMotion) -> RetargetParameters {
+        RetargetParameters {
+            source: source_rig(),
+            target: target_rig(),
+            sample_times_seconds: vec![0.0, 0.5, 1.0],
+            root_motion,
+        }
+    }
+
+    fn retarget(root_motion: RootMotion) -> AnimationDocument {
+        retarget_document(&source_animation(), &parameters(root_motion))
+            .unwrap()
+            .0
+    }
+
+    fn translation_keys(document: &AnimationDocument, target: usize) -> Vec<Vec3> {
+        document
+            .channels
+            .iter()
+            .find_map(|channel| match channel {
+                ChannelDocument::Translation { node, keyframes } if *node == target => Some(
+                    keyframes
+                        .iter()
+                        .map(|keyframe| vec3(keyframe.value))
+                        .collect(),
+                ),
+                _ => None,
+            })
+            .expect("translation channel")
+    }
+
+    fn assert_close(actual: Vec3, expected: Vec3) {
+        assert!(
+            (actual - expected).length() < 1.0e-5,
+            "{actual:?} != {expected:?}"
+        );
+    }
+
+    #[test]
+    fn missing_required_target_bone_fails_with_retarget_error() {
+        let mut parameters = parameters(RootMotion::Keep);
+        parameters.target.bindings.remove("head");
+        let error = retarget_document(&source_animation(), &parameters).unwrap_err();
+        assert_eq!(
+            error,
+            "target rig: required humanoid bone Head is not mapped"
+        );
+    }
+
+    #[test]
+    fn invalid_rigs_times_and_channels_fail_visibly() {
+        let source = source_animation();
+        let mut bad_binding = parameters(RootMotion::Keep);
+        bad_binding.source.bindings.insert("left-hand".into(), 99);
+        assert!(
+            retarget_document(&source, &bad_binding)
+                .unwrap_err()
+                .contains("LeftHand maps to node 99")
+        );
+
+        let mut unknown_bone = parameters(RootMotion::Keep);
+        unknown_bone.target.bindings.insert("tail".into(), 12);
+        assert!(
+            retarget_document(&source, &unknown_bone)
+                .unwrap_err()
+                .contains("unknown humanoid bone 'tail'")
+        );
+
+        let mut cycle = parameters(RootMotion::Keep);
+        cycle.target.nodes[0].parent = Some(1);
+        assert!(
+            retarget_document(&source, &cycle)
+                .unwrap_err()
+                .contains("parent cycle")
+        );
+
+        let mut non_finite = parameters(RootMotion::Keep);
+        non_finite.source.nodes[3].translation[1] = f32::NAN;
+        assert!(
+            retarget_document(&source, &non_finite)
+                .unwrap_err()
+                .contains("must be finite")
+        );
+
+        for times in [vec![], vec![0.5, 0.5], vec![1.0, 0.0]] {
+            let mut bad_times = parameters(RootMotion::Keep);
+            bad_times.sample_times_seconds = times;
+            assert!(
+                retarget_document(&source, &bad_times)
+                    .unwrap_err()
+                    .contains("sampleTimesSeconds")
+            );
+        }
+
+        let mut outside = source.clone();
+        if let ChannelDocument::Rotation { node, .. } = &mut outside.channels[2] {
+            *node = 40;
+        }
+        assert!(
+            retarget_document(&outside, &parameters(RootMotion::Keep))
+                .unwrap_err()
+                .contains("outside the source rig")
+        );
+    }
+
+    #[test]
+    fn mapped_rotation_delta_transfers_across_different_arm_rests() {
+        let output = retarget(RootMotion::Keep);
+        let keys = output
+            .channels
+            .iter()
+            .find_map(|channel| match channel {
+                ChannelDocument::Rotation { node, keyframes } if *node == TARGET_LEFT_UPPER_ARM => {
+                    Some(keyframes.clone())
+                }
+                _ => None,
+            })
+            .unwrap();
+        let target_rest = Quat::from_euler_xyz(0.0, 0.0, -0.5);
+        let [x, y, z, w] = keys[2].value;
+        let expected = quat_mul(target_rest, arm_delta()).normalized().unwrap();
+        assert!((Quat::new(x, y, z, w).dot(expected).abs() - 1.0).abs() < 1.0e-5);
+        let [x, y, z, w] = keys[0].value;
+        assert!((Quat::new(x, y, z, w).dot(target_rest).abs() - 1.0).abs() < 1.0e-5);
+    }
+
+    #[test]
+    fn only_semantics_mapped_in_both_rigs_receive_channels() {
+        let output = retarget(RootMotion::Keep);
+        let mut rotations = Vec::new();
+        let mut translations = Vec::new();
+        for channel in &output.channels {
+            match channel {
+                ChannelDocument::Rotation { node, keyframes } => {
+                    assert_eq!(keyframes.len(), 3);
+                    rotations.push(*node);
+                }
+                ChannelDocument::Translation { node, .. } => translations.push(*node),
+                ChannelDocument::Scale { .. } => panic!("source animates no scale"),
+            }
+        }
+        assert_eq!(rotations, vec![0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 13, 14]);
+        assert_eq!(translations, vec![0, TARGET_HIPS]);
+        for unmapped in [TARGET_CHEST, TARGET_LEFT_HAND, TARGET_FINGER] {
+            assert!(!rotations.contains(&unmapped));
+        }
+    }
+
+    #[test]
+    fn scale_channels_follow_source_scale_animation_on_mapped_nodes() {
+        let mut source = source_animation();
+        source.channels.push(ChannelDocument::Scale {
+            node: 4,
+            keyframes: vec![
+                Vec3KeyframeDocument {
+                    time: 0.0,
+                    value: [1.0, 1.0, 1.0],
+                },
+                Vec3KeyframeDocument {
+                    time: 1.0,
+                    value: [2.0, 1.0, 1.0],
+                },
+            ],
+        });
+        let (output, _) = retarget_document(&source, &parameters(RootMotion::Keep)).unwrap();
+        let scales: Vec<_> = output
+            .channels
+            .iter()
+            .filter_map(|channel| match channel {
+                ChannelDocument::Scale { node, keyframes } => Some((*node, keyframes[1].value)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(scales, vec![(TARGET_LEFT_UPPER_ARM, [1.5, 1.0, 1.0])]);
+    }
+
+    #[test]
+    fn hips_translation_is_scaled_by_reference_height_ratio() {
+        let hips = translation_keys(&retarget(RootMotion::Keep), TARGET_HIPS);
+        assert_close(hips[0], Vec3::new(0.0, 0.0, 1.5));
+        assert_close(hips[1], Vec3::new(0.3, -0.45, 1.575));
+        assert_close(hips[2], Vec3::new(0.6, -0.9, 1.5));
+    }
+
+    #[test]
+    fn in_place_removes_model_space_horizontal_drift_and_keeps_bob() {
+        let root = z_up_root();
+        let rest_model = rotate(root, Vec3::new(0.0, 0.0, 1.5));
+        let kept = translation_keys(&retarget(RootMotion::Keep), TARGET_HIPS);
+        let in_place_output = retarget(RootMotion::InPlace);
+        let in_place = translation_keys(&in_place_output, TARGET_HIPS);
+
+        let drift = rotate(root, kept[2]) - rest_model;
+        assert!(drift.x.abs() > 0.5 && drift.z.abs() > 0.5, "{drift:?}");
+
+        for (index, key) in in_place.iter().enumerate() {
+            let model = rotate(root, *key);
+            let kept_model = rotate(root, kept[index]);
+            assert!((model.x - rest_model.x).abs() < 1.0e-5, "{model:?}");
+            assert!((model.z - rest_model.z).abs() < 1.0e-5, "{model:?}");
+            assert!((model.y - kept_model.y).abs() < 1.0e-5, "{model:?}");
+        }
+        assert!((rotate(root, in_place[1]).y - rest_model.y - 0.075).abs() < 1.0e-5);
+
+        for key in translation_keys(&in_place_output, 0) {
+            assert_close(key, Vec3::ZERO);
+        }
+    }
+
+    #[test]
+    fn retarget_output_is_deterministic() {
+        let first =
+            retarget_document(&source_animation(), &parameters(RootMotion::InPlace)).unwrap();
+        let second =
+            retarget_document(&source_animation(), &parameters(RootMotion::InPlace)).unwrap();
+        assert_eq!(
+            serde_json::to_vec(&first.0).unwrap(),
+            serde_json::to_vec(&second.0).unwrap()
+        );
+        assert_eq!(first.1, second.1);
+        assert_eq!(first.1.mapped_bone_count, 12);
+        assert_eq!(first.1.result_keyframe_count, 14 * 3);
+    }
+
+    #[test]
+    fn retarget_protocol_identity_and_request_shape() {
+        let operation = AdapterOperation::Retarget;
+        let probe: serde_json::Value =
+            serde_json::from_str(&probe_json(operation).unwrap()).unwrap();
+        let component = &probe[0];
+        assert_eq!(component["id"], "three-d-animation-retarget");
+        assert_eq!(
+            component["algorithm"],
+            "three-d-animation-humanoid-retarget-v1"
+        );
+        assert_eq!(component["protocol"], "asset-tooling-process-adapter-v1");
+        assert_eq!(component["codec"], "three-d-animation-json-v1");
+
+        let rig = serde_json::json!({
+            "nodes": [{ "parent": null, "translation": [0.0, 1.0, 0.0], "rotation": [0.0, 0.0, 0.0, 1.0], "scale": [1.0, 1.0, 1.0] }],
+            "bindings": { "hips": 0 },
+            "referenceHeight": 1.0
+        });
+        let request = |operation: &str, extra: Option<(&str, serde_json::Value)>| {
+            let mut parameters = serde_json::json!({
+                "source": rig,
+                "target": rig,
+                "sampleTimesSeconds": [0.0, 1.0],
+                "rootMotion": "in-place"
+            });
+            if let Some((key, value)) = extra {
+                parameters[key] = value;
+            }
+            serde_json::to_vec(&serde_json::json!({
+                "schemaVersion": 1,
+                "operation": operation,
+                "inputPath": "clip.json",
+                "parameters": parameters
+            }))
+            .unwrap()
+        };
+        let parsed: Request<RetargetParameters> =
+            parse_request(operation, &request("animation.retarget", None)).unwrap();
+        assert_eq!(parsed.parameters.root_motion, RootMotion::InPlace);
+        assert!(
+            parse_request::<RetargetParameters>(operation, &request("animation.resample", None))
+                .unwrap_err()
+                .contains("unsupported operation")
+        );
+        assert!(
+            parse_request::<RetargetParameters>(
+                operation,
+                &request(
+                    "animation.retarget",
+                    Some(("solver", serde_json::json!("ik")))
+                )
+            )
+            .is_err()
+        );
+        assert!(
+            parse_request::<RetargetParameters>(
+                operation,
+                &request(
+                    "animation.retarget",
+                    Some(("rootMotion", serde_json::json!("xz")))
+                )
+            )
+            .is_err()
+        );
+    }
+}
