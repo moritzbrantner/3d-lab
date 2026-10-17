@@ -322,8 +322,9 @@ pub fn load_gltf_imported_character(bytes: &[u8]) -> Result<ImportedCharacter, F
         })
         .collect::<Result<Vec<_>, _>>()?;
     let mut names_seen = std::collections::BTreeSet::new();
-    if clips.is_empty() || clips.iter().any(|c| !names_seen.insert(c.name())) {
-        return Err(invalid("clip names must be present and unique"));
+    // A clipless character is a valid rest-pose source; production adapters reject it themselves.
+    if clips.iter().any(|c| !names_seen.insert(c.name())) {
+        return Err(invalid("clip names must be unique"));
     }
     if clips.iter().any(|clip| clip.duration() <= 0.0) {
         return Err(invalid(

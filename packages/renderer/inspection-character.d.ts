@@ -22,6 +22,7 @@ export interface InspectionCharacterInstance {
 export interface InspectionCharacterAsset {
   readonly validation: "inspection-only"
   readonly provenance?: undefined
+  /** Empty for a source that ships no clips; such an asset only shows its rest pose. */
   readonly clips: readonly InspectionCharacterClip[]
   /** A fresh instance shows the rest pose (no clip applied). */
   createInstance(options?: {modelMatrix?: readonly number[]}): InspectionCharacterInstance

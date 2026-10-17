@@ -222,17 +222,26 @@ The renderer composes only the given transforms. Which item goes to which joint,
 
 ## Inspection-only characters
 
-`./inspection-character` exposes `adaptPinnedCharacterSource(bytes,{sha256,byteLength})`
-for **original** character source bytes (GLB, or `.gltf` with embedded data URIs) that
-are pinned only by hash and length, for example a catalog viewer. It is inspection-only:
+`./inspection-character` exposes `adaptPinnedCharacterSource(bytes,{sha256,byteLength},{resources?})`
+for **original** character source bytes (GLB, `.gltf` with embedded data URIs, or `.gltf`
+with external buffers/images) that are pinned only by hash and length, for example a
+catalog viewer. It is inspection-only:
 it is not a production import, implies no asset-tooling acceptance and never substitutes
 for an `ImportedCharacterAsset`. The `./imported-character` boundary and its provenance
 gate are unchanged.
 
 The bytes are copied first; the pin (lowercase 64-hex SHA-256, non-negative integer
 byte length) is verified over exactly that copy before any parsing, and a mismatch or
-malformed pin fails closed. The verified copy is what gets parsed. Unparsable sources
-and sources without animation clips are rejected with a clear error.
+malformed pin fails closed. The verified copy is what gets parsed. A `.gltf` with external
+URIs needs `resources`: every referenced buffer/image URI, exactly as written, mapped to
+`{bytes, sha256, byteLength}`. All resource pins are verified before parsing; a missing,
+unreferenced or mispinned resource and any `data:` buffer fail closed. Images stored in a
+bufferView travel with their buffer. Unparsable sources are rejected with a clear error.
+
+A source that ships no animation clips (for example a body or outfit whose motion comes
+from a separate animation library) loads with `clips: []` and shows only its rest pose;
+seeking it throws. The production `./imported-character` adapters still reject characters
+without clips.
 
 The result is a frozen asset with `validation: "inspection-only"`, no `provenance`,
 `clips: {index, duration, name?}[]` (`name` only for authored names), `createInstance`
