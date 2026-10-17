@@ -38,7 +38,7 @@ This v1 evidence proves error bounds at the original source key times. It does n
 
 ## `animation.retarget`
 
-Processor `three-d-animation-retarget` (bin `animation_retarget`, algorithm `three-d-animation-humanoid-retarget-v1`) is a thin wrapper over `three_d_animation::retarget::retarget_pose`; it adds no solver. Parameters carry `source` and `target` rigs (`nodes` with `parent`, local rest `translation`, `rotation` as x/y/z/w and `scale`; `bindings` from `HumanoidBone` id such as `hips` or `left-upper-arm` to node index; `referenceHeight`), strictly increasing finite non-negative `sampleTimesSeconds`, and `rootMotion` (`keep` or `in-place`). The input document uses source node indices.
+Processor `three-d-animation-retarget` (bin `animation_retarget`, algorithm `three-d-animation-humanoid-retarget-v1`) is a thin wrapper over `three_d_animation::retarget::retarget_pose`; it adds no solver. Parameters carry `source` and `target` rigs (`nodes` with `parent`, local rest `translation`, `rotation` as x/y/z/w and `scale`; `bindings` from `HumanoidBone` id such as `hips` or `left-upper-arm` to node index, where the optional `upper-chest` sits between `chest` and `neck` for three-segment spines (`hips` → `spine` → `chest` → `upper-chest` → `neck`) and an unmapped `upper-chest` keeps the previous behaviour; `referenceHeight`), strictly increasing finite non-negative `sampleTimesSeconds`, and `rootMotion` (`keep` or `in-place`). The input document uses source node indices.
 
 At each sample time the source pose is the source rest pose with every channel overridden by its `KeyframeTrack::sample` value (linear translation/scale, slerp rotation, nearest endpoint outside a channel's keys). The output uses target node indices with keys at the sample times:
 
