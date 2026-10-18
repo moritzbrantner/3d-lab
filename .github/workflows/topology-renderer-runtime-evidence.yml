@@ -1,24 +1,10 @@
 name: Topology renderer runtime evidence
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - "package.json"
-      - "web/lib/scene-editor-topology-persistent.ts"
-      - "web/lib/scene-editor-topology-adjacency.ts"
-      - "web/lib/scene-editor-history.ts"
-      - "web/lib/topology-renderer-adapter.ts"
-      - "web/app/topology-performance/**"
-      - "web/components/topology-renderer-performance-canary.tsx"
-      - "scripts/run-topology-renderer-canary.mjs"
-      - "scripts/summarize-topology-browser-calibration.mjs"
-      - "profiles/runtime-profiler/topology-renderer-browser.json"
-      - "profiles/runtime-profiler/topology-renderer-browser.mjs"
-      - ".github/workflows/topology-renderer-runtime-evidence.yml"
+  workflow_call:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  group: topology-renderer-runtime-evidence-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 permissions:

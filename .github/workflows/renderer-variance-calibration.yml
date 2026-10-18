@@ -1,24 +1,7 @@
 name: Renderer variance calibration
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - "package.json"
-      - "bun.lock"
-      - "packages/renderer/**"
-      - "web/package.json"
-      - "web/bun.lock"
-      - "web/next.config.ts"
-      - "web/app/layout.tsx"
-      - "web/app/globals.css"
-      - "web/app/renderer-performance/**"
-      - "web/components/renderer-performance-canary.tsx"
-      - "profiles/runtime-profiler/renderer-browser.json"
-      - "profiles/runtime-profiler/renderer-browser.mjs"
-      - "scripts/summarize_renderer_browser_variance.py"
-      - "scripts/test_renderer_browser_variance.py"
-      - ".github/workflows/renderer-variance-calibration.yml"
+  workflow_call:
   workflow_dispatch:
   schedule:
     - cron: "17 4 * * 1"

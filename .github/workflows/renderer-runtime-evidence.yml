@@ -1,43 +1,10 @@
 name: Renderer runtime evidence
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - "package.json"
-      - "packages/renderer/**"
-      - "crates/**"
-      - "fixtures/imported-character/**"
-      - "scripts/imported-character-browser-acceptance.ts"
-      - "scripts/inspection-character-browser-acceptance.ts"
-      - "scripts/bundle-character-browser-acceptance.ts"
-      - "scripts/lib/gltf-resources-bundle.ts"
-      - "web/app/renderer-performance/**"
-      - "web/components/renderer-performance-canary.tsx"
-      - "web/app/skeletal-animation/**"
-      - "web/components/character-rig-lab*"
-      - "web/components/skeletal-animation-*"
-      - "web/lib/skeletal-animation-*"
-      - "web/components/imported-skin-lab*"
-      - "web/app/editor/**"
-      - "web/components/scene-editor-lab*"
-      - "web/lib/scene-editor-snapshot*"
-      - "web/lib/character-*"
-      - "web/lib/imported-skin*"
-      - "scripts/character-browser-smoke.mjs"
-      - "scripts/skeletal-inspection-browser-smoke.mjs"
-      - "scripts/editor-snapshot-browser-smoke.mjs"
-      - "scripts/renderer-presentation-smoke.mjs"
-      - "scripts/sync-web-animation-fixtures.mjs"
-      - "fixtures/catalog/khronos-simpleskin-embedded.*"
-      - "fixtures/static-glb/**"
-      - "scripts/static-glb-fixtures.mjs"
-      - "profiles/runtime-profiler/renderer-browser.json"
-      - "profiles/runtime-profiler/renderer-browser.mjs"
-      - ".github/workflows/renderer-runtime-evidence.yml"
+  workflow_call:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  group: renderer-runtime-evidence-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 permissions:

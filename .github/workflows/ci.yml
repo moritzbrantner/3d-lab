@@ -13,6 +13,43 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  validation-scope:
+    runs-on: ubuntu-latest
+    outputs:
+      validate-editor-runtime-evidence: ${{ steps.scope.outputs.validate-editor-runtime-evidence }}
+      validate-renderer-runtime-evidence: ${{ steps.scope.outputs.validate-renderer-runtime-evidence }}
+      validate-runtime-evidence: ${{ steps.scope.outputs.validate-runtime-evidence }}
+      validate-topology-renderer-runtime-evidence: ${{ steps.scope.outputs.validate-topology-renderer-runtime-evidence }}
+      validate-topology-runtime-evidence: ${{ steps.scope.outputs.validate-topology-runtime-evidence }}
+      validate-renderer-variance-calibration: ${{ steps.scope.outputs.validate-renderer-variance-calibration }}
+      allow-skipped: ${{ steps.scope.outputs.allow-skipped }}
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          fetch-depth: 0
+      - id: scope
+        shell: python
+        run: |
+          import fnmatch
+          import json
+          import os
+          import subprocess
+          scopes = {'validate-editor-runtime-evidence': ['web/lib/scene-editor.ts', 'web/lib/scene-editor.test.ts', 'web/lib/scene-editor-history.ts', 'web/lib/scene-editor-history.test.ts', 'web/lib/mesh.ts', 'scripts/profile-editor-mutations.ts', 'profiles/runtime-profiler/editor-mutations.json', '.github/workflows/editor-runtime-evidence.yml', '.github/workflows/ci.yml'], 'validate-renderer-runtime-evidence': ['package.json', 'packages/renderer/**', 'crates/**', 'fixtures/imported-character/**', 'scripts/imported-character-browser-acceptance.ts', 'scripts/inspection-character-browser-acceptance.ts', 'scripts/bundle-character-browser-acceptance.ts', 'scripts/lib/gltf-resources-bundle.ts', 'web/app/renderer-performance/**', 'web/components/renderer-performance-canary.tsx', 'web/app/skeletal-animation/**', 'web/components/character-rig-lab*', 'web/components/skeletal-animation-*', 'web/lib/skeletal-animation-*', 'web/components/imported-skin-lab*', 'web/app/editor/**', 'web/components/scene-editor-lab*', 'web/lib/scene-editor-snapshot*', 'web/lib/character-*', 'web/lib/imported-skin*', 'scripts/character-browser-smoke.mjs', 'scripts/skeletal-inspection-browser-smoke.mjs', 'scripts/editor-snapshot-browser-smoke.mjs', 'scripts/renderer-presentation-smoke.mjs', 'scripts/sync-web-animation-fixtures.mjs', 'fixtures/catalog/khronos-simpleskin-embedded.*', 'fixtures/static-glb/**', 'scripts/static-glb-fixtures.mjs', 'profiles/runtime-profiler/renderer-browser.json', 'profiles/runtime-profiler/renderer-browser.mjs', '.github/workflows/renderer-runtime-evidence.yml', '.github/workflows/ci.yml'], 'validate-runtime-evidence': ['Cargo.toml', 'Cargo.lock', 'crates/**', 'examples/asset-tooling-scene-adapter/**', 'profiles/runtime-profiler/scene-export.json', 'scripts/generate-scene-export-profile.py', 'scripts/profile-scene-export.sh', '.github/workflows/runtime-evidence.yml', '.github/workflows/ci.yml'], 'validate-topology-renderer-runtime-evidence': ['package.json', 'web/lib/scene-editor-topology-persistent.ts', 'web/lib/scene-editor-topology-adjacency.ts', 'web/lib/scene-editor-history.ts', 'web/lib/topology-renderer-adapter.ts', 'web/app/topology-performance/**', 'web/components/topology-renderer-performance-canary.tsx', 'scripts/run-topology-renderer-canary.mjs', 'scripts/summarize-topology-browser-calibration.mjs', 'profiles/runtime-profiler/topology-renderer-browser.json', 'profiles/runtime-profiler/topology-renderer-browser.mjs', '.github/workflows/topology-renderer-runtime-evidence.yml', '.github/workflows/ci.yml'], 'validate-topology-runtime-evidence': ['web/lib/scene-editor-topology.ts', 'web/lib/scene-editor-topology-persistent.ts', 'web/lib/scene-editor-topology-adjacency.ts', 'web/lib/scene-editor-topology.test.ts', 'web/lib/scene-editor-topology-persistent.test.ts', 'web/lib/scene-editor-topology-adjacency.test.ts', 'web/lib/scene-editor-topology-history.test.ts', 'web/lib/scene-editor-history.ts', 'web/lib/scene-editor.ts', 'web/lib/mesh.ts', 'scripts/profile-editor-topology.ts', 'profiles/runtime-profiler/editor-topology.json', '.github/workflows/topology-runtime-evidence.yml', '.github/workflows/ci.yml'], 'validate-renderer-variance-calibration': ['package.json', 'bun.lock', 'packages/renderer/**', 'web/package.json', 'web/bun.lock', 'web/next.config.ts', 'web/app/layout.tsx', 'web/app/globals.css', 'web/app/renderer-performance/**', 'web/components/renderer-performance-canary.tsx', 'profiles/runtime-profiler/renderer-browser.json', 'profiles/runtime-profiler/renderer-browser.mjs', 'scripts/summarize_renderer_browser_variance.py', 'scripts/test_renderer_browser_variance.py', '.github/workflows/renderer-variance-calibration.yml', '.github/workflows/ci.yml']}
+          selected = {job: False for job in scopes}
+          if os.environ["GITHUB_EVENT_NAME"] == "pull_request":
+              with open(os.environ["GITHUB_EVENT_PATH"]) as source:
+                  pull_request = json.load(source)["pull_request"]
+              revision = pull_request["base"]["sha"] + "..." + pull_request["head"]["sha"]
+              paths = subprocess.check_output(["git", "diff", "--no-renames", "--name-only", "-z", revision]).decode().split("\0")
+              selected = {
+                  job: any(fnmatch.fnmatchcase(path, pattern) for path in paths for pattern in patterns)
+                  for job, patterns in scopes.items()
+              }
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              for job, active in selected.items():
+                  print(f"{job}={str(active).lower()}", file=output)
+              print(f"allow-skipped={json.dumps([job for job, active in selected.items() if not active])}", file=output)
+
   rust:
     runs-on: ubuntu-latest
     steps:
@@ -73,3 +110,59 @@ jobs:
       - run: bun run typecheck
       - run: bun test
       - run: bun run build
+
+  validate-editor-runtime-evidence:
+    needs: validation-scope
+    if: github.event_name == 'pull_request' && needs.validation-scope.outputs.validate-editor-runtime-evidence == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/editor-runtime-evidence.yml
+
+  validate-renderer-runtime-evidence:
+    needs: validation-scope
+    if: github.event_name == 'pull_request' && needs.validation-scope.outputs.validate-renderer-runtime-evidence == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/renderer-runtime-evidence.yml
+
+  validate-runtime-evidence:
+    needs: validation-scope
+    if: github.event_name == 'pull_request' && needs.validation-scope.outputs.validate-runtime-evidence == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/runtime-evidence.yml
+
+  validate-topology-renderer-runtime-evidence:
+    needs: validation-scope
+    if: github.event_name == 'pull_request' && needs.validation-scope.outputs.validate-topology-renderer-runtime-evidence == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/topology-renderer-runtime-evidence.yml
+
+  validate-topology-runtime-evidence:
+    needs: validation-scope
+    if: github.event_name == 'pull_request' && needs.validation-scope.outputs.validate-topology-runtime-evidence == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/topology-runtime-evidence.yml
+
+  validate-renderer-variance-calibration:
+    needs: validation-scope
+    if: github.event_name == 'pull_request' && needs.validation-scope.outputs.validate-renderer-variance-calibration == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/renderer-variance-calibration.yml
+
+  merge-ready:
+    name: merge-ready
+    if: ${{ always() }}
+    needs: ["rust", "catalog-avocado", "web", "validate-editor-runtime-evidence", "validate-renderer-runtime-evidence", "validate-runtime-evidence", "validate-topology-renderer-runtime-evidence", "validate-topology-runtime-evidence", "validate-renderer-variance-calibration", "validation-scope"]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: moritzbrantner/reusable-workflows/.github/actions/merge-ready@b0f25f241d76af2584dfc9e375084ff5c5cb97da
+        with:
+          needs: ${{ toJSON(needs) }}
+          required: '["rust", "catalog-avocado", "web", "validate-editor-runtime-evidence", "validate-renderer-runtime-evidence", "validate-runtime-evidence", "validate-topology-renderer-runtime-evidence", "validate-topology-runtime-evidence", "validate-renderer-variance-calibration", "validation-scope"]'
+          allow-skipped: ${{ needs.validation-scope.outputs.allow-skipped || '[]' }}
