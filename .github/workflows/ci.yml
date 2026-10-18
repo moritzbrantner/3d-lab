@@ -40,7 +40,7 @@ jobs:
               with open(os.environ["GITHUB_EVENT_PATH"]) as source:
                   pull_request = json.load(source)["pull_request"]
               revision = pull_request["base"]["sha"] + "..." + pull_request["head"]["sha"]
-              paths = subprocess.check_output(["git", "diff", "--name-only", "-z", revision]).decode().split("\0")
+              paths = subprocess.check_output(["git", "diff", "--no-renames", "--name-only", "-z", revision]).decode().split("\0")
               selected = {
                   job: any(fnmatch.fnmatchcase(path, pattern) for path in paths for pattern in patterns)
                   for job, patterns in scopes.items()
