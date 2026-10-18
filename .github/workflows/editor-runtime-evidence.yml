@@ -1,20 +1,10 @@
 name: Editor mutation runtime evidence
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - "web/lib/scene-editor.ts"
-      - "web/lib/scene-editor.test.ts"
-      - "web/lib/scene-editor-history.ts"
-      - "web/lib/scene-editor-history.test.ts"
-      - "web/lib/mesh.ts"
-      - "scripts/profile-editor-mutations.ts"
-      - "profiles/runtime-profiler/editor-mutations.json"
-      - ".github/workflows/editor-runtime-evidence.yml"
+  workflow_call:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  group: editor-runtime-evidence-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 permissions:

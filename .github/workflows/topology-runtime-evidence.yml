@@ -1,28 +1,13 @@
 name: Editor topology runtime evidence
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - "web/lib/scene-editor-topology.ts"
-      - "web/lib/scene-editor-topology-persistent.ts"
-      - "web/lib/scene-editor-topology-adjacency.ts"
-      - "web/lib/scene-editor-topology.test.ts"
-      - "web/lib/scene-editor-topology-persistent.test.ts"
-      - "web/lib/scene-editor-topology-adjacency.test.ts"
-      - "web/lib/scene-editor-topology-history.test.ts"
-      - "web/lib/scene-editor-history.ts"
-      - "web/lib/scene-editor.ts"
-      - "web/lib/mesh.ts"
-      - "scripts/profile-editor-topology.ts"
-      - "profiles/runtime-profiler/editor-topology.json"
-      - ".github/workflows/topology-runtime-evidence.yml"
+  workflow_call:
   workflow_dispatch:
   schedule:
     - cron: "47 4 * * 1"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: topology-runtime-evidence-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:

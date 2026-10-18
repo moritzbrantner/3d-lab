@@ -1,20 +1,10 @@
 name: Runtime evidence
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "crates/**"
-      - "examples/asset-tooling-scene-adapter/**"
-      - "profiles/runtime-profiler/scene-export.json"
-      - "scripts/generate-scene-export-profile.py"
-      - "scripts/profile-scene-export.sh"
-      - ".github/workflows/runtime-evidence.yml"
+  workflow_call:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  group: runtime-evidence-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 permissions:
