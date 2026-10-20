@@ -503,6 +503,9 @@ export function createThreeSceneRenderer(canvas, options = {}) {
   }
 
   return {
+    configureTextureLoader(loader) {
+      loader.detectSupport(renderer)
+    },
     setSize(width, height, devicePixelRatio = 1) {
       if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
         throw new ThreeRendererContractError("renderer size must be finite and positive")
