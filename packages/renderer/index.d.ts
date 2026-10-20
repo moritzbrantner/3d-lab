@@ -354,6 +354,9 @@ export type ThreeSceneRendererOptions = {
 }
 
 export type ThreeSceneRenderer = {
+  /** Configure an off-the-shelf texture loader against the same renderer that draws its textures. */
+  configureTextureLoader(loader: {detectSupport(renderer: import("three").WebGLRenderer): unknown}): void
+
   setSize(width: number, height: number, devicePixelRatio?: number): void
   /**
    * Re-render the currently submitted scene with a new camera only. It redraws the last

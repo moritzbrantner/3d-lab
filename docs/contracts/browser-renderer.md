@@ -259,3 +259,14 @@ Evidence: `bun test packages/renderer/acceptance/inspection-character.test.ts` a
 Chromium script `bun scripts/inspection-character-browser-acceptance.ts [OUTPUT_DIR]`
 (run by the renderer runtime evidence workflow after building the WASM bridge); see
 [`docs/specs/inspection-character-acceptance.md`](../specs/inspection-character-acceptance.md).
+
+
+## External texture loaders
+
+`configureTextureLoader(loader)` delegates `loader.detectSupport` to the actual
+Three.js WebGLRenderer used by this adapter. Consumers can configure Three.js's
+`KTX2Loader` and pass it to their ordinary GLTFLoader without creating a second
+renderer or duplicating GPU capability detection. Callers retain loader ownership,
+transcoder paths, workers and disposal; this method exposes no renderer handle and
+adds no decoder or asset pipeline. Existing frame/material APIs are unchanged.
+MMORPG #272 consumes this hook for the rolling Ranger's Basis textures.
