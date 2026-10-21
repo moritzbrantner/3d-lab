@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 1,
+  "profile": "repository-foundation-v1",
+  "tiers": {
+    "fast": [
+      "format:check",
+      "lint",
+      "typecheck",
+      "test"
+    ],
+    "full": [
+      "format:check",
+      "lint",
+      "typecheck",
+      "test",
+      "build"
+    ],
+    "rust": [
+      "format:check",
+      "lint",
+      "test",
+      "build"
+    ],
+    "web": [
+      "typecheck",
+      "test",
+      "build"
+    ],
+    "renderer": [
+      "test"
+    ]
+  },
+  "requiredCapabilities": [
+    "format:check",
+    "lint",
+    "typecheck",
+    "test",
+    "build"
+  ],
+  "capabilityCommands": {
+    "3d-lab": {
+      "format:check": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--check"
+      ],
+      "lint": [
+        "cargo",
+        "clippy",
+        "--all-targets",
+        "--all-features",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "test": [
+        "cargo",
+        "test",
+        "--all-features"
+      ],
+      "build": [
+        "cargo",
+        "build",
+        "--all-features"
+      ]
+    },
+    "@moritzbrantner/three-d-renderer": {
+      "test": [
+        "bun",
+        "run",
+        "test"
+      ]
+    },
+    "3d-lab-web": {
+      "typecheck": [
+        "bun",
+        "run",
+        "typecheck"
+      ],
+      "test": [
+        "bun",
+        "run",
+        "test"
+      ],
+      "build": [
+        "bun",
+        "run",
+        "build"
+      ]
+    }
+  }
+}
