@@ -1,5 +1,8 @@
 //! Thin retained-resource adapter; all clip, hierarchy and playback semantics stay in Rust.
+mod ik;
+use ik::IkLayers;
 use std::rc::Rc;
+use three_d_animation::ik::{IkRig, IkWorkspace};
 use three_d_animation::{ClipBlendWorkspace, Transform};
 use three_d_formats::{ImportedCharacter, load_gltf_imported_character};
 use three_d_playback::{CrossFade, PlaybackClock, TransitionClock, TransitionCurve};
@@ -29,21 +32,39 @@ impl CharacterAsset {
             "clips": self.data.rig.animations().iter().map(|c| serde_json::json!({"name":c.name(),"duration":c.duration()})).collect::<Vec<_>>() }).to_string()
     }
     pub fn create_instance(&self) -> CharacterInstance {
-        let pose = self.data.nodes.iter().map(|n| n.local).collect();
+        let pose: Vec<Transform> = self.data.nodes.iter().map(|n| n.local).collect();
+        // Canonical nodes are ordered parents-first by the importer.
+        let rig = IkRig::new(self.data.nodes.iter().map(|n| n.parent).collect())
+            .expect("imported canonical nodes are parent-ordered");
+        let mut workspace = IkWorkspace::new(pose.len());
+        let mut corrected = pose.clone();
+        workspace
+            .solve(&rig, &pose, &[], &mut corrected)
+            .expect("rest pose is finite");
         CharacterInstance {
             data: Rc::clone(&self.data),
-            pose,
+            base: pose,
+            pose: corrected,
             playback: None,
             fade: None,
+            rig,
+            ik: IkLayers::default(),
+            workspace,
         }
     }
 }
 #[wasm_bindgen]
 pub struct CharacterInstance {
     data: Rc<ImportedCharacter>,
+    /// Sampled clip pose; never modified by IK.
+    base: Vec<Transform>,
+    /// `base` with the caller's IK layers applied; what the renderer draws.
     pose: Vec<Transform>,
     playback: Option<(usize, PlaybackClock)>,
     fade: Option<(usize, usize, CrossFade)>,
+    rig: IkRig,
+    ik: IkLayers,
+    workspace: IkWorkspace,
 }
 impl CharacterInstance {
     fn clip(&self, name: &str) -> Result<usize, JsValue> {
@@ -84,6 +105,26 @@ impl CharacterInstance {
         }
         Ok(pose)
     }
+    /// Apply `layers` over `base` into a fresh pose; the instance is unchanged on error.
+    fn corrected(
+        &mut self,
+        base: &[Transform],
+        layers: &IkLayers,
+    ) -> Result<Vec<Transform>, JsValue> {
+        let mut pose = base.to_vec();
+        self.workspace
+            .solve(&self.rig, base, &layers.layers(), &mut pose)
+            .map_err(error)?;
+        Ok(pose)
+    }
+    fn commit(&mut self, base: Vec<Transform>) -> Result<(), JsValue> {
+        let ik = std::mem::take(&mut self.ik);
+        let pose = self.corrected(&base, &ik);
+        self.ik = ik;
+        self.pose = pose?;
+        self.base = base;
+        Ok(())
+    }
 }
 #[wasm_bindgen]
 impl CharacterInstance {
@@ -93,7 +134,7 @@ impl CharacterInstance {
             PlaybackClock::from_clip(&self.data.rig.animations()[index]).map_err(error)?;
         clock.advance(seconds).map_err(error)?;
         let pose = self.sample(Some((index, clock)), None)?;
-        self.pose = pose;
+        self.commit(pose)?;
         self.playback = Some((index, clock));
         self.fade = None;
         Ok(())
@@ -127,10 +168,41 @@ impl CharacterInstance {
             return Err(error("seek a clip before advancing"));
         }
         let pose = self.sample(playback, fade)?;
-        self.pose = pose;
+        self.commit(pose)?;
         self.playback = playback;
         self.fade = fade;
         Ok(())
+    }
+    /// Replace the IK layers applied over every sampled pose (JSON array; `[]` clears).
+    /// Joints are named; targets are in character (scene root) space. Invalid layers throw
+    /// and leave the instance unchanged.
+    pub fn set_ik(&mut self, layers_json: &str) -> Result<(), JsValue> {
+        let layers =
+            IkLayers::parse(layers_json, &self.data.node_names, &self.rig).map_err(error)?;
+        let base = std::mem::take(&mut self.base);
+        let pose = self.corrected(&base, &layers);
+        self.base = base;
+        self.pose = pose?;
+        self.ik = layers;
+        Ok(())
+    }
+    /// Per-layer `{status, residual}` of the most recent solve.
+    pub fn ik_report_json(&self) -> String {
+        ik::report_json(&self.workspace)
+    }
+    /// Character-space position of a named joint in the current corrected pose.
+    pub fn joint_position(&self, name: &str) -> Result<Vec<f32>, JsValue> {
+        let index = self
+            .data
+            .node_names
+            .iter()
+            .position(|n| n == name)
+            .ok_or_else(|| error(format!("character has no joint {name}")))?;
+        let p = self
+            .workspace
+            .world_position(index)
+            .ok_or_else(|| error("joint has no solved position"))?;
+        Ok(vec![p.x, p.y, p.z])
     }
     pub fn local_matrices(&self) -> Vec<f32> {
         self.pose.iter().flat_map(|p| p.matrix().elements).collect()
