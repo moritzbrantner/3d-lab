@@ -15,7 +15,9 @@ import {
   persistentTriangleAt,
 } from "@/lib/scene-editor-topology-persistent";
 import {
+  addTopologyRendererWork,
   createTopologyGeometryAdapter,
+  emptyTopologyRendererWork,
   type TopologyGeometryAdapter,
   type TopologyRendererWorkObservations,
 } from "@/lib/topology-renderer-adapter";
@@ -49,35 +51,6 @@ type Runtime = {
   adapter: TopologyGeometryAdapter;
   material: THREE.MeshStandardMaterial;
 };
-
-function emptyWork(): TopologyRendererWorkObservations {
-  return {
-    fullMaterializationCount: 0,
-    materializedVertexReferences: 0,
-    materializedIndexValues: 0,
-    geometryCreateCount: 0,
-    geometryDisposeCount: 0,
-    positionValuesUploaded: 0,
-    indexValuesUploaded: 0,
-    localizedGeometryUpdateCount: 0,
-  };
-}
-
-function addWork(
-  totals: TopologyRendererWorkObservations,
-  current: TopologyRendererWorkObservations,
-): TopologyRendererWorkObservations {
-  return {
-    fullMaterializationCount: totals.fullMaterializationCount + current.fullMaterializationCount,
-    materializedVertexReferences: totals.materializedVertexReferences + current.materializedVertexReferences,
-    materializedIndexValues: totals.materializedIndexValues + current.materializedIndexValues,
-    geometryCreateCount: totals.geometryCreateCount + current.geometryCreateCount,
-    geometryDisposeCount: totals.geometryDisposeCount + current.geometryDisposeCount,
-    positionValuesUploaded: totals.positionValuesUploaded + current.positionValuesUploaded,
-    indexValuesUploaded: totals.indexValuesUploaded + current.indexValuesUploaded,
-    localizedGeometryUpdateCount: totals.localizedGeometryUpdateCount + current.localizedGeometryUpdateCount,
-  };
-}
 
 function createScene(): EditorScene {
   const node: EditorNode = {
@@ -222,11 +195,11 @@ export function TopologyRendererPerformanceCanary() {
     setState(running);
 
     try {
-      let totals = emptyWork();
+      let totals = emptyTopologyRendererWork();
       const initialLog = createEditorCommandLog(editorScene);
       const finalLog = applyDeterministicWorkload(initialLog, (log) => {
         const topology = currentEditorTopology(log, MESH_NODE_ID);
-        totals = addWork(totals, runtime.adapter.update(topology));
+        totals = addTopologyRendererWork(totals, runtime.adapter.update(topology));
         runtime.renderer.render(runtime.scene, runtime.camera);
       });
       const finalTopology = currentEditorTopology(finalLog, MESH_NODE_ID);
@@ -261,9 +234,10 @@ export function TopologyRendererPerformanceCanary() {
     <section aria-labelledby="topology-renderer-performance-heading">
       <h2 id="topology-renderer-performance-heading">Topology renderer performance canary</h2>
       <p>
-        The canary performs {OPERATION_COUNT} deterministic topology edits and runs the same materialize/rebuild/render boundary
-        used by the current topology editor after every edit. Work counters distinguish semantic topology work from renderer
-        materialization and buffer replacement.
+        The canary performs {OPERATION_COUNT} deterministic topology edits and renders each one through the same localized
+        renderer adapter as the topology editor. Counters show uploaded position, normal and index values, upload ranges,
+        recomputed normals and buffer replacements; a regression to whole-mesh materialization or replacement shows up as
+        nonzero materialization, full-preparation or geometry-creation counts.
       </p>
       <button type="button" onClick={run} disabled={state.status === "booting" || state.status === "running"}>
         Run topology renderer canary
