@@ -77,6 +77,38 @@ export class CharacterInstance {
         }
     }
     /**
+     * Per-layer `{status, residual}` of the most recent solve.
+     * @returns {string}
+     */
+    ik_report_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.characterinstance_ik_report_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Character-space position of a named joint in the current corrected pose.
+     * @param {string} name
+     * @returns {Float32Array}
+     */
+    joint_position(name) {
+        const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.characterinstance_joint_position(this.__wbg_ptr, ptr0, len0);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v2 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v2;
+    }
+    /**
      * @returns {Float32Array}
      */
     local_matrices() {
@@ -93,6 +125,20 @@ export class CharacterInstance {
         const ptr0 = passStringToWasm0(clip, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
         const ret = wasm.characterinstance_seek(this.__wbg_ptr, ptr0, len0, seconds);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * Replace the IK layers applied over every sampled pose (JSON array; `[]` clears).
+     * Joints are named; targets are in character (scene root) space. Invalid layers throw
+     * and leave the instance unchanged.
+     * @param {string} layers_json
+     */
+    set_ik(layers_json) {
+        const ptr0 = passStringToWasm0(layers_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.characterinstance_set_ik(this.__wbg_ptr, ptr0, len0);
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
         }

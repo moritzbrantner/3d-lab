@@ -73,7 +73,7 @@
 - [ ] Add authored contact/plant metadata, world-space foot locking, pelvis/body-height correction, and surface-normal alignment for stable walking on slopes, stairs, and uneven ground.
 - [ ] Add predictive swing/landing targets and bounded motion-warping primitives for interactions, attacks, vaults, and other target-relative animation while keeping authoritative movement outside the animation runtime.
 - [ ] Generalize proven constraint primitives to hand grips, look-at/aim constraints, quadruped limbs, and longer chains only after the two-bone/contact contracts are stable.
-- [ ] Add an interactive layered-IK browser lab (deferred from #65 until the Rust IK semantics are reachable from the web lab without a parallel TypeScript solver).
+- [x] Add an interactive layered-IK browser lab driving the Rust IK through the character WASM bridge (`setIk`; skeletal-animation lab, #65).
 - [ ] Add an interactive uneven-ground/stair acceptance lab plus deterministic pose/constraint fixtures so render adapters can share the same semantics.
 
 ### Slice 8 — automatic rigged asset preparation

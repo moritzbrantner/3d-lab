@@ -1,5 +1,6 @@
 import type {Object3D} from "three"
 import type {RendererCamera, ThreeSceneRenderer} from "./index.js"
+import type {CharacterIkControls} from "./imported-character.js"
 /** Pin of the original source bytes: lowercase hex SHA-256 and exact byte length. */
 export interface CharacterSourcePin {
   readonly sha256: string
@@ -11,7 +12,8 @@ export interface InspectionCharacterClip {
   /** Authored glTF name; absent for unnamed clips, which are addressed by index. */
   readonly name?: string
 }
-export interface InspectionCharacterInstance {
+export type {IkLayer, IkLimbLayer, IkLookAtLayer, IkLayerReport, CharacterIkControls} from "./imported-character.js"
+export interface InspectionCharacterInstance extends CharacterIkControls {
   readonly root: Object3D
   /** A number seeks the clip at that index; a string seeks by authored name. Invalid clips throw and leave the pose unchanged. */
   seek(clip: string | number, seconds: number): void

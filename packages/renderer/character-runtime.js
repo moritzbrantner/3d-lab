@@ -108,6 +108,19 @@ export async function loadCharacterRuntime(bytes, fail) {
         seek: (clip, seconds) => update("seek", clip, seconds),
         transition: (clip, seconds) => update("transition", clip, seconds),
         advance: seconds => update("advance", seconds),
+        /** Rust layered IK over every sampled pose; `[]` clears. Invalid layers throw, pose unchanged. */
+        setIk: layers => {
+          if (!Array.isArray(layers)) fail("IK layers must be an array")
+          update("set_ik", JSON.stringify(layers))
+        },
+        ikReport() {
+          if (instanceDisposed || disposed) fail("instance disposed")
+          return JSON.parse(pose.ik_report_json())
+        },
+        jointPosition(name) {
+          if (instanceDisposed || disposed) fail("instance disposed")
+          return [...pose.joint_position(name)]
+        },
         dispose() { if (instanceDisposed) return; for (const attachment of [...attachments]) attachment.detach(); instanceDisposed = true; root.removeFromParent(); pose.free(); instances.delete(instance) },
       }
       apply()
