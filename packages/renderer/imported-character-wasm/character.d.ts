@@ -14,8 +14,22 @@ export class CharacterInstance {
     free(): void;
     [Symbol.dispose](): void;
     advance(seconds: number): void;
+    /**
+     * Per-layer `{status, residual}` of the most recent solve.
+     */
+    ik_report_json(): string;
+    /**
+     * Character-space position of a named joint in the current corrected pose.
+     */
+    joint_position(name: string): Float32Array;
     local_matrices(): Float32Array;
     seek(clip: string, seconds: number): void;
+    /**
+     * Replace the IK layers applied over every sampled pose (JSON array; `[]` clears).
+     * Joints are named; targets are in character (scene root) space. Invalid layers throw
+     * and leave the instance unchanged.
+     */
+    set_ik(layers_json: string): void;
     transition(clip: string, seconds: number): void;
 }
 
@@ -29,8 +43,11 @@ export interface InitOutput {
     readonly characterasset_metadata_json: (a: number) => [number, number];
     readonly characterasset_new: (a: number, b: number) => [number, number, number];
     readonly characterinstance_advance: (a: number, b: number) => [number, number];
+    readonly characterinstance_ik_report_json: (a: number) => [number, number];
+    readonly characterinstance_joint_position: (a: number, b: number, c: number) => [number, number, number, number];
     readonly characterinstance_local_matrices: (a: number) => [number, number];
     readonly characterinstance_seek: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly characterinstance_set_ik: (a: number, b: number, c: number) => [number, number];
     readonly characterinstance_transition: (a: number, b: number, c: number, d: number) => [number, number];
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;

@@ -22,3 +22,7 @@ if (digest !== manifest.source.sha256) {
 await mkdir(dirname(destination), { recursive: true });
 await copyFile(source, destination);
 console.log(`Synced canonical Khronos SimpleSkin fixture (${bytes.byteLength} bytes, ${digest.slice(0, 12)}…)`);
+
+// RiggedFigure for the layered-IK lab; the lab verifies the same pin before parsing.
+const figure = resolve(root, "fixtures/imported-character/RiggedFigure.source.glb");
+await copyFile(figure, resolve(root, "web/public/fixtures/rigged-figure.glb"));

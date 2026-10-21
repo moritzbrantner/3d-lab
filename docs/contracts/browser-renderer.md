@@ -220,6 +220,21 @@ unsupported.
 
 The renderer composes only the given transforms. Which item goes to which joint, socket and frame (loadouts, handedness, stowed places, multi-grip items) is consumer data, so new items and places need no renderer change.
 
+### Optional layered IK
+
+Character instances (imported and inspection-only) expose the Rust `three_d_animation::ik`
+solver (#65): `setIk(layers)`, `ikReport()` and `jointPosition(joint)`. Layers are
+`{kind: "limb", joints: [root, mid, tip], target, pole?, maxReach?, orientation? | align?, weight?}`
+or `{kind: "lookAt", joints: [[name, weight], …], forward, target, maxAngle, weight?}`, solved in
+order (≤16), with named joints and character-space (scene root, before `modelMatrix`)
+positions. The bridge keeps the sampled clip pose and applies the layers over it after every
+`seek`/`transition`/`advance`; clips are never modified and `[]` restores the sampled pose.
+Weight 0 is bit-identical to the sampled pose. Invalid layers or a failing solve throw and keep
+the previous pose and layers. `ikReport()` gives `{status: "skipped" | "reached" | "clamped",
+residual}` per layer. Targets, weights and fallbacks are consumer data: no ground, physics or
+target-selection query happens here. The `skeletal-animation` lab drives the same API on
+RiggedFigure with exact inputs, a gizmo and marker picking.
+
 ## Inspection-only characters
 
 `./inspection-character` exposes `adaptPinnedCharacterSource(bytes,{sha256,byteLength},{resources?})`
