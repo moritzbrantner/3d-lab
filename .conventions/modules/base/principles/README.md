@@ -38,7 +38,14 @@
 ## PRINCIPLE-007 — Keep capabilities replaceable; internalize with evidence
 
 - External libraries, services, processes, and hosted infrastructure are valid bootstrap implementations; avoid unnecessary domain coupling to a particular implementation.
+- Before adding significant generic capability, prefer suitable maintained ecosystem dependencies or an existing internal owner over a new implementation. Evaluate fit, maintenance, security, portability, and lifecycle cost rather than treating internal code as inherently preferable.
+- Choose the smallest suitable integration surface: a runtime library for in-process capabilities, an API or CLI for service/process interaction, or MCP when an agent needs tool discovery and invocation. Do not introduce MCP or an adapter layer merely to wrap a working direct dependency.
+- Preserve repository-local first-party goals and ownership boundaries; reuse decisions must not silently override an explicit domain or engine strategy.
+- Keep the mature working implementation on a product's delivery path while an internal candidate is experimental or missing required capabilities; do not make consumer delivery wait for speculative foundation work. Respect explicit local architecture and authority decisions.
+- Treat three independently demonstrated consumers of the same capability as a default trigger to *evaluate* a focused internal alternative, not as permission or an obligation to build it. Fewer consumers may justify investigation for a concrete constraint or measured cost.
 - Internalize only the capability actually consumed, and only when evidence supports a concrete benefit such as fewer expensive boundaries, lower latency or resource use, a smaller dependency surface, stronger determinism or portability, or useful cross-project reuse.
+- Scope candidates to the operations and behavior actual consumers use; do not recreate the upstream product. Promote only proven slices, and retain the external reference or fallback where it remains useful.
+- Track integration role and readiness from repository-owned source, manifest, tests, and representative acceptance evidence; distinguish active production use, test/reference use, experimental candidates, and planned integrations. Derive fleet-wide usage from these sources instead of maintaining duplicate manual dependency inventories.
 - Prefer staged replacement: external implementation → explicit capability contract → native candidate → differential/parity validation → representative benchmarks → real consumer → optional default switch or removal.
 - Reimplementation is not justified by implementation cost alone; retain mature external implementations when a replacement has no demonstrated advantage.
 - See also: [ADR 0001 — Capability internalization](../docs/adr/0001-capability-internalization.md).

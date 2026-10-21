@@ -18,8 +18,8 @@
     "ui"
   ],
   "files": {
-    "modules/base/principles/README.md": "3d58fb814c77122520a9140a1f81a0e4b6f53276f404b25d3bb0d364ddb29c31",
-    "modules/base/docs/adr/0001-capability-internalization.md": "43e98e05265dd48f1f559cc428ba037e3da5530af687237764900a27471ab30e",
+    "modules/base/principles/README.md": "c1b731d9e2e907df3c1823d34bacefe49de2613b5ded77599f10ad295e7e3fa0",
+    "modules/base/docs/adr/0001-capability-internalization.md": "0a23a3ac31d6f7a8a221b9ecba4428defadb82affbac3433a988a569f3a05d1b",
     "modules/base/conventions/agents/README.md": "75b0cc474a865d7af8a99f60dc88ac49bc9df61bff2bd0a51093d57741906efc",
     "modules/base/conventions/codebase-design/README.md": "6743ceffc083283edb53232ced06aebac58fc0e71db0d042cfb35bb140c68a67",
     "modules/base/conventions/repository/README.md": "593e058a2569c6e7acdcd7e2212a5571b9cfa8a94f02fdd3d0674bfc8439f794",
