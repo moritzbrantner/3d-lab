@@ -18,7 +18,51 @@ export interface ImportedCharacterAttachment {
   readonly frame: string
   detach(): void
 }
-export interface ImportedCharacterInstance {
+type Vec3 = readonly [number, number, number]
+/**
+ * Two-bone limb correction (`three_d_animation::ik::LimbGoal`). Joints are named root, mid,
+ * tip; positions are character (scene root) space. `orientation` (x,y,z,w) sets a hand grip;
+ * `align` turns the tip's local axis toward a direction (foot up to a ground normal).
+ */
+export interface IkLimbLayer {
+  readonly kind: "limb"
+  readonly joints: readonly [string, string, string]
+  readonly target: Vec3
+  readonly pole?: Vec3
+  /** Usable fraction of the chain length, (0, 1]; default 1. */
+  readonly maxReach?: number
+  readonly orientation?: readonly [number, number, number, number]
+  readonly align?: {readonly localAxis: Vec3; readonly direction: Vec3}
+  /** Layer weight in [0, 1]; default 1. Zero leaves the pose untouched. */
+  readonly weight?: number
+}
+/** Look-at over ≤4 ancestor→aim joints with per-joint weights (`LookAtGoal`). */
+export interface IkLookAtLayer {
+  readonly kind: "lookAt"
+  readonly joints: readonly (readonly [string, number])[]
+  /** Aim axis in the last joint's local space. */
+  readonly forward: Vec3
+  readonly target: Vec3
+  /** Maximum deviation from the sampled aim, radians. */
+  readonly maxAngle: number
+  readonly weight?: number
+}
+export type IkLayer = IkLimbLayer | IkLookAtLayer
+export interface IkLayerReport {
+  readonly status: "skipped" | "reached" | "clamped"
+  /** Tip-to-target distance (limb) or remaining aim angle in radians (lookAt). */
+  readonly residual: number
+}
+/** Optional Rust layered IK applied over every sampled pose; source clips are never changed. */
+export interface CharacterIkControls {
+  /** Replace the layers (solved in order, ≤16); `[]` clears. Invalid layers throw and keep the pose. */
+  setIk(layers: readonly IkLayer[]): void
+  /** Outcome of each layer in the most recent solve. */
+  ikReport(): readonly IkLayerReport[]
+  /** Character-space position of a named joint in the current corrected pose. */
+  jointPosition(joint: string): [number, number, number]
+}
+export interface ImportedCharacterInstance extends CharacterIkControls {
   readonly root: Object3D
   /**
    * Parent an item instance under the named joint so the item's `frame` (default `grip`) lands

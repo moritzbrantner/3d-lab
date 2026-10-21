@@ -92,6 +92,9 @@ export async function adaptPinnedCharacterSource(source, pin, options = {}) {
         root: instance.root,
         seek: (clip, seconds) => instance.seek(clipId(clip), seconds),
         advance: seconds => instance.advance(seconds),
+        setIk: layers => instance.setIk(layers),
+        ikReport: () => instance.ikReport(),
+        jointPosition: name => instance.jointPosition(name),
         dispose: () => instance.dispose(),
       })
     },
