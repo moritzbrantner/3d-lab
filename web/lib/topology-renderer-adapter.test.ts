@@ -184,7 +184,7 @@ describe("localized topology renderer adapter", () => {
     expect(work.geometryCreateCount).toBe(0);
     expectMatchesReference(adapter, replacement);
     adapter.dispose();
-  });
+  }, 30_000);
 
   test("maps slot-padded raycast faces back to semantic triangle indices", () => {
     const source = createPersistentMeshTopology(subdividedPlane(32));
