@@ -9,10 +9,13 @@ wait on this; asset-tooling Atlas 7.1.1 keeps 3d-lab's character runtime histori
 
 ## Identities
 
-- Character: asset-tooling release
-  [`humanoid-ranger-male-v8`](https://github.com/moritzbrantner/asset-tooling/releases/tag/humanoid-ranger-male-v8)
-  (`humanoid.ranger.male.tar`, built from asset-tooling `4552b4e`), `gltf-resources-v1`
-  bundle entries `humanoid.ranger.male`, `equipment.sword.arming`, `equipment.shield.heater`
+- Character: the rolling asset-tooling release
+  [`humanoid-ranger-male`](https://github.com/moritzbrantner/asset-tooling/releases/tag/humanoid-ranger-male)
+  (Atlas Decision 7.1.5; assets are replaced in place). Last run on its
+  `humanoid.ranger.male.tar` uploaded 2026-10-18 (sha256 `f883d262…341897`, built from
+  asset-tooling `3748069`; `export.ref.json` bundle sha256 `3c2c5d06…513c58`). That build
+  predates asset-tooling #340 (`humanoid-sockets-v2`, `humanoid-item-v1`, left-handed
+  sockets). `gltf-resources-v1` bundle entries `humanoid.ranger.male`, `equipment.sword.arming`, `equipment.shield.heater`
   and the entry's `humanoid-sockets` / `humanoid-clips` attachments, used as supplied.
 - Reference: three.js r185 `GLTFLoader`, `AnimationMixer`, `SkeletonUtils.clone`; items are
   parented under the socket joint so their `grip` node lands on the socket transform.
@@ -22,11 +25,14 @@ wait on this; asset-tooling Atlas 7.1.1 keeps 3d-lab's character runtime histori
 ## Rerun
 
 ```sh
-gh release download humanoid-ranger-male-v8 -R moritzbrantner/asset-tooling -p humanoid.ranger.male.tar -D target
+gh release download humanoid-ranger-male -R moritzbrantner/asset-tooling -p humanoid.ranger.male.tar -p export.ref.json -D target --clobber
 bun scripts/ranger-three-reference.ts target/humanoid.ranger.male.tar
 ```
 
 Manual/local only; routine CI does not fetch the release and the bundle is not committed.
+The release changes in place, so keep a local copy of the tar when a fixed input is needed;
+`reference.json` records its sha256. The run uses the review tar (PNG textures, no meshopt);
+the release's per-entry KTX2/meshopt downloads are not exercised.
 Output in `target/ranger-three-reference/`: `reference.json` (joint and socket world
 matrices, 16 deformed vertices across four skinned meshes, clip durations, material
 summaries, numeric differences) and `screenshots/<pose>.png` (same camera at about 6 m,
@@ -39,11 +45,11 @@ rest; `Idle_Loop` 0.5 s; `Walk_Loop` 0, ¼, ½, ¾ of its 1.3333 s; `Sword_Regul
 `Idle_Shield_Loop` 0.5 s. Arming sword on `hand_r.weapon`, heater shield on `hand_l.shield`
 in every pose.
 
-## Observed (2026-10-17, Chromium/SwiftShader)
+## Observed (2026-10-21, rolling tar above, Chromium/SwiftShader)
 
 | Capability | Candidate | Observed difference vs three.js |
 | --- | --- | --- |
-| Bundle load (2 skins, 12 meshes, 13 textures, 43 clips) | supported | clip names and durations identical for all 43 clips |
+| Bundle load (default entry: 2 skins, 12 meshes, 13 textures, 52 clips) | supported | clip names and durations identical for all 52 clips |
 | Joint world transforms (65 joints, 8 poses) | supported | max 9.8e-7 m, 8.9e-5° (`Sword_Regular_C`) |
 | Socket and attached `grip` placement (both sockets, 8 poses) | supported | max 8.3e-7 m, 8.3e-5° |
 | Deformed vertices (16 per pose) | supported | max 5.8e-7 m |
@@ -68,5 +74,5 @@ No tested candidate operation was `unsupported`.
 
 Software rendering (SwiftShader) only; no GPU or consumer gameplay camera. Transitions,
 `advance`, clip end clamping, other clips/sockets and the bow/quiver/arrow items are not
-compared. Vertex samples are four fixed indices per mesh, not full-mesh deformation.
+compared; only the `default` entry runs, not the outfit, Light-skin, LOD or hair entries. Vertex samples are four fixed indices per mesh, not full-mesh deformation.
 Screenshots are for side-by-side inspection; no pixel comparison or threshold is applied.
