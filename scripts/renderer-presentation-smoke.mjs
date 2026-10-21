@@ -62,6 +62,18 @@ page.on("console", (message) => {
 });
 await page.setContent("<!doctype html><body></body>");
 await page.addScriptTag({ content: bundle });
+// Count WebGL buffer uploads independently of the renderer's own observations.
+await page.evaluate(() => {
+  window.__glBufferUploads = 0;
+  const prototype = WebGL2RenderingContext.prototype;
+  for (const name of ["bufferData", "bufferSubData"]) {
+    const original = prototype[name];
+    prototype[name] = function (...args) {
+      window.__glBufferUploads += 1;
+      return original.apply(this, args);
+    };
+  }
+});
 
 /** Render frames with one renderer and return RGBA pixels plus work observations per frame. */
 async function draw(options, frames) {
@@ -87,10 +99,12 @@ async function draw(options, frames) {
               },
             }
           : frame;
+        const uploadsBefore = window.__glBufferUploads;
         const observations = frame.cameraOnly ? renderer.renderCamera(frame.camera) : renderer.render(prepared);
+        const glBufferUploads = window.__glBufferUploads - uploadsBefore;
         const pixels = new Uint8Array(size * size * 4);
         gl.readPixels(0, 0, size, size, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-        return { pixels: Array.from(pixels), observations };
+        return { pixels: Array.from(pixels), observations, glBufferUploads };
       });
       renderer.dispose();
       gl.getExtension("WEBGL_lose_context")?.loseContext();
@@ -610,6 +624,83 @@ try {
     rock: rockPixel,
   };
   checks.push("static GLB assets adapt in Chromium, render, and reuse geometry/materials across placements and transform-only frames");
+
+  // Retained-render operation contract (#103): over N distinct static meshes plus one revisioned
+  // instance batch, a camera move (through render or renderCamera) and a one-node transform
+  // create, evict and upload nothing, independent of N. Loading or replacing the scene is the
+  // declared linear operation. WebGL buffer uploads are counted on the context itself.
+  const retainedCamera = camera([0, 14, 12], [0, 0, 0]);
+  const retainedMoved = camera([3, 12, 13], [0, 0, 0]);
+  const retainedOrbit = camera([-4, 13, 11], [0, 0, 0]);
+  const retainedNodes = (count, generation) =>
+    Array.from({ length: count }, (_, index) => {
+      const x = (index % 16) - 7.5;
+      const z = Math.floor(index / 16) - 3.5;
+      return {
+        id: `static-${index}`,
+        transform: { translation: [x * 0.8, 0, z * 0.8] },
+        color: "#a0b0c0",
+        geometry: {
+          kind: "mesh",
+          resourceKey: `retained:${generation}:${index}`,
+          positions: [[-0.3, 0, -0.3], [0.3, 0, -0.3], [0, 0.4 + (index % 5) * 0.05, 0.3]],
+          indices: [0, 1, 2],
+        },
+      };
+    });
+  const retainedBatch = [
+    {
+      id: "retained-props",
+      revision: "props-v1",
+      color: "#c0a080",
+      geometry: { kind: "box", size: [0.2, 0.2, 0.2] },
+      instances: [-2, 0, 2].map((x) => ({ transform: { translation: [x, 0.5, 4] } })),
+    },
+  ];
+  const quiet = (result) => ({
+    objectCreateCount: result.observations.objectCreateCount,
+    objectRemoveCount: result.observations.objectRemoveCount,
+    geometryCreateCount: result.observations.geometryCreateCount,
+    geometryEvictCount: result.observations.geometryEvictCount,
+    materialCreateCount: result.observations.materialCreateCount,
+    materialEvictCount: result.observations.materialEvictCount,
+    instanceUploadCount: result.observations.instanceUploadCount,
+    environmentUpdateCount: result.observations.environmentUpdateCount,
+    glBufferUploads: result.glBufferUploads,
+  });
+  const silent = Object.fromEntries(Object.keys(quiet({ observations: {}, glBufferUploads: 0 })).map((key) => [key, 0]));
+  evidence.retainedRender = {};
+  for (const count of [8, 32, 128]) {
+    const nodes = retainedNodes(count, 0);
+    const movedOne = nodes.map((node, index) =>
+      index === 0 ? { ...node, transform: { translation: [node.transform.translation[0], 0.5, node.transform.translation[2]] } } : node,
+    );
+    const [load, cameraRender, cameraOnly, oneTransform, replaced] = await draw({}, [
+      { camera: retainedCamera, nodes, instanceBatches: retainedBatch },
+      { camera: retainedMoved, nodes, instanceBatches: retainedBatch },
+      { camera: retainedOrbit, cameraOnly: true },
+      { camera: retainedMoved, nodes: movedOne, instanceBatches: retainedBatch },
+      { camera: retainedMoved, nodes: retainedNodes(count, 1), instanceBatches: retainedBatch },
+    ]);
+    assert.equal(load.observations.geometryCreateCount, count + 1, `load of ${count} meshes creates one geometry each plus the batch box`);
+    assert.equal(load.observations.objectCreateCount, count + 1, `load of ${count} meshes creates one object each plus the batch`);
+    assert(load.glBufferUploads >= count, `load of ${count} meshes uploads their buffers: ${load.glBufferUploads}`);
+    assert.deepEqual(quiet(cameraRender), silent, `camera move through render over ${count} meshes is retained`);
+    assert.deepEqual(quiet(cameraOnly), silent, `renderCamera over ${count} meshes is retained`);
+    assert.equal(cameraOnly.observations.nodeVisitCount, 0, "renderCamera visits no scene nodes");
+    assert.deepEqual(quiet(oneTransform), silent, `one-node transform over ${count} meshes rebuilds nothing`);
+    assert.equal(replaced.observations.geometryCreateCount, count, `replacing ${count} meshes creates ${count} geometries`);
+    assert.equal(replaced.observations.geometryEvictCount, count, `replacing ${count} meshes evicts the previous ${count}`);
+    assert(replaced.glBufferUploads >= count, `replacing ${count} meshes uploads their buffers: ${replaced.glBufferUploads}`);
+    evidence.retainedRender[count] = {
+      loadGlBufferUploads: load.glBufferUploads,
+      replaceGlBufferUploads: replaced.glBufferUploads,
+      cameraRender: quiet(cameraRender),
+      cameraOnly: quiet(cameraOnly),
+      oneTransform: quiet(oneTransform),
+    };
+  }
+  checks.push("camera moves and one-node transforms over 8/32/128 static meshes create, evict and upload nothing; load/replace is linear");
 
   assert.deepEqual(errors, [], "page must not report errors or warnings");
 } finally {
