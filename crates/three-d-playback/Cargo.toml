@@ -9,5 +9,5 @@ license = "MIT"
 three-d-animation = { path = "../three-d-animation" }
 
 [dev-dependencies]
-serde_json = "=1.0.151"
+serde_json = "=1.0.154"
 three-d-core = { path = "../three-d-core" }

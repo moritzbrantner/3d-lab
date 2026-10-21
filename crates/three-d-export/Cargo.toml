@@ -6,7 +6,7 @@ description = "Deterministic production export adapters for normalized 3d-lab sc
 license = "MIT"
 
 [dependencies]
-serde_json = "=1.0.151"
+serde_json = "=1.0.154"
 three-d-core = { path = "../three-d-core" }
 three-d-scene = { path = "../three-d-scene" }
 three-d-assets = { path = "../three-d-assets" }
