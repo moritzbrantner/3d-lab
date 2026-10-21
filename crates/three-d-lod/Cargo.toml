@@ -6,8 +6,8 @@ description = "Deterministic level-of-detail and mesh simplification experiments
 license = "MIT"
 
 [dependencies]
-meshopt = "=0.6.2"
+meshopt = "=0.7.0"
 three-d-core = { path = "../three-d-core" }
 
 [dev-dependencies]
-serde_json = "=1.0.151"
+serde_json = "=1.0.154"
