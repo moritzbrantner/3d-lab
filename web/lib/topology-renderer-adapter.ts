@@ -8,15 +8,28 @@ import {
 const INDEX_VALUES_PER_SLOT = TOPOLOGY_TRIANGLE_CHUNK_SIZE * 3;
 const MIN_VERTEX_CAPACITY = 64;
 const MIN_INDEX_SLOT_CAPACITY = 16;
+/** Affected vertices closer than this are uploaded as one range instead of separate sub-ranges. */
+const VERTEX_RANGE_MERGE_GAP = 16;
 
+/**
+ * Renderer work for one adapter update. A localized edit keeps every materialization, geometry and
+ * buffer-replacement counter at zero and uploads only touched vertex ranges and index slots.
+ * `fullPreparationCount` is 1 only when the vertex chunk prefix changed identity (a structural jump,
+ * such as switching to an unrelated topology), which rewrites every active vertex.
+ */
 export type TopologyRendererWorkObservations = Readonly<{
   fullMaterializationCount: number;
   materializedVertexReferences: number;
   materializedIndexValues: number;
   geometryCreateCount: number;
   geometryDisposeCount: number;
+  bufferReplacementCount: number;
   positionValuesUploaded: number;
+  normalValuesUploaded: number;
   indexValuesUploaded: number;
+  uploadRangeCount: number;
+  normalVerticesRecomputed: number;
+  fullPreparationCount: number;
   localizedGeometryUpdateCount: number;
 }>;
 
@@ -27,24 +40,40 @@ export type TopologyGeometryAdapter = Readonly<{
   dispose(): void;
 }>;
 
-function capacityWithSlack(required: number, minimum: number): number {
-  const target = required + Math.max(minimum, Math.ceil(required / 4));
-  let capacity = minimum;
-  while (capacity < target) capacity *= 2;
-  return capacity;
-}
-
-function emptyWork(): TopologyRendererWorkObservations {
+export function emptyTopologyRendererWork(): TopologyRendererWorkObservations {
   return {
     fullMaterializationCount: 0,
     materializedVertexReferences: 0,
     materializedIndexValues: 0,
     geometryCreateCount: 0,
     geometryDisposeCount: 0,
+    bufferReplacementCount: 0,
     positionValuesUploaded: 0,
+    normalValuesUploaded: 0,
     indexValuesUploaded: 0,
-    localizedGeometryUpdateCount: 1,
+    uploadRangeCount: 0,
+    normalVerticesRecomputed: 0,
+    fullPreparationCount: 0,
+    localizedGeometryUpdateCount: 0,
   };
+}
+
+export function addTopologyRendererWork(
+  left: TopologyRendererWorkObservations,
+  right: TopologyRendererWorkObservations,
+): TopologyRendererWorkObservations {
+  const total = { ...left };
+  for (const key of Object.keys(total) as (keyof TopologyRendererWorkObservations)[]) {
+    (total as Record<keyof TopologyRendererWorkObservations, number>)[key] = left[key] + right[key];
+  }
+  return total;
+}
+
+function capacityWithSlack(required: number, minimum: number): number {
+  const target = required + Math.max(minimum, Math.ceil(required / 4));
+  let capacity = minimum;
+  while (capacity < target) capacity *= 2;
+  return capacity;
 }
 
 function writeVertexRange(
@@ -79,60 +108,91 @@ function writeIndexSlot(array: Uint32Array, slot: number, chunk: Uint32Array): v
   array.set(chunk, start);
 }
 
-function recomputeSemanticNormals(
-  topology: PersistentMeshTopology,
+/**
+ * Adds (sign 1) or removes (sign -1) the area-weighted face normals of one triangle chunk to the
+ * per-vertex sums, matching `BufferGeometry.computeVertexNormals` before normalization.
+ */
+function accumulateChunkNormals(
+  chunk: Uint32Array,
+  sign: 1 | -1,
   positionArray: Float32Array,
-  normalArray: Float32Array,
+  sums: Float64Array,
+  affected: Set<number> | null,
 ): void {
-  normalArray.fill(0, 0, topology.vertexCount * 3);
-  for (const chunk of topology.triangleChunks) {
-    for (let offset = 0; offset < chunk.length; offset += 3) {
-      const a = chunk[offset] * 3;
-      const b = chunk[offset + 1] * 3;
-      const c = chunk[offset + 2] * 3;
-      const abx = positionArray[b] - positionArray[a];
-      const aby = positionArray[b + 1] - positionArray[a + 1];
-      const abz = positionArray[b + 2] - positionArray[a + 2];
-      const acx = positionArray[c] - positionArray[a];
-      const acy = positionArray[c + 1] - positionArray[a + 1];
-      const acz = positionArray[c + 2] - positionArray[a + 2];
-      const nx = aby * acz - abz * acy;
-      const ny = abz * acx - abx * acz;
-      const nz = abx * acy - aby * acx;
-      normalArray[a] += nx;
-      normalArray[a + 1] += ny;
-      normalArray[a + 2] += nz;
-      normalArray[b] += nx;
-      normalArray[b + 1] += ny;
-      normalArray[b + 2] += nz;
-      normalArray[c] += nx;
-      normalArray[c + 1] += ny;
-      normalArray[c + 2] += nz;
+  for (let offset = 0; offset < chunk.length; offset += 3) {
+    const ia = chunk[offset];
+    const ib = chunk[offset + 1];
+    const ic = chunk[offset + 2];
+    const a = ia * 3;
+    const b = ib * 3;
+    const c = ic * 3;
+    const cbx = positionArray[c] - positionArray[b];
+    const cby = positionArray[c + 1] - positionArray[b + 1];
+    const cbz = positionArray[c + 2] - positionArray[b + 2];
+    const abx = positionArray[a] - positionArray[b];
+    const aby = positionArray[a + 1] - positionArray[b + 1];
+    const abz = positionArray[a + 2] - positionArray[b + 2];
+    const nx = sign * (cby * abz - cbz * aby);
+    const ny = sign * (cbz * abx - cbx * abz);
+    const nz = sign * (cbx * aby - cby * abx);
+    for (const base of [a, b, c]) {
+      sums[base] += nx;
+      sums[base + 1] += ny;
+      sums[base + 2] += nz;
     }
-  }
-  for (let vertexIndex = 0; vertexIndex < topology.vertexCount; vertexIndex += 1) {
-    const offset = vertexIndex * 3;
-    const x = normalArray[offset];
-    const y = normalArray[offset + 1];
-    const z = normalArray[offset + 2];
-    const length = Math.hypot(x, y, z);
-    if (length > Number.EPSILON) {
-      normalArray[offset] = x / length;
-      normalArray[offset + 1] = y / length;
-      normalArray[offset + 2] = z / length;
+    if (affected) {
+      affected.add(ia);
+      affected.add(ib);
+      affected.add(ic);
     }
   }
 }
 
-function activeBoundingSphere(positionArray: Float32Array, vertexCount: number): THREE.Sphere {
-  const box = new THREE.Box3();
+function normalizeVertexNormal(sums: Float64Array, normalArray: Float32Array, vertexIndex: number): void {
+  const offset = vertexIndex * 3;
+  const x = sums[offset];
+  const y = sums[offset + 1];
+  const z = sums[offset + 2];
+  const length = Math.hypot(x, y, z);
+  const scale = length > Number.EPSILON ? 1 / length : 0;
+  normalArray[offset] = x * scale;
+  normalArray[offset + 1] = y * scale;
+  normalArray[offset + 2] = z * scale;
+}
+
+/** Coalesces sorted vertex indices into `[start, count]` ranges, bridging small gaps. */
+function vertexRanges(sortedVertices: readonly number[]): Array<readonly [number, number]> {
+  const ranges: Array<readonly [number, number]> = [];
+  let start = -1;
+  let end = -1;
+  for (const vertex of sortedVertices) {
+    if (start < 0) {
+      start = vertex;
+      end = vertex + 1;
+    } else if (vertex - end <= VERTEX_RANGE_MERGE_GAP) {
+      end = vertex + 1;
+    } else {
+      ranges.push([start, end - start]);
+      start = vertex;
+      end = vertex + 1;
+    }
+  }
+  if (start >= 0) ranges.push([start, end - start]);
+  return ranges;
+}
+
+function boundsOf(positionArray: Float32Array, startVertex: number, endVertex: number, target: THREE.Box3): THREE.Box3 {
   const point = new THREE.Vector3();
-  for (let vertexIndex = 0; vertexIndex < vertexCount; vertexIndex += 1) {
+  for (let vertexIndex = startVertex; vertexIndex < endVertex; vertexIndex += 1) {
     const offset = vertexIndex * 3;
     point.set(positionArray[offset], positionArray[offset + 1], positionArray[offset + 2]);
-    box.expandByPoint(point);
+    target.expandByPoint(point);
   }
-  return box.isEmpty() ? new THREE.Sphere(new THREE.Vector3(), 0) : box.getBoundingSphere(new THREE.Sphere());
+  return target;
+}
+
+function sphereOf(bounds: THREE.Box3): THREE.Sphere {
+  return bounds.isEmpty() ? new THREE.Sphere(new THREE.Vector3(), 0) : bounds.getBoundingSphere(new THREE.Sphere());
 }
 
 /**
@@ -140,8 +200,13 @@ function activeBoundingSphere(positionArray: Float32Array, vertexCount: number):
  *
  * Positions live in one growable buffer with slack. Persistent triangle chunks occupy fixed-size
  * index slots. Unchanged chunk identities keep their slot and upload nothing; changed chunks rewrite
- * only their slot. Normal generation deliberately iterates semantic persistent chunks rather than the
- * slack-capacity index buffer, so reserved slots do not turn into hidden O(capacity) CPU work.
+ * only their slot. Vertex normals keep unnormalized area-weighted sums: removed chunks subtract their
+ * face normals and inserted chunks add theirs, so only vertices of touched chunks are renormalized and
+ * uploaded. Persistent topology edits only append vertices, so existing positions never move and the
+ * sums of unchanged chunks stay valid. A changed vertex chunk prefix falls back to full preparation.
+ *
+ * Update ranges are appended, never cleared: three.js clears them after each upload, so several
+ * updates between renders accumulate correctly.
  */
 export function createTopologyGeometryAdapter(
   material: THREE.Material,
@@ -152,9 +217,15 @@ export function createTopologyGeometryAdapter(
   let indexSlotCapacity = capacityWithSlack(initialTopology.triangleChunks.length, MIN_INDEX_SLOT_CAPACITY);
   let positionArray = new Float32Array(vertexCapacity * 3);
   let normalArray = new Float32Array(vertexCapacity * 3);
+  let normalSums = new Float64Array(vertexCapacity * 3);
   let indexArray = new Uint32Array(indexSlotCapacity * INDEX_VALUES_PER_SLOT);
   writeVertexRange(positionArray, initialTopology, 0, initialTopology.vertexCount);
-  recomputeSemanticNormals(initialTopology, positionArray, normalArray);
+  for (const chunk of initialTopology.triangleChunks) {
+    accumulateChunkNormals(chunk, 1, positionArray, normalSums, null);
+  }
+  for (let vertexIndex = 0; vertexIndex < initialTopology.vertexCount; vertexIndex += 1) {
+    normalizeVertexNormal(normalSums, normalArray, vertexIndex);
+  }
 
   const chunkSlots = new WeakMap<Uint32Array, number>();
   const slotChunks: Array<Uint32Array | null> = new Array(indexSlotCapacity).fill(null);
@@ -188,18 +259,22 @@ export function createTopologyGeometryAdapter(
   geometry.setAttribute("normal", normalAttribute);
   geometry.setIndex(indexAttribute);
   geometry.setDrawRange(0, activeSlotCount * INDEX_VALUES_PER_SLOT);
-  geometry.boundingSphere = activeBoundingSphere(positionArray, initialTopology.vertexCount);
+  let bounds = boundsOf(positionArray, 0, initialTopology.vertexCount, new THREE.Box3());
+  geometry.boundingSphere = sphereOf(bounds);
   const mesh = new THREE.Mesh(geometry, material);
   let disposed = false;
 
-  const growPositionBuffer = (requiredVertexCount: number, work: TopologyRendererWorkObservations) => {
+  const growVertexBuffers = (requiredVertexCount: number) => {
     const nextCapacity = capacityWithSlack(requiredVertexCount, MIN_VERTEX_CAPACITY);
     const nextPosition = new Float32Array(nextCapacity * 3);
     const nextNormal = new Float32Array(nextCapacity * 3);
+    const nextSums = new Float64Array(nextCapacity * 3);
     nextPosition.set(positionArray);
     nextNormal.set(normalArray);
+    nextSums.set(normalSums);
     positionArray = nextPosition;
     normalArray = nextNormal;
+    normalSums = nextSums;
     vertexCapacity = nextCapacity;
     positionAttribute = new THREE.BufferAttribute(positionArray, 3);
     normalAttribute = new THREE.BufferAttribute(normalArray, 3);
@@ -207,10 +282,9 @@ export function createTopologyGeometryAdapter(
     normalAttribute.setUsage(THREE.DynamicDrawUsage);
     geometry.setAttribute("position", positionAttribute);
     geometry.setAttribute("normal", normalAttribute);
-    return { ...work, positionValuesUploaded: work.positionValuesUploaded + positionArray.length };
   };
 
-  const growIndexBuffer = (requiredSlots: number, work: TopologyRendererWorkObservations) => {
+  const growIndexBuffer = (requiredSlots: number) => {
     const nextCapacity = capacityWithSlack(requiredSlots, MIN_INDEX_SLOT_CAPACITY);
     const next = new Uint32Array(nextCapacity * INDEX_VALUES_PER_SLOT);
     next.set(indexArray);
@@ -221,56 +295,69 @@ export function createTopologyGeometryAdapter(
     indexAttribute = new THREE.BufferAttribute(indexArray, 1);
     indexAttribute.setUsage(THREE.DynamicDrawUsage);
     geometry.setIndex(indexAttribute);
-    return { ...work, indexValuesUploaded: work.indexValuesUploaded + indexArray.length };
   };
 
   return {
     object: mesh,
     update(nextTopology) {
       if (disposed) throw new Error("topology geometry adapter is disposed");
-      let work = emptyWork();
-
-      const vertexPrefixStable = sharedVertexChunkPrefix(topology, nextTopology);
+      const full = !sharedVertexChunkPrefix(topology, nextTopology);
       const previousVertexCount = topology.vertexCount;
-      if (!vertexPrefixStable) {
-        if (nextTopology.vertexCount > vertexCapacity) work = growPositionBuffer(nextTopology.vertexCount, work);
-        writeVertexRange(positionArray, nextTopology, 0, nextTopology.vertexCount);
-        positionAttribute.clearUpdateRanges();
-        positionAttribute.addUpdateRange(0, nextTopology.vertexCount * 3);
-        positionAttribute.needsUpdate = true;
-        work = {
-          ...work,
-          positionValuesUploaded: work.positionValuesUploaded + nextTopology.vertexCount * 3,
-        };
-      } else if (nextTopology.vertexCount > previousVertexCount) {
-        if (nextTopology.vertexCount > vertexCapacity) {
-          work = growPositionBuffer(nextTopology.vertexCount, work);
-          writeVertexRange(positionArray, nextTopology, previousVertexCount, nextTopology.vertexCount);
-        } else {
-          writeVertexRange(positionArray, nextTopology, previousVertexCount, nextTopology.vertexCount);
-          positionAttribute.clearUpdateRanges();
-          positionAttribute.addUpdateRange(previousVertexCount * 3, (nextTopology.vertexCount - previousVertexCount) * 3);
-          positionAttribute.needsUpdate = true;
-          work = {
-            ...work,
-            positionValuesUploaded:
-              work.positionValuesUploaded + (nextTopology.vertexCount - previousVertexCount) * 3,
-          };
-        }
-      }
+      const nextVertexCount = nextTopology.vertexCount;
+      let positionValuesUploaded = 0;
+      let normalValuesUploaded = 0;
+      let indexValuesUploaded = 0;
+      let uploadRangeCount = 0;
+      let bufferReplacementCount = 0;
 
+      // Free slots of removed chunks and subtract their normals while their vertices are still in place.
+      const affectedVertices = new Set<number>();
       const nextChunkSet = new Set(nextTopology.triangleChunks);
       const freedSlots: number[] = [];
       for (let slot = 0; slot < activeSlotCount; slot += 1) {
         const chunk = slotChunks[slot];
         if (chunk && !nextChunkSet.has(chunk)) {
+          if (!full) accumulateChunkNormals(chunk, -1, positionArray, normalSums, affectedVertices);
           slotChunks[slot] = null;
           freedSlots.push(slot);
         }
       }
 
+      let vertexBuffersReplaced = false;
+      if (nextVertexCount > vertexCapacity) {
+        growVertexBuffers(nextVertexCount);
+        vertexBuffersReplaced = true;
+        bufferReplacementCount += 2;
+      }
+      if (full) {
+        writeVertexRange(positionArray, nextTopology, 0, nextVertexCount);
+        if (!vertexBuffersReplaced) {
+          positionAttribute.addUpdateRange(0, nextVertexCount * 3);
+          positionAttribute.needsUpdate = true;
+          positionValuesUploaded += nextVertexCount * 3;
+          uploadRangeCount += 1;
+        }
+        bounds = boundsOf(positionArray, 0, nextVertexCount, new THREE.Box3());
+      } else if (nextVertexCount > previousVertexCount) {
+        writeVertexRange(positionArray, nextTopology, previousVertexCount, nextVertexCount);
+        if (!vertexBuffersReplaced) {
+          positionAttribute.addUpdateRange(previousVertexCount * 3, (nextVertexCount - previousVertexCount) * 3);
+          positionAttribute.needsUpdate = true;
+          positionValuesUploaded += (nextVertexCount - previousVertexCount) * 3;
+          uploadRangeCount += 1;
+        }
+        bounds = boundsOf(positionArray, previousVertexCount, nextVertexCount, bounds);
+      } else if (nextVertexCount < previousVertexCount) {
+        // Dropped vertices are no longer referenced; clear residual sums so a later append starts clean.
+        normalSums.fill(0, nextVertexCount * 3, previousVertexCount * 3);
+        bounds = boundsOf(positionArray, 0, nextVertexCount, new THREE.Box3());
+      }
+      if (vertexBuffersReplaced) positionValuesUploaded += positionArray.length;
+
+      let indexBufferReplaced = false;
       if (nextTopology.triangleChunks.length > indexSlotCapacity) {
-        work = growIndexBuffer(nextTopology.triangleChunks.length, work);
+        growIndexBuffer(nextTopology.triangleChunks.length);
+        indexBufferReplaced = true;
       }
 
       const touchedSlots = new Set<number>();
@@ -285,13 +372,15 @@ export function createTopologyGeometryAdapter(
           slot = activeSlotCount;
           activeSlotCount += 1;
           if (activeSlotCount > indexSlotCapacity) {
-            work = growIndexBuffer(activeSlotCount, work);
+            growIndexBuffer(activeSlotCount);
+            indexBufferReplaced = true;
           }
         }
         chunkSlots.set(chunk, slot);
         slotChunks[slot] = chunk;
         writeIndexSlot(indexArray, slot, chunk);
         touchedSlots.add(slot);
+        if (!full) accumulateChunkNormals(chunk, 1, positionArray, normalSums, affectedVertices);
       }
 
       let firstHole = slotChunks.findIndex((chunk, index) => index < activeSlotCount && chunk === null);
@@ -312,27 +401,64 @@ export function createTopologyGeometryAdapter(
       }
       while (activeSlotCount > 0 && slotChunks[activeSlotCount - 1] === null) activeSlotCount -= 1;
 
-      if (touchedSlots.size > 0 && work.indexValuesUploaded === 0) {
-        indexAttribute.clearUpdateRanges();
+      if (indexBufferReplaced) {
+        bufferReplacementCount += 1;
+        indexValuesUploaded += indexArray.length;
+      } else if (touchedSlots.size > 0) {
         for (const slot of [...touchedSlots].sort((left, right) => left - right)) {
           indexAttribute.addUpdateRange(slot * INDEX_VALUES_PER_SLOT, INDEX_VALUES_PER_SLOT);
         }
         indexAttribute.needsUpdate = true;
-        work = {
-          ...work,
-          indexValuesUploaded: touchedSlots.size * INDEX_VALUES_PER_SLOT,
-        };
+        indexValuesUploaded += touchedSlots.size * INDEX_VALUES_PER_SLOT;
+        uploadRangeCount += touchedSlots.size;
       }
 
-      recomputeSemanticNormals(nextTopology, positionArray, normalArray);
-      normalAttribute.clearUpdateRanges();
-      normalAttribute.addUpdateRange(0, nextTopology.vertexCount * 3);
-      normalAttribute.needsUpdate = true;
+      let normalVerticesRecomputed: number;
+      if (full) {
+        normalSums.fill(0);
+        for (const chunk of nextTopology.triangleChunks) {
+          accumulateChunkNormals(chunk, 1, positionArray, normalSums, null);
+        }
+        for (let vertexIndex = 0; vertexIndex < nextVertexCount; vertexIndex += 1) {
+          normalizeVertexNormal(normalSums, normalArray, vertexIndex);
+        }
+        normalVerticesRecomputed = nextVertexCount;
+        if (!vertexBuffersReplaced) {
+          normalAttribute.addUpdateRange(0, nextVertexCount * 3);
+          normalAttribute.needsUpdate = true;
+          normalValuesUploaded += nextVertexCount * 3;
+          uploadRangeCount += 1;
+        }
+      } else {
+        const sorted = [...affectedVertices].filter((vertex) => vertex < nextVertexCount).sort((left, right) => left - right);
+        for (const vertexIndex of sorted) normalizeVertexNormal(normalSums, normalArray, vertexIndex);
+        normalVerticesRecomputed = sorted.length;
+        if (!vertexBuffersReplaced && sorted.length > 0) {
+          for (const [start, count] of vertexRanges(sorted)) {
+            normalAttribute.addUpdateRange(start * 3, count * 3);
+            normalValuesUploaded += count * 3;
+            uploadRangeCount += 1;
+          }
+          normalAttribute.needsUpdate = true;
+        }
+      }
+      if (vertexBuffersReplaced) normalValuesUploaded += normalArray.length;
+
       geometry.setDrawRange(0, activeSlotCount * INDEX_VALUES_PER_SLOT);
-      geometry.boundingSphere = activeBoundingSphere(positionArray, nextTopology.vertexCount);
+      geometry.boundingSphere = sphereOf(bounds);
       rebuildSemanticBases(nextTopology);
       topology = nextTopology;
-      return work;
+      return {
+        ...emptyTopologyRendererWork(),
+        bufferReplacementCount,
+        positionValuesUploaded,
+        normalValuesUploaded,
+        indexValuesUploaded,
+        uploadRangeCount,
+        normalVerticesRecomputed,
+        fullPreparationCount: full ? 1 : 0,
+        localizedGeometryUpdateCount: full ? 0 : 1,
+      };
     },
     semanticTriangleIndex(raycastFaceIndex) {
       if (!Number.isInteger(raycastFaceIndex) || raycastFaceIndex < 0) return null;

@@ -510,9 +510,9 @@ export function SceneTopologyLab() {
 
           {rendererWork && (
             <p className={styles.observations}>
-              Renderer update: {rendererWork.positionValuesUploaded} position values and {rendererWork.indexValuesUploaded} index
-              values uploaded; {rendererWork.fullMaterializationCount} full materializations and {rendererWork.geometryCreateCount}
-              geometry replacements.
+              Renderer update: {rendererWork.positionValuesUploaded} position, {rendererWork.normalValuesUploaded} normal and{" "}
+              {rendererWork.indexValuesUploaded} index values uploaded in {rendererWork.uploadRangeCount} ranges;{" "}
+              {rendererWork.fullPreparationCount} full preparations and {rendererWork.bufferReplacementCount} buffer replacements.
             </p>
           )}
 

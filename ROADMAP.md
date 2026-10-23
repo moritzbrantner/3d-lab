@@ -106,5 +106,5 @@
 - [x] Add pre-resolved, allocation-free compiled clip sampling with cursor/binary-search key lookup, bit-for-bit parity against the reference sampler, an optional 16-bit quantized track store with an explicit fail-closed error budget, and raw single-character/crowd benchmark evidence.
 - [x] Add bounded cosmetic baked-flipbook playback to the reusable renderer with renderer-independent fixed-time sampling, explicit budgets/release, and effect work observations (#85).
 - [ ] Prove the cosmetic flipbook capability with a real Raid Defense impact plus a second consumer, and add a seeded burst evaluator only if a consumer needs independently moving particles (#85).
-- [ ] Reduce renderer-side full topology materialization and whole `BufferGeometry` replacement where browser evidence shows it is material.
+- [x] Reduce renderer-side full topology materialization and whole `BufferGeometry` replacement where browser evidence shows it is material.
 - [ ] After at least four independent same-surface calibration runs, review robust MAD-derived wall-time/RSS margins and move the accepted policy into an evaluator-owned confirmation gate.
