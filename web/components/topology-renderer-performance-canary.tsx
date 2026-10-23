@@ -15,9 +15,7 @@ import {
   persistentTriangleAt,
 } from "@/lib/scene-editor-topology-persistent";
 import {
-  addTopologyRendererWork,
   createTopologyGeometryAdapter,
-  emptyTopologyRendererWork,
   type TopologyGeometryAdapter,
   type TopologyRendererWorkObservations,
 } from "@/lib/topology-renderer-adapter";
@@ -51,6 +49,17 @@ type Runtime = {
   adapter: TopologyGeometryAdapter;
   material: THREE.MeshStandardMaterial;
 };
+
+// The runtime-evidence workflow runs this canary against the base adapter too, so it sums
+// whichever counters the adapter reports instead of importing adapter-specific helpers.
+function addWork(
+  totals: TopologyRendererWorkObservations | null,
+  current: TopologyRendererWorkObservations,
+): TopologyRendererWorkObservations {
+  const sum: Record<string, number> = { ...(totals as Record<string, number> | null) };
+  for (const [key, value] of Object.entries(current)) sum[key] = (sum[key] ?? 0) + value;
+  return sum as TopologyRendererWorkObservations;
+}
 
 function createScene(): EditorScene {
   const node: EditorNode = {
@@ -195,11 +204,11 @@ export function TopologyRendererPerformanceCanary() {
     setState(running);
 
     try {
-      let totals = emptyTopologyRendererWork();
+      let totals: TopologyRendererWorkObservations | null = null;
       const initialLog = createEditorCommandLog(editorScene);
       const finalLog = applyDeterministicWorkload(initialLog, (log) => {
         const topology = currentEditorTopology(log, MESH_NODE_ID);
-        totals = addTopologyRendererWork(totals, runtime.adapter.update(topology));
+        totals = addWork(totals, runtime.adapter.update(topology));
         runtime.renderer.render(runtime.scene, runtime.camera);
       });
       const finalTopology = currentEditorTopology(finalLog, MESH_NODE_ID);
