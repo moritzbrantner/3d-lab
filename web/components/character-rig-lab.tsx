@@ -54,8 +54,11 @@ function applyPose(runtime: Runtime, state: RigState) {
   runtime.bones.leftLowerLeg.rotation.x = pose.leftKneeX;
   runtime.bones.rightLowerLeg.rotation.x = pose.rightKneeX;
   runtime.skeletonHelper.visible = state.showSkeleton;
-  runtime.mesh.boundingBox = null;
-  runtime.mesh.boundingSphere = null;
+  // Clearing the cached bounds makes three.js recompute them for the posed skeleton;
+  // @types/three declares the fields non-nullable.
+  const bounds = runtime.mesh as { boundingBox: THREE.Box3 | null; boundingSphere: THREE.Sphere | null };
+  bounds.boundingBox = null;
+  bounds.boundingSphere = null;
   for (const material of runtime.materials) {
     if (material.transparent === state.transparentSkin) continue;
     material.transparent = state.transparentSkin;
