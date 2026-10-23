@@ -1,0 +1,25 @@
+{
+  "schema": "asset-downloads-v1",
+  "release": "humanoid-ranger-male",
+  "entries": [
+    {
+      "bytes": 13567,
+      "files": [
+        "equipment.sword.arming.default.gltf",
+        "equipment.sword.arming.default.bin"
+      ],
+      "key": "equipment.sword.arming",
+      "runtime": {
+        "drawCalls": 3,
+        "materials": 3,
+        "textureMemoryEstimate": {
+          "compressedBytes": 0,
+          "rgba8FallbackBytes": 0
+        },
+        "triangles": 1304
+      },
+      "textures": [],
+      "variant": "default"
+    }
+  ]
+}

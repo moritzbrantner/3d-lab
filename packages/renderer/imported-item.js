@@ -4,6 +4,7 @@
 // shared GPU resources and parents per-instance roots. Which item goes to which joint, with
 // which transform and which item frame, is consumer data.
 import * as THREE from "three"
+import {disposeDecoded} from "./download-bundle.js"
 import {adaptStaticGlb} from "./static-glb.js"
 import {createIndexedMeshGeometry} from "./mesh-geometry.js"
 import {createMaterial} from "./materials.js"
@@ -96,6 +97,45 @@ export function attachToJoint(joint, item, {frame, socketMatrix}, fail) {
       attached = false
       holder.remove(item.root)
       holder.removeFromParent()
+    },
+  })
+}
+
+/** Retain the standard Three.js decode of a compressed item, including its textures. */
+export function loadDecodedItem(gltf, resourceKey, fail) {
+  const frames = {}
+  try {
+    gltf.scene.updateMatrixWorld(true)
+    gltf.scene.traverse(node => {
+      if (node.isSkinnedMesh) { fail("static item must not contain a skinned mesh") }
+      const source = gltf.parser.associations.get(node)?.nodes
+      const name = source === undefined ? undefined : gltf.parser.json.nodes[source].name
+      if (!name) { return }
+      if (Object.hasOwn(frames, name)) { fail(`item frame name ${name} is not unique`) }
+      frames[name] = Object.freeze(node.matrixWorld.toArray())
+    })
+  } catch (error) { disposeDecoded(gltf); throw error }
+  const frameTable = Object.freeze(frames)
+  const instances = new Set()
+  let disposed = false
+  return Object.freeze({
+    resourceKey, frames: frameTable,
+    createInstance() {
+      if (disposed) { fail("item asset disposed") }
+      const root = gltf.scene.clone(true)
+      let instanceDisposed = false
+      const instance = Object.freeze({root, frames: frameTable, dispose() {
+        if (instanceDisposed) { return }
+        instanceDisposed = true; root.removeFromParent(); instances.delete(instance)
+      }})
+      instances.add(instance)
+      return instance
+    },
+    dispose() {
+      if (disposed) { return }
+      disposed = true
+      for (const instance of instances) { instance.dispose() }
+      disposeDecoded(gltf)
     },
   })
 }

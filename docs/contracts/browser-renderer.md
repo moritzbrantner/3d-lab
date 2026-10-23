@@ -212,6 +212,39 @@ canonical rig takes each joint's bind from the first skin naming it. Extra colou
 sets are skipped unless a material samples a UV set other than 0, which is still
 unsupported.
 
+### Compressed per-entry downloads
+
+The same bundle entry points accept the producer's existing `asset-downloads-v1`
+index as `manifest` (#157), with the same key/variant and `readResource` callback.
+There is no new envelope or renderer. Only the selected entry's declared glTF,
+referenced buffers/textures and (for a character) shared clips are acquired.
+`readBundleAttachment` also accepts the index and reads only a declared JSON attachment.
+
+Pass `{renderer, transcoderPath}` when KTX2 textures are present. `renderer` exposes
+`configureTextureLoader`; that hook runs KTX2Loader.detectSupport on the actual drawing
+renderer. The consumer serves the matching Three.js `basis_transcoder.js` and
+`basis_transcoder.wasm` under `transcoderPath` (including its trailing slash).
+GLTFLoader uses the upstream MeshoptDecoder and KTX2Loader. GPU resources are decoded
+once. Decoded accessors are expanded to standard glTF for the existing Rust validator
+and pose runtime; textures stay in Three.js and the Rust pose copy retains material
+factors. This does not widen the standalone static-GLB or native-import contracts.
+Shared clips bind to each entry by unique authored node names, rejecting missing or
+ambiguous targets and duplicate clip names. Embedded clips keep working unchanged.
+
+Index byte totals are estimates; download progress uses actual bytes read and closes
+with the exact acquired total. Resource keys include acquired content hashes.
+Loader-created object URLs and Basis workers are released after decoding. Assets own
+shared geometry, materials and textures; instances own cloned skeleton resources.
+`dispose` is idempotent; failed admission after decoding releases acquired resources.
+
+`bun test packages/renderer` includes an offline real meshopt sword and name-binding
+regressions. The existing renderer Chromium workflow explicitly acquires the rolling
+Ranger, then runs `scripts/compressed-bundle-browser-acceptance.ts`: default and knight
+entries, all shared clips against plain Three.js, texture decoding, equipment, disposal,
+and measured full-versus-compact transfer and first-frame observations. The inputs'
+actual hashes, browser/network settings and screenshots are retained as evidence.
+These timings are observations of the controlled workload, not a production latency SLA.
+
 ### Attachable items
 
 `adaptImportedItemBundle(bundle, {onProgress})` loads a static, unskinned bundle entry, such as a weapon, shield or prop (#134). It goes through the existing static GLB adapter, which validates it and lowers it to factor materials. Instances share geometry and materials. Every named node is an item **frame** (for example `grip`, or `grip.offhand` on a two-handed weapon), exposed in item space.
