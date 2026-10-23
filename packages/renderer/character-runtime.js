@@ -5,6 +5,7 @@ import * as THREE from "three"
 import {GLTFLoader} from "three/examples/jsm/loaders/GLTFLoader.js"
 import {clone as cloneSkeleton} from "three/examples/jsm/utils/SkeletonUtils.js"
 import init, {CharacterAsset} from "./imported-character-wasm/character.js"
+import {disposeDecoded} from "./download-bundle.js"
 import {attachToJoint, matrixFrom} from "./imported-item.js"
 
 let initialized
@@ -23,34 +24,42 @@ export function copyBytes(source, fail) {
  * `fail` throws with the caller's message prefix. Returns the unfrozen runtime
  * parts; the caller composes and freezes its public asset.
  */
-export async function loadCharacterRuntime(bytes, fail) {
-  await initialize()
-  const authority = new CharacterAsset(bytes)
-  let gltf
-  try { gltf = await new GLTFLoader().parseAsync(bytes.buffer, "") }
-  catch (error) { authority.free(); throw error }
+export async function loadCharacterRuntime(bytes, fail, decoded) {
+  let authority
+  let gltf = decoded
+  try {
+    await initialize()
+    authority = new CharacterAsset(bytes)
+    gltf ??= await new GLTFLoader().parseAsync(bytes.buffer, "")
+  } catch (error) {
+    authority?.free()
+    if (gltf) { disposeDecoded(gltf) }
+    throw error
+  }
   const metadata = JSON.parse(authority.metadata_json())
   const mapping = new Map()
   // Rust reports each skinned primitive by glTF mesh/primitive index; match decoded meshes
   // through the loader's own associations rather than traversal order.
   const primitiveOf = new Map(metadata.primitives.map((p, index) => [`${p.mesh}/${p.primitive}`, index]))
   let skinned = 0
-  gltf.scene.traverse(node => { if (node.isSkinnedMesh) {
-    const association = gltf.parser.associations.get(node)
-    const primitive = primitiveOf.get(`${association?.meshes}/${association?.primitives ?? 0}`)
-    if (primitive === undefined) { authority.free(); fail("decoded skinned mesh has no Rust-validated primitive") }
-    // Existing weighted-skin policy: bind bounds are not conservative animated bounds (#66).
-    node.frustumCulled = false
-    if (!node.geometry.index) node.geometry.setIndex(new THREE.Uint32BufferAttribute(metadata.primitiveIndices[primitive], 1))
-    // Consume Rust-normalized authored palette slots; never reinterpret active weights here.
-    node.geometry.setAttribute("skinIndex", new THREE.Uint16BufferAttribute(metadata.gpuSkinIndices[primitive].flat(), 4))
-    skinned += 1
-  } })
-  if (skinned !== metadata.primitives.length) { authority.free(); fail("decoded skinned meshes do not match the Rust-validated primitives") }
-  gltf.scene.traverse(node => {
-    const index = gltf.parser.associations.get(node)?.nodes
-    if (index !== undefined) mapping.set(node, index)
-  })
+  try {
+    gltf.scene.traverse(node => { if (node.isSkinnedMesh) {
+      const association = gltf.parser.associations.get(node)
+      const primitive = primitiveOf.get(`${association?.meshes}/${association?.primitives ?? 0}`)
+      if (primitive === undefined) { fail("decoded skinned mesh has no Rust-validated primitive") }
+      // Existing weighted-skin policy: bind bounds are not conservative animated bounds (#66).
+      node.frustumCulled = false
+      if (!node.geometry.index) node.geometry.setIndex(new THREE.Uint32BufferAttribute(metadata.primitiveIndices[primitive], 1))
+      // Consume Rust-normalized authored palette slots; never reinterpret active weights here.
+      node.geometry.setAttribute("skinIndex", new THREE.Uint16BufferAttribute(metadata.gpuSkinIndices[primitive].flat(), 4))
+      skinned += 1
+    } })
+    if (skinned !== metadata.primitives.length) { fail("decoded skinned meshes do not match the Rust-validated primitives") }
+    gltf.scene.traverse(node => {
+      const index = gltf.parser.associations.get(node)?.nodes
+      if (index !== undefined) mapping.set(node, index)
+    })
+  } catch (error) { disposeDecoded(gltf); authority.free(); throw error }
   let disposed = false
   const instances = new Set()
   return {
@@ -121,7 +130,7 @@ export async function loadCharacterRuntime(bytes, fail) {
           if (instanceDisposed || disposed) fail("instance disposed")
           return [...pose.joint_position(name)]
         },
-        dispose() { if (instanceDisposed) return; for (const attachment of [...attachments]) attachment.detach(); instanceDisposed = true; root.removeFromParent(); pose.free(); instances.delete(instance) },
+        dispose() { if (instanceDisposed) return; for (const attachment of [...attachments]) attachment.detach(); instanceDisposed = true; root.removeFromParent(); scene.traverse(node => { if (node.skeleton) { node.skeleton.dispose() } }); pose.free(); instances.delete(instance) },
       }
       apply()
       instances.add(instance)
@@ -131,9 +140,7 @@ export async function loadCharacterRuntime(bytes, fail) {
       if (disposed) return
       disposed = true
       for (const instance of instances) instance.dispose()
-      const geometries = new Set(), materials = new Set(), textures = new Set()
-      gltf.scene.traverse(node => { if (node.isMesh) { geometries.add(node.geometry); for (const material of Array.isArray(node.material) ? node.material : [node.material]) { materials.add(material); for (const value of Object.values(material)) if (value?.isTexture) textures.add(value) } } })
-      for (const item of [...geometries,...materials,...textures]) item.dispose()
+      disposeDecoded(gltf)
       authority.free()
     },
   }

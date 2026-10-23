@@ -1,0 +1,24 @@
+{
+  "release": "https://github.com/moritzbrantner/asset-tooling/releases/tag/humanoid-ranger-male",
+  "acquired": "2026-10-23",
+  "source": {
+    "byteLength": 32120,
+    "kind": "scene",
+    "mediaType": "model/gltf-binary",
+    "metadata": {
+      "coordinateSystem": "right-handed-y-up",
+      "operation": "scene.import.gltf",
+      "operationVersion": "2",
+      "profile": "gltf-core-production-v1",
+      "resourceSha256s": [],
+      "sourceSha256": "d1aeac9f200c193f20af79ecb86a5f051edaaf8d59221a29506d7654128bf558",
+      "unit": "meter"
+    },
+    "schemaVersion": 1,
+    "sha256": "cc349a299b44eec6a9d4ac6dc1e0a23d1259d8ae3e4c872d7699dffa7de86f3a"
+  },
+  "files": {
+    "equipment.sword.arming.default.gltf": "43f6af8d45303825b804f7260c796d592b411e10c19f438b7ed43bce6c67d6b6",
+    "equipment.sword.arming.default.bin": "e27300be909b52849c7987bcb5cf581437c72111adfd3cc174e5af8e732dba49"
+  }
+}

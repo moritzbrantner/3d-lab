@@ -85,14 +85,21 @@ export interface ImportedCharacterAsset {
 }
 export function adaptImportedCharacter(source: ArrayBuffer | ArrayBufferView, options: {provenance:unknown}): Promise<ImportedCharacterAsset>
 export interface GltfResourcesBundleSource {
-  /** Parsed `manifest.json` of an unpacked asset-tooling `gltf-resources-v1` bundle. */
+  /** Parsed `manifest.json` (`gltf-resources-v1`) or the producer’s `asset-downloads-v1` index. */
   manifest: unknown
   key: string
   variant?: string
   /** Reads one bundle-relative path (the entry's glTF or a declared resource). */
   readResource(path: string): Promise<ArrayBuffer | ArrayBufferView>
 }
-export function adaptImportedCharacterBundle(bundle: GltfResourcesBundleSource, options?: {onProgress?(progress: {loadedBytes: number; totalBytes: number}): void}): Promise<ImportedCharacterAsset>
-export function adaptImportedItemBundle(bundle: GltfResourcesBundleSource, options?: {onProgress?(progress: {loadedBytes: number; totalBytes: number}): void}): Promise<ImportedItemAsset>
+export type BundleLoadOptions = {
+  onProgress?(progress: {loadedBytes: number; totalBytes: number}): void
+  /** Required for KTX2. Detection delegates to the existing drawing renderer. */
+  renderer?: Pick<ThreeSceneRenderer, "configureTextureLoader">
+  /** Consumer-served matching Three.js Basis transcoder directory, trailing slash. */
+  transcoderPath?: string
+}
+export function adaptImportedCharacterBundle(bundle: GltfResourcesBundleSource, options?: BundleLoadOptions): Promise<ImportedCharacterAsset>
+export function adaptImportedItemBundle(bundle: GltfResourcesBundleSource, options?: BundleLoadOptions): Promise<ImportedItemAsset>
 export function readBundleAttachment(source: {manifest: unknown; key: string; variant?: string; name: string; readResource(path: string): Promise<ArrayBuffer | ArrayBufferView>}): Promise<unknown>
 export function renderImportedCharacterInstances(renderer: ThreeSceneRenderer, frame: {camera:RendererCamera; instances:readonly ImportedCharacterInstance[]}): unknown

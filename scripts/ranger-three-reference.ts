@@ -3,7 +3,7 @@
 // (`adaptImportedCharacterBundle` / `adaptImportedItemBundle` / `attach`). Measures only; it
 // adds no candidate capability and is not part of routine CI.
 //
-//   gh release download humanoid-ranger-male-v8 -R moritzbrantner/asset-tooling -p humanoid.ranger.male.tar -D target
+//   gh release download humanoid-ranger-male -R moritzbrantner/asset-tooling -p humanoid.ranger.male.tar -p export.ref.json -D target --clobber
 //   bun scripts/ranger-three-reference.ts target/humanoid.ranger.male.tar [target/ranger-three-reference]
 //
 // Writes `reference.json` (sampled transforms, vertices and differences) and one same-camera
@@ -190,7 +190,7 @@ try {
         return { candidateFirst: first, candidateAgain: again, candidateOther: other, referenceFirst: measure(r1.root, r1.attached), referenceOther: measure(r2.root, r2.attached) };
       },
       sample(pose: any) {
-        document.getElementById("pose")!.textContent = `humanoid.ranger.male v8 — ${pose.id} (sword on hand_r.weapon, shield on hand_l.shield)`;
+        document.getElementById("pose")!.textContent = `humanoid.ranger.male (rolling) — ${pose.id} (sword on hand_r.weapon, shield on hand_l.shield)`;
         current.ref?.root.removeFromParent(); current.cand?.instance.dispose();
         const clip = pose.clip ? character.animations.find((c: any) => c.name === pose.clip) : undefined;
         if (pose.clip && !clip) throw Error(`reference has no clip ${pose.clip}`);
@@ -248,8 +248,8 @@ try {
   const report = {
     reference: `three.js r${setup.threeRevision} GLTFLoader + AnimationMixer + SkeletonUtils.clone`,
     candidate: "3d-lab packages/renderer/imported-character.js (adaptImportedCharacterBundle, adaptImportedItemBundle, attach, seek)",
-    release: "moritzbrantner/asset-tooling humanoid-ranger-male-v8",
-    bundle: { tar: resolve(tarPath), profile: manifest.profile, exportRef, character: entryForReport(CHARACTER), equipment: EQUIPMENT.map(e => entryForReport(e.key)) },
+    release: "moritzbrantner/asset-tooling humanoid-ranger-male (rolling)",
+    bundle: { tar: resolve(tarPath), tarSha256: new Bun.CryptoHasher("sha256").update(await readFile(resolve(tarPath))).digest("hex"), profile: manifest.profile, exportRef, character: entryForReport(CHARACTER), equipment: EQUIPMENT.map(e => entryForReport(e.key)) },
     ...setup, samples, instances, pageErrors,
   };
   await writeFile(resolve(output, "reference.json"), JSON.stringify(report, null, 2) + "\n");

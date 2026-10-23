@@ -56,6 +56,19 @@ The resource cache helpers expose creation-versus-reuse and eviction counts dire
 
 `environmentUpdateCount` reports how many frame-environment components (background, sky light, sun light, sun placement, fog) had Three.js state rewritten. It is produced by the same change-tracking code that decides whether to write, so an unchanged environment reports 0, with or without instance batches (see [`browser-renderer.md`](browser-renderer.md#change-tracking)).
 
+### Retained-render operations
+
+Each operation over a static scene of N mesh nodes plus a revisioned instance batch has a declared work class, checked in Chromium by `scripts/renderer-presentation-smoke.mjs` at N = 8, 32 and 128. WebGL `bufferData`/`bufferSubData` calls are counted on the context itself, independent of the renderer's own observations.
+
+| Operation | Declared work |
+| --- | --- |
+| Camera move through `render(frame)` with unchanged scene data | zero object/geometry/material creates or evictions, zero instance uploads, zero environment updates, zero WebGL buffer uploads, for every N |
+| Camera move through `renderCamera` | the same, plus zero scene-node visits |
+| Transform of one node | the same as a camera move: no geometry is rebuilt or re-uploaded, only that node's matrix changes |
+| Load or replace the whole scene | linear: one geometry and object per new mesh, N evictions on replacement, at least N buffer uploads |
+
+Draw work may still scale with visible objects; the contract covers repeated CPU preparation and GPU resource churn, not frame time. Timing stays with the runtime-profiler evidence. This document and the smoke are the repository's deterministic performance contract; there is no separate `.performance/` manifest.
+
 ## Editor mutation boundary
 
 The editor hot path follows the same “compute only what changed” rule. `validateEditorScene` remains the authoritative full validator for imported or externally constructed state. Once a scene has crossed that boundary, the local mutation APIs preserve the invariant rather than re-running whole-scene validation on every pointer/input event.
