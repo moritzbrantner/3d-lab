@@ -100,6 +100,14 @@ jobs:
         # Reuses the WASM bridge built above (#132).
         run: bun scripts/bundle-character-browser-acceptance.ts "$RUNNER_TEMP/bundle-character-browser-acceptance"
 
+      - name: Acquire real rolling Ranger comparison inputs
+        working-directory: candidate
+        run: bun scripts/fetch-ranger-acceptance.ts "$RUNNER_TEMP/ranger-rolling"
+
+      - name: Verify compressed Ranger loading, clips, textures and cleanup in Chromium
+        working-directory: candidate
+        run: bun scripts/compressed-bundle-browser-acceptance.ts "$RUNNER_TEMP/ranger-rolling" "$RUNNER_TEMP/compressed-bundle-acceptance" "../reference"
+
       - name: Build static benchmark sites
         run: |
           (cd reference/web && GITHUB_ACTIONS=false bun run build)
@@ -194,6 +202,8 @@ jobs:
             ${{ runner.temp }}/imported-character-browser-acceptance
             ${{ runner.temp }}/inspection-character-browser-acceptance
             ${{ runner.temp }}/bundle-character-browser-acceptance
+            ${{ runner.temp }}/compressed-bundle-acceptance
+            ${{ runner.temp }}/ranger-rolling/acquisition.json
             ${{ runner.temp }}/reference-renderer-server.log
             ${{ runner.temp }}/candidate-renderer-server.log
           if-no-files-found: warn

@@ -1,7 +1,8 @@
 import {copyBytes, loadCharacterRuntime, renderImportedCharacterInstances} from "./character-runtime.js"
 import {sha256Hex} from "./content-hash.js"
 import {assembleGlb, bundleEntry, referencedResources} from "./bundle-glb.js"
-import {loadImportedItem} from "./imported-item.js"
+import {loadImportedItem, loadDecodedItem} from "./imported-item.js"
+import {loadDownloadBundle, downloadEntry} from "./download-bundle.js"
 
 function fail(message) { throw new Error(`imported character: ${message}`) }
 function provenanceOf(bytes, provenance) {
@@ -44,14 +45,16 @@ function toBytes(value, what) {
  */
 export async function adaptImportedCharacterBundle(bundle, options = {}) {
   const onProgress = typeof options.onProgress === "function" ? options.onProgress : () => {}
-  const {entry, key, variant, glb} = await readBundleGlb(bundle, onProgress)
+  const {entry, key, variant, glb, gltf} = bundle?.manifest?.schema === "asset-downloads-v1"
+    ? await loadDownloadBundle(bundle, options, fail, true)
+    : await readBundleGlb(bundle, onProgress)
   const manifest = bundle.manifest
-  const runtime = await loadCharacterRuntime(glb, fail)
+  const runtime = await loadCharacterRuntime(glb, fail, gltf)
   const {metadata} = runtime
   if (metadata.clips.length === 0) { runtime.dispose(); fail("character has no animation clips") }
   return Object.freeze({
-    resourceKey: `bundle:${key}/${variant}:${entry.sha256}`,
-    provenance: Object.freeze(structuredClone({bundle: {profile: manifest.profile, key, variant, sha256: entry.sha256, source: entry.source}})),
+    resourceKey: `bundle:${key}/${variant}:${entry.sha256 ?? sha256Hex(glb)}`,
+    provenance: Object.freeze(structuredClone({bundle: {profile: manifest.profile ?? manifest.schema, key, variant, sha256: entry.sha256, source: entry.source}})),
     skinNodes: Object.freeze([...metadata.skinNodes]),
     clips: Object.freeze(metadata.clips.map(clip => Object.freeze(clip))),
     createInstance: runtime.createInstance,
@@ -87,12 +90,22 @@ async function readBundleGlb(bundle, onProgress) {
  */
 export async function adaptImportedItemBundle(bundle, options = {}) {
   const onProgress = typeof options.onProgress === "function" ? options.onProgress : () => {}
+  if (bundle?.manifest?.schema === "asset-downloads-v1") {
+    const {gltf, key, variant, glb} = await loadDownloadBundle(bundle, options, fail, false)
+    return loadDecodedItem(gltf, `bundle:${key}/${variant}:${sha256Hex(glb)}`, fail)
+  }
   const {entry, key, variant, glb} = await readBundleGlb(bundle, onProgress)
   return loadImportedItem(glb, `bundle:${key}/${variant}:${entry.sha256}`, fail)
 }
 /** Read one named attachment (for example `humanoid-sockets`) of a bundle entry as JSON. */
 export async function readBundleAttachment({manifest, key, variant = "default", name, readResource}) {
   if (typeof readResource !== "function") fail("bundle readResource must be a function")
+  if (manifest?.schema === "asset-downloads-v1") {
+    const entry = downloadEntry(manifest, key, variant, fail)
+    const path = `${key}.${variant}.${name}.json`
+    if (!entry.files.includes(path)) { fail(`bundle entry ${key}/${variant} has no ${name} attachment`) }
+    return JSON.parse(new TextDecoder().decode(toBytes(await readResource(path), `bundle attachment ${name}`)))
+  }
   const entry = bundleEntry(manifest, key, variant, fail)
   const attachment = (entry.attachments ?? []).find(item => item?.name === name) ?? fail(`bundle entry ${key}/${variant} has no ${name} attachment`)
   if (attachment.mediaType !== "application/json") fail(`bundle attachment ${name} is not JSON`)
