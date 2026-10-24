@@ -60,10 +60,17 @@ export async function loadCharacterRuntime(bytes, fail, decoded) {
       if (index !== undefined) mapping.set(node, index)
     })
   } catch (error) { disposeDecoded(gltf); authority.free(); throw error }
+  const morphTargets = []
+  gltf.scene.traverse(node => {
+    for (const name of Object.keys(node.morphTargetDictionary ?? {})) if (!morphTargets.includes(name)) morphTargets.push(name)
+  })
+  Object.freeze(morphTargets)
   let disposed = false
   const instances = new Set()
   return {
     metadata,
+    /** Morph target names across all meshes, in first-seen scene order. */
+    morphTargets,
     // Authored glTF JSON (names as written, before any substitution).
     json: gltf.parser.json,
     createInstance({modelMatrix} = {}) {
@@ -79,6 +86,9 @@ export async function loadCharacterRuntime(bytes, fail, decoded) {
         original.children.forEach((child, i) => pair(child, copy.children[i]))
       }
       pair(gltf.scene, scene)
+      // Cloned meshes own their influence arrays, so morph weights are per instance.
+      const morphMeshes = []
+      scene.traverse(node => { if (node.morphTargetDictionary && node.morphTargetInfluences) morphMeshes.push(node) })
       const pose = authority.create_instance()
       let instanceDisposed = false
       const apply = () => {
@@ -113,6 +123,25 @@ export async function loadCharacterRuntime(bytes, fail, decoded) {
           const attachment = Object.freeze({joint, frame, detach() { handle.detach(); attachments.delete(attachment) }})
           attachments.add(attachment)
           return attachment
+        },
+        /**
+         * Replace every morph target influence: all reset to 0, then each named target in
+         * `weights` ({name: weight}) is set on every mesh that declares it.
+         */
+        setMorphWeights(weights = {}) {
+          if (instanceDisposed || disposed) fail("instance disposed")
+          if (weights === null || typeof weights !== "object" || Array.isArray(weights)) fail("morph weights must be an object of name: weight")
+          for (const [name, weight] of Object.entries(weights)) {
+            if (!Number.isFinite(weight)) fail(`morph weight ${name} must be finite`)
+            if (!morphTargets.includes(name)) fail(`character has no morph target ${name}`)
+          }
+          for (const mesh of morphMeshes) {
+            mesh.morphTargetInfluences.fill(0)
+            for (const [name, weight] of Object.entries(weights)) {
+              const index = mesh.morphTargetDictionary[name]
+              if (index !== undefined) mesh.morphTargetInfluences[index] = weight
+            }
+          }
         },
         seek: (clip, seconds) => update("seek", clip, seconds),
         transition: (clip, seconds) => update("transition", clip, seconds),

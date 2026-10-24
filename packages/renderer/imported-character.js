@@ -26,6 +26,7 @@ export async function adaptImportedCharacter(source, options = {}) {
     provenance: Object.freeze(provenance),
     // Authored skin slots remain distinct from full structural scene nodes.
     skinNodes: Object.freeze([...metadata.skinNodes]),
+    morphTargets: runtime.morphTargets,
     clips: Object.freeze(metadata.clips.map(clip => Object.freeze(clip))),
     createInstance: runtime.createInstance,
     dispose: runtime.dispose,
@@ -56,6 +57,7 @@ export async function adaptImportedCharacterBundle(bundle, options = {}) {
     resourceKey: `bundle:${key}/${variant}:${entry.sha256 ?? sha256Hex(glb)}`,
     provenance: Object.freeze(structuredClone({bundle: {profile: manifest.profile ?? manifest.schema, key, variant, sha256: entry.sha256, source: entry.source}})),
     skinNodes: Object.freeze([...metadata.skinNodes]),
+    morphTargets: runtime.morphTargets,
     clips: Object.freeze(metadata.clips.map(clip => Object.freeze(clip))),
     createInstance: runtime.createInstance,
     dispose: runtime.dispose,

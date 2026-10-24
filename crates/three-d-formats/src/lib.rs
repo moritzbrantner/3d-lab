@@ -276,10 +276,24 @@ pub fn load_gltf(bytes: &[u8]) -> Result<Asset, FormatError> {
     let gltf = gltf::Gltf::from_slice(bytes)
         .map_err(|error| FormatError::InvalidGltf(error.to_string()))?;
     let buffers = load_gltf_buffers(&gltf)?;
-    load_gltf_asset(&gltf, &buffers)
+    load_gltf_asset(&gltf, &buffers, MorphTargets::Reject)
 }
 
-fn load_gltf_asset(gltf: &gltf::Gltf, buffers: &[Vec<u8>]) -> Result<Asset, FormatError> {
+/// How mesh lowering treats glTF morph targets, which `three-d-assets` does not represent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MorphTargets {
+    /// Static asset lowering: a morph target would be silently lost, so reject it.
+    Reject,
+    /// Imported characters: lower the base mesh; the three.js GPU adapter owns the morph
+    /// target data and runtime influences.
+    BaseMesh,
+}
+
+pub(crate) fn load_gltf_asset(
+    gltf: &gltf::Gltf,
+    buffers: &[Vec<u8>],
+    morphs: MorphTargets,
+) -> Result<Asset, FormatError> {
     let images = gltf_resources::load_images(gltf, buffers)?;
     let samplers = gltf_resources::load_samplers(gltf);
     let textures = gltf_resources::load_textures(gltf);
@@ -289,7 +303,7 @@ fn load_gltf_asset(gltf: &gltf::Gltf, buffers: &[Vec<u8>]) -> Result<Asset, Form
         .collect::<Result<Vec<_>, _>>()?;
     let meshes = gltf
         .meshes()
-        .map(|mesh| convert_gltf_mesh(mesh, buffers))
+        .map(|mesh| convert_gltf_mesh(mesh, buffers, morphs))
         .collect::<Result<Vec<_>, _>>()?;
 
     if meshes.is_empty() {
@@ -562,12 +576,16 @@ fn convert_gltf_material(material: gltf::Material<'_>) -> Result<Material, Forma
     Ok(converted)
 }
 
-fn convert_gltf_mesh(mesh: gltf::Mesh<'_>, buffers: &[Vec<u8>]) -> Result<AssetMesh, FormatError> {
+fn convert_gltf_mesh(
+    mesh: gltf::Mesh<'_>,
+    buffers: &[Vec<u8>],
+    morphs: MorphTargets,
+) -> Result<AssetMesh, FormatError> {
     let mesh_index = mesh.index();
     let name = mesh.name().map(str::to_owned);
     let primitives = mesh
         .primitives()
-        .map(|primitive| convert_gltf_primitive(mesh_index, primitive, buffers))
+        .map(|primitive| convert_gltf_primitive(mesh_index, primitive, buffers, morphs))
         .collect::<Result<Vec<_>, _>>()?;
     AssetMesh::new(name, primitives).map_err(Into::into)
 }
@@ -576,6 +594,7 @@ fn convert_gltf_primitive(
     mesh_index: usize,
     primitive: gltf::Primitive<'_>,
     buffers: &[Vec<u8>],
+    morphs: MorphTargets,
 ) -> Result<MeshPrimitive, FormatError> {
     let primitive_index = primitive.index();
     if primitive.mode() != Mode::Triangles {
@@ -585,7 +604,7 @@ fn convert_gltf_primitive(
             mode: format!("{:?}", primitive.mode()),
         });
     }
-    if primitive.morph_targets().next().is_some() {
+    if morphs == MorphTargets::Reject && primitive.morph_targets().next().is_some() {
         return Err(FormatError::UnsupportedMorphTargets {
             mesh_index,
             primitive_index,
