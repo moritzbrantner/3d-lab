@@ -8,7 +8,6 @@ import { chromium } from "playwright";
 const root = resolve(fileURLToPath(new URL("../", import.meta.url)));
 const inputs = resolve(process.argv[2] ?? "target/ranger-rolling");
 const output = resolve(process.argv[3] ?? "target/compressed-bundle-acceptance");
-const baseline = resolve(process.argv[4] ?? root);
 await mkdir(output, { recursive: true });
 const server = Bun.serve({
   hostname: "127.0.0.1",
@@ -26,10 +25,6 @@ const server = Bun.serve({
     if (url.pathname.startsWith("/assets/")) {
       base = inputs;
       suffix = url.pathname.slice(8);
-    }
-    if (url.pathname.startsWith("/baseline/")) {
-      base = baseline;
-      suffix = url.pathname.slice(10);
     }
     const path = resolve(base, suffix);
     if (!path.startsWith(base + sep)) {
@@ -104,11 +99,9 @@ try {
       const start = performance.now();
       const THREE = await import("three");
       const publicRenderer = await import("/packages/renderer/index.js");
-      const module = await import(
-        mode === "full"
-          ? "/baseline/packages/renderer/imported-character.js"
-          : "/packages/renderer/imported-character.js"
-      );
+      // Both variants use the candidate renderer: the rolling release can change under the
+      // base branch (for example new morph targets), so plain Three.js stays the reference.
+      const module = await import("/packages/renderer/imported-character.js");
       const check = (condition: unknown, message: string) => {
         if (!condition) {
           throw Error(message);

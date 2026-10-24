@@ -1,7 +1,7 @@
 //! Characters built from several skinned meshes (outfit pieces, head, eyes), each with its
 //! own skin, as real asset-tooling humanoid bundles are (#132).
-use serde_json::{json, Value};
-use three_d_formats::{load_gltf_imported_character, ImportedPrimitive};
+use serde_json::{Value, json};
+use three_d_formats::{ImportedPrimitive, load_gltf_imported_character};
 
 const FOX: &[u8] = include_bytes!("../../../fixtures/imported-character/fox.glb");
 
@@ -99,10 +99,12 @@ fn every_skinned_mesh_node_contributes_its_primitives_with_source_identity() {
             .collect::<Vec<_>>(),
         vec![(mesh, 0), (mesh, 0)]
     );
-    assert!(asset
-        .primitives
-        .iter()
-        .all(|p: &ImportedPrimitive| asset.mesh_nodes.contains(&p.node)));
+    assert!(
+        asset
+            .primitives
+            .iter()
+            .all(|p: &ImportedPrimitive| asset.mesh_nodes.contains(&p.node))
+    );
     // Both skins name the same joints: the canonical palette lists each node once and keeps
     // the first skin's binds, so the single-skin pose authority is unchanged.
     assert_eq!(asset.skin_nodes, single.skin_nodes);

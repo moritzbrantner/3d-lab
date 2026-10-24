@@ -106,7 +106,7 @@ jobs:
 
       - name: Verify compressed Ranger loading, clips, textures and cleanup in Chromium
         working-directory: candidate
-        run: bun scripts/compressed-bundle-browser-acceptance.ts "$RUNNER_TEMP/ranger-rolling" "$RUNNER_TEMP/compressed-bundle-acceptance" "../reference"
+        run: bun scripts/compressed-bundle-browser-acceptance.ts "$RUNNER_TEMP/ranger-rolling" "$RUNNER_TEMP/compressed-bundle-acceptance"
 
       - name: Build static benchmark sites
         run: |
