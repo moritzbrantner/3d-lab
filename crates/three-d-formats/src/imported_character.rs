@@ -1,6 +1,7 @@
 //! Imported scene lowering through the existing glTF decoder and animation/rig authorities.
 use crate::{
     FormatError, MorphTargets, load_gltf_animation_clips, load_gltf_asset, load_gltf_buffers,
+    parse_gltf,
 };
 use three_d_animation::{
     AnimationClip, AnimationTrack, Joint, Mat4, Quat, Skeleton, SkinInfluence, Transform,
@@ -80,8 +81,7 @@ fn remap_track(track: &AnimationTrack, mapping: &[usize]) -> Result<AnimationTra
 }
 /// One format adapter, no renderer, texture decoding, or animation sampler.
 pub fn load_gltf_imported_character(bytes: &[u8]) -> Result<ImportedCharacter, FormatError> {
-    let gltf =
-        gltf::Gltf::from_slice(bytes).map_err(|e| invalid(format!("glTF node/skin/clip: {e}")))?;
+    let gltf = parse_gltf(bytes).map_err(|e| invalid(format!("glTF node/skin/clip: {e}")))?;
     let buffers = load_gltf_buffers(&gltf)?;
     let source: Vec<_> = gltf.nodes().collect();
     let mut parents = vec![None; source.len()];

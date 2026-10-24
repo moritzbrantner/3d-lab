@@ -1,7 +1,7 @@
 //! Characters built from several skinned meshes (outfit pieces, head, eyes), each with its
 //! own skin, as real asset-tooling humanoid bundles are (#132).
-use serde_json::{Value, json};
-use three_d_formats::{ImportedPrimitive, load_gltf_imported_character};
+use serde_json::{json, Value};
+use three_d_formats::{load_gltf_imported_character, ImportedPrimitive};
 
 const FOX: &[u8] = include_bytes!("../../../fixtures/imported-character/fox.glb");
 
@@ -99,12 +99,10 @@ fn every_skinned_mesh_node_contributes_its_primitives_with_source_identity() {
             .collect::<Vec<_>>(),
         vec![(mesh, 0), (mesh, 0)]
     );
-    assert!(
-        asset
-            .primitives
-            .iter()
-            .all(|p: &ImportedPrimitive| asset.mesh_nodes.contains(&p.node))
-    );
+    assert!(asset
+        .primitives
+        .iter()
+        .all(|p: &ImportedPrimitive| asset.mesh_nodes.contains(&p.node)));
     // Both skins name the same joints: the canonical palette lists each node once and keeps
     // the first skin's binds, so the single-skin pose authority is unchanged.
     assert_eq!(asset.skin_nodes, single.skin_nodes);
@@ -141,8 +139,14 @@ fn skinned_primitive_with_morph_targets_lowers_its_base_mesh() {
     let base = load_gltf_imported_character(FOX).unwrap();
     // A face-variant style target: a POSITION delta (reusing the base positions as data)
     // plus mesh default weights and target names, as asset-tooling humanoids author them.
+    // Its NORMAL delta is a zero-initialized accessor (no bufferView, no sparse), which
+    // glTF 2.0 permits and the asset-tooling exporter emits for all-zero deltas.
     let position = json["meshes"][0]["primitives"][0]["attributes"]["POSITION"].clone();
-    json["meshes"][0]["primitives"][0]["targets"] = json!([{"POSITION": position}]);
+    let count = json["accessors"][position.as_u64().unwrap() as usize]["count"].clone();
+    let accessors = json["accessors"].as_array_mut().unwrap();
+    accessors.push(json!({"componentType": 5126, "count": count, "type": "VEC3"}));
+    let zero = accessors.len() - 1;
+    json["meshes"][0]["primitives"][0]["targets"] = json!([{"POSITION": position, "NORMAL": zero}]);
     json["meshes"][0]["weights"] = json!([0.0]);
     json["meshes"][0]["extras"] = json!({"targetNames": ["face-variant"]});
     let morphed = join(&json, &bin);

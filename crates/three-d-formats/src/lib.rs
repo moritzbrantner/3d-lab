@@ -272,9 +272,33 @@ impl From<AssetError> for FormatError {
     }
 }
 
+/// Parse and validate glTF like `gltf::Gltf::from_slice`, but accept accessors with neither
+/// `bufferView` nor `sparse`: glTF 2.0 defines them as zero-initialized (exporters use them for
+/// all-zero morph target deltas), while `gltf-json` 1.4 reports them as missing data. Readers
+/// return `None` for such accessors.
+pub(crate) fn parse_gltf(bytes: &[u8]) -> Result<gltf::Gltf, gltf::Error> {
+    use gltf::json::validation::{Error, Validate};
+    let gltf = gltf::Gltf::from_slice_without_validation(bytes)?;
+    let root = gltf.as_json();
+    let mut errors = Vec::new();
+    root.validate(root, gltf::json::Path::new, &mut |path, error| {
+        let path = path();
+        let zero_initialized = matches!(error, Error::Missing)
+            && path.as_str().starts_with("accessors[")
+            && path.as_str().ends_with("].bufferView");
+        if !zero_initialized {
+            errors.push((path, error));
+        }
+    });
+    if errors.is_empty() {
+        Ok(gltf)
+    } else {
+        Err(gltf::Error::Validation(errors))
+    }
+}
+
 pub fn load_gltf(bytes: &[u8]) -> Result<Asset, FormatError> {
-    let gltf = gltf::Gltf::from_slice(bytes)
-        .map_err(|error| FormatError::InvalidGltf(error.to_string()))?;
+    let gltf = parse_gltf(bytes).map_err(|error| FormatError::InvalidGltf(error.to_string()))?;
     let buffers = load_gltf_buffers(&gltf)?;
     load_gltf_asset(&gltf, &buffers, MorphTargets::Reject)
 }
@@ -370,8 +394,7 @@ fn aligned_keyframes<T: Copy>(
 /// Mesh/skin conversion remains separate, so animation clips can be consumed even
 /// when the generic asset loader correctly rejects unrepresented skin attributes.
 pub fn load_gltf_animation_clips(bytes: &[u8]) -> Result<Vec<AnimationClip>, FormatError> {
-    let gltf = gltf::Gltf::from_slice(bytes)
-        .map_err(|error| FormatError::InvalidGltf(error.to_string()))?;
+    let gltf = parse_gltf(bytes).map_err(|error| FormatError::InvalidGltf(error.to_string()))?;
     // glTF's typed target accessor assumes valid node references; diagnose before
     // accessing it so malformed imported clips never trap the browser bridge.
     for (animation, definition) in gltf.as_json().animations.iter().enumerate() {
