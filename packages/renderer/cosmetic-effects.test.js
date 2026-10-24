@@ -125,6 +125,56 @@ describe("cosmetic effect layer", () => {
     layer.dispose()
   })
 
+  test("bursts draw independently moving particles from shared atlas resources", () => {
+    const scene = new THREE.Scene()
+    const layer = createCosmeticEffectLayer(scene)
+    const dust = (id, startTime, extra = {}) => ({
+      id, atlas: atlas.resourceKey, space: "world", origin: [2, 0, 0], startTime, seed: 7,
+      count: 6, lifetime: 0.4, speed: [1, 2], spread: Math.PI / 3, scale: 0.5, endScale: 2, fadeOut: true, ...extra,
+    })
+    const start = sync(layer, {...effects(0, [puff("a", 0)]), bursts: [dust("d", 0)]})
+    expect(start).toMatchObject({effectAtlasCreateCount: 1, effectActiveCount: 7})
+    const state = layer.atlasState(atlas.resourceKey)
+    const positions = (count) => Array.from({length: count}, (_, slot) => Array.from(state.mesh.instanceMatrix.array.slice(slot * 16 + 12, slot * 16 + 15)))
+    // At age 0 every particle sits at the origin with its birth size and full opacity.
+    expect(positions(7).slice(1)).toEqual(Array(6).fill([2, 0, 0]))
+
+    const later = sync(layer, {...effects(0.2, [puff("a", 0)]), bursts: [dust("d", 0)]})
+    expect(later).toMatchObject({effectActiveCount: 7, effectAtlasCreateCount: 0, effectAtlasReuseCount: 1})
+    const moved = positions(7).slice(1)
+    expect(new Set(moved.map(String)).size).toBe(6)
+    expect(state.opacityAttribute.array[1]).toBeCloseTo(0.5)
+
+    // Repeated bursts reuse the same atlas resources and expire without leftover work.
+    for (let burst = 1; burst <= 10; burst += 1) {
+      sync(layer, {...effects(burst, []), bursts: [dust(`d${burst}`, burst, {seed: burst})]})
+    }
+    const idle = sync(layer, {...effects(20, []), bursts: [dust("old", 10)]})
+    expect(idle).toMatchObject({effectActiveCount: 0, effectExpiredCount: 6, liveEffectAtlasCount: 1})
+    expect(state.mesh.visible).toBe(false)
+    expect(layer.atlasState(atlas.resourceKey)).toBe(state)
+
+    // Reduced motion (enabled: false) returns to the zero-resource baseline.
+    expect(sync(layer, {...effects(20, []), bursts: [dust("old", 10)], enabled: false})).toMatchObject({
+      effectAtlasDisposeCount: 1, liveEffectAtlasCount: 0,
+    })
+    expect(scene.children.length).toBe(0)
+  })
+
+  test("burst particles share the billboard budget with deterministic drops", () => {
+    const layer = createCosmeticEffectLayer(new THREE.Scene(), {maxInstances: 5})
+    const burst = {
+      id: "b", atlas: atlas.resourceKey, space: "world", origin: [0, 0, 0], startTime: 0, seed: 3,
+      count: 8, lifetime: 1, emitDuration: 0.4, speed: 1, scale: 1,
+    }
+    const observations = sync(layer, {...effects(0.5, [puff("a", 0.45)]), bursts: [burst]})
+    // Particles start at 0, 0.05, ... 0.35; the puff (0.45) and the four newest particles are kept.
+    expect(observations).toMatchObject({effectActiveCount: 5, effectDroppedCount: 4})
+    expect(sync(layer, {...effects(0.5, [puff("a", 0.45)]), bursts: [burst], maxInstances: 0})).toMatchObject({
+      effectActiveCount: 0, effectDroppedCount: 9,
+    })
+  })
+
   test("observe reports live counts without per-frame work", () => {
     const layer = createCosmeticEffectLayer(new THREE.Scene())
     sync(layer, effects(0, [puff("a", 0)]))
@@ -153,6 +203,10 @@ describe("cosmetic effect validation", () => {
     ["bad color", effects(0, [puff("a", 0, {color: "red"})])],
     ["fractional loops", effects(0, [puff("a", 0, {loops: 1.5})])],
     ["negative budget", effects(0, [], {maxInstances: -1})],
+    ["burst over the particle cap", effects(0, [], {bursts: [{id: "b", atlas: atlas.resourceKey, space: "world", origin: [0, 0, 0], startTime: 0, seed: 1, count: 1000, lifetime: 1, speed: 1, scale: 1}]})],
+    ["burst without seed", effects(0, [], {bursts: [{id: "b", atlas: atlas.resourceKey, space: "world", origin: [0, 0, 0], startTime: 0, count: 4, lifetime: 1, speed: 1, scale: 1}]})],
+    ["burst id shared with an effect", effects(0, [puff("a", 0)], {bursts: [{id: "a", atlas: atlas.resourceKey, space: "world", origin: [0, 0, 0], startTime: 0, seed: 1, count: 4, lifetime: 1, speed: 1, scale: 1}]})],
+    ["bursts not an array", effects(0, [], {bursts: {}})],
     ["short pixels", {time: 0, atlases: [{...atlas, pixels: new Uint8Array(4)}], instances: []}],
     ["frames beyond grid", {time: 0, atlases: [{...atlas, frameCount: 5}], instances: []}],
     ["duplicate atlas", {time: 0, atlases: [atlas, atlas], instances: []}],
