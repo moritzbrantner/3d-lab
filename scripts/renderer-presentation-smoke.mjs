@@ -520,7 +520,31 @@ try {
   for (const [label, [sample, point, color]] of Object.entries(linearEdges)) {
     assertNear(pixelAt(sample.pixels, flatCamera, point), [...color, 255], 2, `linear-filtered ${label} does not bleed`);
   }
+  // Seeded bursts: a particle moves on its sampled path from the origin and plays its own frames.
+  const burstAt = (time) => ({
+    camera: flatCamera,
+    nodes: [],
+    effects: {
+      time,
+      atlases: [atlasPayload],
+      instances: [],
+      bursts: [
+        {
+          id: "dust", atlas: puffAtlas.resourceKey, space: "world", origin: [0, 0, 0], startTime: 1, seed: 9,
+          count: 1, lifetime: 1, speed: 2, direction: [1, 0, 0], spread: 0, scale: 0.5,
+        },
+      ],
+    },
+  });
+  const [burstMoved, burstExpired] = await draw({}, [burstAt(1.5), burstAt(2.5)]);
+  assertNear(pixelAt(burstMoved.pixels, flatCamera, [1, 0, 0]), [...PUFF_FRAME_COLORS[2], 255], 2, "a burst particle draws its sampled frame at its sampled position");
+  assert.deepEqual(pixelAt(burstMoved.pixels, flatCamera, middle), clearColor, "a moved burst particle leaves its origin");
+  assert.equal(burstMoved.observations.effectActiveCount, 1);
+  assert.deepEqual(pixelAt(burstExpired.pixels, flatCamera, [1, 0, 0]), clearColor, "an expired burst draws nothing");
+  assert.equal(burstExpired.observations.effectExpiredCount, 1);
+
   evidence.cosmeticEffects = {
+    burst: pixelAt(burstMoved.pixels, flatCamera, [1, 0, 0]),
     linearEdges: Object.fromEntries(
       Object.entries(linearEdges).map(([label, [sample, point]]) => [label, pixelAt(sample.pixels, flatCamera, point)]),
     ),
@@ -535,7 +559,7 @@ try {
     })),
   };
   await writeFile(path.join(output, "cosmetic-effect-frames.json"), `${JSON.stringify(evidence.cosmeticEffects, null, 2)}\n`);
-  checks.push("cosmetic flipbook effects sample frames by age, tint, fade, face the camera, keep linear filtering inside each cell, and release resources");
+  checks.push("cosmetic flipbook effects sample frames by age, tint, fade, face the camera, keep linear filtering inside each cell, move seeded burst particles, and release resources");
 
   // 11. Static GLB assets: the adapter runs in Chromium and lowers the committed rock/tree GLBs to
   //     the same descriptors as under Bun; repeated placements and transform-only frames reuse every

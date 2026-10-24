@@ -1,3 +1,5 @@
+import type {BurstPreset} from "./flipbook"
+
 export type Matrix4Values = [
   number, number, number, number,
   number, number, number, number,
@@ -262,18 +264,42 @@ export type RendererEffectInstance = {
   opacity?: number
 }
 
+/**
+ * A seeded cosmetic burst: `count` camera-facing particles emitted from `origin`, each moving on a
+ * closed-form path and playing the atlas once over `lifetime`. Sampled statelessly from
+ * `RendererEffects.time` like single effects; equal `seed` and `startTime` give equal particles.
+ * Motion fields are a `BurstPreset` from `./flipbook`, so recipes can be passed through unchanged.
+ */
+export type RendererEffectBurst = BurstPreset & {
+  /** Unique among effect instances and bursts. */
+  id: string
+  atlas: string
+  space: "world"
+  origin: readonly [number, number, number]
+  startTime: number
+  /** uint32 emission seed owned by the cosmetic caller, never game RNG. */
+  seed: number
+  /** World-space particle size at birth (scaled by `endScale` over life). */
+  scale: number | readonly [number, number]
+  color?: RendererColor
+  /** Multiplies atlas alpha (and the `fadeOut` ramp); 0..1, defaults to 1. */
+  opacity?: number
+}
+
 export type RendererEffects = {
   /** The cosmetic clock the effects are sampled at. */
   time: number
-  /** `false` draws nothing and disposes every effect resource; defaults to `true`. */
+  /** `false` (for example reduced motion) draws nothing and disposes every effect resource; defaults to `true`. */
   enabled?: boolean
   /**
-   * Caller budget for this frame (for example a reduced-intensity setting); the renderer
-   * `maxEffectInstances` option still caps it. Newest effects are kept; the rest are dropped.
+   * Caller budget of billboards (single effects plus burst particles) for this frame, for example
+   * a reduced-intensity setting; the renderer `maxEffectInstances` option still caps it. Newest
+   * billboards are kept; the rest are dropped.
    */
   maxInstances?: number
   atlases: ReadonlyArray<RendererEffectAtlas>
   instances: ReadonlyArray<RendererEffectInstance>
+  bursts?: ReadonlyArray<RendererEffectBurst>
 }
 
 export type RendererFrame = {
@@ -312,11 +338,11 @@ export type RendererWorkObservations = Readonly<{
   liveMaterialCount: number
   /** Batch-specific subset of `liveObjectCount`. */
   liveInstanceBatchCount: number
-  /** Effects drawn this frame (after the budget). */
+  /** Billboards (single effects plus burst particles) drawn this frame, after the budget. */
   effectActiveCount: number
-  /** Effects whose `startTime` is still ahead of `effects.time`. */
+  /** Billboards (effects or burst particles) whose start is still ahead of `effects.time`. */
   effectPendingCount: number
-  /** Effects past `startTime + duration * loops`. */
+  /** Billboards past their lifetime (`duration * loops`, or a particle's `lifetime`). */
   effectExpiredCount: number
   /** Active effects dropped by the instance budget. */
   effectDroppedCount: number
@@ -349,7 +375,7 @@ export type ThreeSceneRendererOptions = {
   background?: number | string
   shadows?: boolean
   pixelRatioLimit?: number
-  /** Hard cap on effects drawn per frame across all atlases (also each atlas mesh's fixed capacity). Defaults to 64. */
+  /** Hard cap on billboards (effects plus burst particles) drawn per frame across all atlases (also each atlas mesh's fixed capacity). Defaults to 64. */
   maxEffectInstances?: number
 }
 

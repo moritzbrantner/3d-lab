@@ -104,7 +104,7 @@ Validated static GLB assets (for example asset-tooling rocks and trees) are lowe
 
 Repeated content can be submitted as instance batches (one draw call per batch); see [`docs/contracts/performance-observability.md`](docs/contracts/performance-observability.md#instance-batches).
 
-Cosmetic impact/puff effects can be submitted as bounded baked flipbooks (`frame.effects`); fixed-time frame sampling is also available renderer-independently from `@moritzbrantner/three-d-renderer/flipbook`. See [`docs/contracts/browser-renderer.md`](docs/contracts/browser-renderer.md#cosmetic-flipbook-effects).
+Cosmetic impact/puff effects can be submitted as bounded baked flipbooks or seeded particle bursts (`frame.effects`); fixed-time frame and particle sampling is also available renderer-independently from `@moritzbrantner/three-d-renderer/flipbook`. See [`docs/contracts/browser-renderer.md`](docs/contracts/browser-renderer.md#cosmetic-flipbook-effects).
 
 #### Imported characters: capability proof versus consumer adoption
 

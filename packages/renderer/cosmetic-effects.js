@@ -1,13 +1,17 @@
 import * as THREE from "three"
 import {
+  burstParticleStartTime,
+  compileBurst,
   compileFlipbookLayout,
   compileFlipbookPlayback,
   flipbookFrameRect,
   requireWholeTexelCells,
+  sampleBurstParticle,
   sampleFlipbook,
 } from "./flipbook.js"
 
-// Cosmetic baked-flipbook effects: camera-facing quads that play one atlas frame sequence.
+// Cosmetic baked-flipbook effects: camera-facing quads that play one atlas frame sequence, either
+// as single effects or as seeded bursts of independently moving particles.
 // Effects are presentation only. The layer samples caller-supplied timing statelessly, so it holds
 // no simulation state, and it releases every GPU resource of an atlas the frame no longer declares.
 
@@ -71,13 +75,15 @@ export function validateCosmeticEffects(effects, fail) {
     }
   }
 
+  if (effects.bursts !== undefined && !Array.isArray(effects.bursts)) fail("effects bursts must be an array")
+
   const ids = new Set()
-  for (const effect of effects.instances) {
-    if (!effect || typeof effect !== "object") fail("effect instance must be an object")
-    if (typeof effect.id !== "string" || effect.id.length === 0) fail("effect id must be a non-empty string")
+  function validateCommon(effect, kind) {
+    if (!effect || typeof effect !== "object") fail(`${kind} must be an object`)
+    if (typeof effect.id !== "string" || effect.id.length === 0) fail(`${kind} id must be a non-empty string`)
     if (ids.has(effect.id)) fail(`duplicate effect id: ${effect.id}`)
     ids.add(effect.id)
-    const label = `effect ${effect.id}`
+    const label = `${kind} ${effect.id}`
     if (!atlasKeys.has(effect.atlas)) fail(`${label} atlas must name a declared effects atlas`)
     if (effect.space !== "world") fail(`${label} space must be "world"`)
     if (!isFiniteTuple(effect.origin, 3)) fail(`${label} origin must contain exactly 3 finite numbers`)
@@ -89,8 +95,20 @@ export function validateCosmeticEffects(effects, fail) {
     if (effect.opacity !== undefined && (!Number.isFinite(effect.opacity) || effect.opacity < 0 || effect.opacity > 1)) {
       fail(`${label} opacity must be between 0 and 1`)
     }
+    return label
+  }
+  for (const effect of effects.instances) {
+    const label = validateCommon(effect, "effect")
     try {
       compileFlipbookPlayback(effect)
+    } catch (error) {
+      fail(`${label}: ${error.message}`)
+    }
+  }
+  for (const burst of effects.bursts ?? []) {
+    const label = validateCommon(burst, "effect burst")
+    try {
+      compileBurst(burst)
     } catch (error) {
       fail(`${label}: ${error.message}`)
     }
@@ -192,9 +210,11 @@ function store(array, offset, value) {
 }
 
 function compareActive(a, b) {
-  // Newest effects win the budget; ids break ties so the kept set is deterministic.
-  if (a.effect.startTime !== b.effect.startTime) return b.effect.startTime - a.effect.startTime
-  return a.effect.id < b.effect.id ? -1 : a.effect.id > b.effect.id ? 1 : 0
+  // Newest billboards win the budget; ids then particle indices break ties so the kept set is
+  // deterministic.
+  if (a.startTime !== b.startTime) return b.startTime - a.startTime
+  if (a.effect.id !== b.effect.id) return a.effect.id < b.effect.id ? -1 : 1
+  return a.index - b.index
 }
 
 export function createEffectObservations() {
@@ -227,6 +247,7 @@ export function createCosmeticEffectLayer(
   const scratchColor = new THREE.Color()
   const scratchPosition = new THREE.Vector3()
   const scratchScale = new THREE.Vector3()
+  const scratchOffset = new THREE.Vector3()
   const identityRotation = new THREE.Quaternion()
   const rect = [0, 0, 0, 0]
 
@@ -239,13 +260,15 @@ export function createCosmeticEffectLayer(
     }
   }
 
-  function writeSlot(state, slot, effect, sample) {
+  function writeSlot(state, slot, entry) {
     let matrixChanged = false
     let colorChanged = false
     let frameChanged = false
+    const {effect, offset, size} = entry
     const scale = typeof effect.scale === "number" ? effect.scale : null
     scratchPosition.fromArray(effect.origin)
-    scratchScale.set(scale ?? effect.scale[0], scale ?? effect.scale[1], 1)
+    if (offset) scratchPosition.add(scratchOffset.fromArray(offset))
+    scratchScale.set((scale ?? effect.scale[0]) * size, (scale ?? effect.scale[1]) * size, 1)
     scratchMatrix.compose(scratchPosition, identityRotation, scratchScale)
     const matrixArray = state.mesh.instanceMatrix.array
     for (let index = 0; index < 16; index += 1) {
@@ -256,12 +279,12 @@ export function createCosmeticEffectLayer(
     colorChanged = store(colorArray, slot * 3, scratchColor.r) || colorChanged
     colorChanged = store(colorArray, slot * 3 + 1, scratchColor.g) || colorChanged
     colorChanged = store(colorArray, slot * 3 + 2, scratchColor.b) || colorChanged
-    flipbookFrameRect(state.layout, sample.frame, rect, state.texelInset)
+    flipbookFrameRect(state.layout, entry.frame, rect, state.texelInset)
     const frameArray = state.frameAttribute.array
     for (let index = 0; index < 4; index += 1) {
       frameChanged = store(frameArray, slot * 4 + index, rect[index]) || frameChanged
     }
-    const opacityChanged = store(state.opacityAttribute.array, slot, effect.opacity ?? 1)
+    const opacityChanged = store(state.opacityAttribute.array, slot, (effect.opacity ?? 1) * entry.opacity)
     return {matrixChanged, colorChanged, frameChanged, opacityChanged}
   }
 
@@ -297,7 +320,30 @@ export function createCosmeticEffectLayer(
         const sample = sampleFlipbook(state.layout, compileFlipbookPlayback(effect), effects.time)
         if (sample.phase === "pending") observations.effectPendingCount += 1
         else if (sample.phase === "expired") observations.effectExpiredCount += 1
-        else active.push({effect, sample, state})
+        else {
+          active.push({effect, state, startTime: effect.startTime, index: 0, frame: sample.frame, offset: null, size: 1, opacity: 1})
+        }
+      }
+      for (const effect of effects.bursts ?? []) {
+        const state = atlases.get(effect.atlas)
+        const burst = compileBurst(effect)
+        for (let index = 0; index < burst.count; index += 1) {
+          const sample = sampleBurstParticle(state.layout, burst, index, effects.time)
+          if (sample.phase === "pending") observations.effectPendingCount += 1
+          else if (sample.phase === "expired") observations.effectExpiredCount += 1
+          else {
+            active.push({
+              effect,
+              state,
+              startTime: burstParticleStartTime(burst, index),
+              index,
+              frame: sample.frame,
+              offset: sample.offset,
+              size: sample.size,
+              opacity: sample.opacity,
+            })
+          }
+        }
       }
       const budget = Math.min(maxInstances, effects.maxInstances ?? maxInstances)
       if (active.length > budget) {
@@ -307,8 +353,9 @@ export function createCosmeticEffectLayer(
       }
       observations.effectActiveCount = active.length
 
-      for (const {effect, sample, state} of active) {
-        const changed = writeSlot(state, state.cursor, effect, sample)
+      for (const entry of active) {
+        const {state} = entry
+        const changed = writeSlot(state, state.cursor, entry)
         state.cursor += 1
         state.dirty.matrix ||= changed.matrixChanged
         state.dirty.color ||= changed.colorChanged
