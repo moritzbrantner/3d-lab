@@ -1,5 +1,8 @@
 //! Imported scene lowering through the existing glTF decoder and animation/rig authorities.
-use crate::{FormatError, load_gltf_animation_clips, load_gltf_asset, load_gltf_buffers};
+use crate::{
+    FormatError, MorphTargets, load_gltf_animation_clips, load_gltf_asset, load_gltf_buffers,
+    parse_gltf,
+};
 use three_d_animation::{
     AnimationClip, AnimationTrack, Joint, Mat4, Quat, Skeleton, SkinInfluence, Transform,
     TransformNode, world_matrices,
@@ -78,8 +81,7 @@ fn remap_track(track: &AnimationTrack, mapping: &[usize]) -> Result<AnimationTra
 }
 /// One format adapter, no renderer, texture decoding, or animation sampler.
 pub fn load_gltf_imported_character(bytes: &[u8]) -> Result<ImportedCharacter, FormatError> {
-    let gltf =
-        gltf::Gltf::from_slice(bytes).map_err(|e| invalid(format!("glTF node/skin/clip: {e}")))?;
+    let gltf = parse_gltf(bytes).map_err(|e| invalid(format!("glTF node/skin/clip: {e}")))?;
     let buffers = load_gltf_buffers(&gltf)?;
     let source: Vec<_> = gltf.nodes().collect();
     let mut parents = vec![None; source.len()];
@@ -230,10 +232,8 @@ pub fn load_gltf_imported_character(bytes: &[u8]) -> Result<ImportedCharacter, F
             .ok_or_else(|| invalid("missing skin mesh"))?;
         mesh_nodes.push(mesh_node.index());
         for primitive in mesh.primitives() {
-            if primitive.mode() != gltf::mesh::Mode::Triangles
-                || primitive.morph_targets().next().is_some()
-            {
-                return Err(invalid("unsupported skin primitive/morph targets"));
+            if primitive.mode() != gltf::mesh::Mode::Triangles {
+                return Err(invalid("unsupported skin primitive mode"));
             }
             let reader = primitive.reader(|b| buffers.get(b.index()).map(Vec::as_slice));
             let positions = reader
@@ -242,6 +242,22 @@ pub fn load_gltf_imported_character(bytes: &[u8]) -> Result<ImportedCharacter, F
                 .collect::<Vec<_>>();
             if positions.iter().flatten().any(|v| !v.is_finite()) {
                 return Err(invalid("skin position nonfinite"));
+            }
+            // Morph targets (face variants) are applied by the three.js GPU adapter on top
+            // of the skinned base mesh; Rust only checks their deltas fit the primitive.
+            for (positions_delta, normals_delta, tangents_delta) in reader.read_morph_targets() {
+                let deltas = [
+                    positions_delta.map(Iterator::collect::<Vec<_>>),
+                    normals_delta.map(Iterator::collect::<Vec<_>>),
+                    tangents_delta.map(Iterator::collect::<Vec<_>>),
+                ];
+                if deltas.iter().flatten().any(|delta| {
+                    delta.len() != positions.len() || delta.iter().flatten().any(|v| !v.is_finite())
+                }) {
+                    return Err(invalid(
+                        "skin morph target deltas must be finite and match the vertex count",
+                    ));
+                }
             }
             let indices = if let Some(indices) = reader.read_indices() {
                 indices.into_u32().collect::<Vec<_>>()
@@ -346,7 +362,7 @@ pub fn load_gltf_imported_character(bytes: &[u8]) -> Result<ImportedCharacter, F
     let skeleton = Skeleton::new(joints).map_err(|e| invalid(e.to_string()))?;
     let rig = RiggedAsset::new(skeleton, influences, clips, Vec::new())
         .map_err(|e| invalid(format!("rig: {e}")))?;
-    let asset = load_gltf_asset(&gltf, &buffers)?;
+    let asset = load_gltf_asset(&gltf, &buffers, MorphTargets::BaseMesh)?;
     Ok(ImportedCharacter {
         asset,
         nodes,

@@ -70,6 +70,11 @@ export interface ImportedCharacterInstance extends CharacterIkControls {
    * Which item, joint, socket and frame to use is consumer data.
    */
   attach(item: ImportedItemInstance, attachment: {joint: string; socket?: readonly number[]; frame?: string}): ImportedCharacterAttachment
+  /**
+   * Replace all morph target influences (for example face variants): every influence resets
+   * to 0, then each named target is set on every mesh declaring it. Unknown names throw.
+   */
+  setMorphWeights(weights: Readonly<Record<string, number>>): void
   seek(clip: string, seconds: number): void
   transition(clip: string, durationSeconds: number): void
   advance(deltaSeconds: number): void
@@ -79,6 +84,8 @@ export interface ImportedCharacterAsset {
   readonly resourceKey: string
   readonly provenance: unknown
   readonly skinNodes: readonly number[]
+  /** Morph target names across the character's meshes, in first-seen scene order. */
+  readonly morphTargets: readonly string[]
   readonly clips: readonly {name:string; duration:number}[]
   createInstance(options?: {modelMatrix?: readonly number[]}): ImportedCharacterInstance
   dispose(): void

@@ -267,6 +267,8 @@ These timings are observations of the controlled workload, not a production late
 
 `ImportedCharacterInstance.attach(item, {joint, socket, frame = "grip"})` parents an item instance under a named character joint. The item's `frame` lands on `socket`, a column-major transform in the joint's frame (identity when omitted): holder = socket × inverse(frame). The item then follows the Rust-sampled pose. `detach()` removes it, and disposing the character instance detaches all of its items. `readBundleAttachment` reads a JSON attachment of a bundle entry, such as asset-tooling's `humanoid-sockets` descriptor.
 
+Skinned primitives may carry morph targets, such as asset-tooling humanoid face variants. Rust checks that their POSITION/NORMAL/TANGENT deltas are finite and match the primitive's vertex count, then lowers the base mesh; three.js applies the targets on the GPU. Zero-initialized accessors (no `bufferView` and no `sparse`, which glTF 2.0 allows) are accepted. `ImportedCharacterAsset.morphTargets` lists the target names. `ImportedCharacterInstance.setMorphWeights({name: weight})` resets every influence of that instance to 0 and then sets each named target on every mesh that declares it. Unknown names and non-finite weights throw. The static `load_gltf` asset path still rejects morph targets.
+
 The renderer composes only the given transforms. Which item goes to which joint, socket and frame (loadouts, handedness, stowed places, multi-grip items) is consumer data, so new items and places need no renderer change.
 
 ### Optional layered IK

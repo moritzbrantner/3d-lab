@@ -134,3 +134,31 @@ fn unsampled_extra_colour_and_uv_sets_are_skipped_but_a_sampled_second_uv_set_is
         .to_string();
     assert!(error.contains("TexCoords(1)"), "{error}");
 }
+
+#[test]
+fn skinned_primitive_with_morph_targets_lowers_its_base_mesh() {
+    let (mut json, bin) = split(FOX);
+    let base = load_gltf_imported_character(FOX).unwrap();
+    // A face-variant style target: a POSITION delta (reusing the base positions as data)
+    // plus mesh default weights and target names, as asset-tooling humanoids author them.
+    // Its NORMAL delta is a zero-initialized accessor (no bufferView, no sparse), which
+    // glTF 2.0 permits and the asset-tooling exporter emits for all-zero deltas.
+    let position = json["meshes"][0]["primitives"][0]["attributes"]["POSITION"].clone();
+    let count = json["accessors"][position.as_u64().unwrap() as usize]["count"].clone();
+    let accessors = json["accessors"].as_array_mut().unwrap();
+    accessors.push(json!({"componentType": 5126, "count": count, "type": "VEC3"}));
+    let zero = accessors.len() - 1;
+    json["meshes"][0]["primitives"][0]["targets"] = json!([{"POSITION": position, "NORMAL": zero}]);
+    json["meshes"][0]["weights"] = json!([0.0]);
+    json["meshes"][0]["extras"] = json!({"targetNames": ["face-variant"]});
+    let morphed = join(&json, &bin);
+    let asset = load_gltf_imported_character(&morphed).unwrap();
+    assert_eq!(asset.primitives, base.primitives);
+    assert_eq!(asset.primitive_indices, base.primitive_indices);
+    assert_eq!(asset.gpu_skin_indices, base.gpu_skin_indices);
+    // Static lowering still refuses morph targets it would silently drop.
+    let error = three_d_formats::load_gltf(&morphed)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("morph targets"), "{error}");
+}
