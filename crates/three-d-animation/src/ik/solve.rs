@@ -202,8 +202,11 @@ impl IkWorkspace {
 
     pub(super) fn refresh(&mut self, rig: &IkRig, pose: &[Transform], from: usize) -> usize {
         for (node, transform) in pose.iter().enumerate().skip(from) {
-            let local = transform.matrix();
+            // Same matrix as `transform.matrix()`, without normalizing twice.
             let rotation = transform.rotation.normalized().unwrap_or(Quat::IDENTITY);
+            let local = Mat4::translation(transform.translation)
+                * Mat4::rotation_unit(rotation)
+                * Mat4::scale(transform.scale);
             match rig.parents[node] {
                 Some(parent) => {
                     self.world[node] = self.world[parent] * local;
