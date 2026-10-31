@@ -16,7 +16,7 @@ Nodes and instance batch instances share one transform composition (a `modelMatr
 
 The environment follows the same rule as nodes: it describes the whole frame. Every omitted environment field, or an omitted environment, renders that field's renderer default. Callers therefore resend their environment each frame (reusing the same object is fine) rather than issuing incremental commands. `renderCamera(camera)` redraws the last submitted nodes and environment with a new camera only, so it is valid only while both are unchanged: a frame whose environment may differ, such as each step of a day/night cycle or a shadow focus following the viewer, must go through `render(frame)`.
 
-`validateRenderFrame` rejects malformed input with `ThreeRendererContractError` before any Three.js state changes.
+`validateRenderFrame` rejects malformed input with `ThreeRendererContractError` before any Three.js state changes. It checks every mesh vertex and batch instance. `render(frame)` applies the same contract once per payload: a mesh payload is validated when its `resourceKey` is uploaded, and batch instances when their `revision` changes. Frames that reuse an uploaded `resourceKey` or an unchanged `revision` are checked by key and revision only, so per-frame validation work does not grow with static vertex or instance counts.
 
 ## Environment
 
@@ -64,7 +64,7 @@ Instance batches always use the default **lit** material, in white, through the 
 
 ## Indexed mesh geometry and vertex colors
 
-A `kind: "mesh"` geometry carries positions, triangle indices, optional aligned normals, optional aligned `uvs` (UV0, materialized as the `uv` attribute for future textured materials; no current material samples them), and optional aligned `colors`. The renderer validates structural safety every frame and materializes one Three.js `BufferGeometry` per `resourceKey`.
+A `kind: "mesh"` geometry carries positions, triangle indices, optional aligned normals, optional aligned `uvs` (UV0, materialized as the `uv` attribute for future textured materials; no current material samples them), and optional aligned `colors`. The renderer validates structural safety when it uploads a `resourceKey` and materializes one Three.js `BufferGeometry` per `resourceKey`.
 
 `resourceKey` identifies the exact payload: positions, indices, normals, uvs, and colors. The geometry cache is keyed on it alone and never compares buffers, so two payloads that differ in any attribute, such as the same terrain recolored for a season, must use different keys. A key reused with different contents keeps rendering the cached payload, including its colors or lack of them, until no node uses the key and it is evicted. Content-derived keys (for example a hash of the encoded payload) satisfy this by construction.
 
