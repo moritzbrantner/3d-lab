@@ -193,7 +193,11 @@ impl Mat4 {
     }
 
     pub fn rotation(rotation: Quat) -> Self {
-        let q = rotation.normalized().unwrap_or(Quat::IDENTITY);
+        Self::rotation_unit(rotation.normalized().unwrap_or(Quat::IDENTITY))
+    }
+
+    /// [`Self::rotation`] for a quaternion the caller already normalized.
+    pub(crate) fn rotation_unit(q: Quat) -> Self {
         let x2 = q.x + q.x;
         let y2 = q.y + q.y;
         let z2 = q.z + q.z;
