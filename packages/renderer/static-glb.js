@@ -1,7 +1,7 @@
 import * as THREE from "three"
 import {GLTFLoader} from "three/examples/jsm/loaders/GLTFLoader.js"
 import {sha256Hex} from "./content-hash.js"
-import {ThreeRendererContractError} from "./index.js"
+import {ThreeRendererContractError} from "./frame-validation.js"
 
 // Static GLB adapter: lowers one already validated, self-contained GLB into immutable renderer
 // descriptors (scene-node hierarchy, indexed mesh geometry, and factor-only materials) once, so
