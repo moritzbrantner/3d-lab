@@ -202,6 +202,136 @@ export function createThreeSceneRenderer(canvas, options = {}) {
     camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert()
   }
 
+  function submitImportedRoots(roots) {
+    if (!Array.isArray(roots) || roots.some(root => !root?.isObject3D)) failContract("imported roots must be Three objects")
+    const current = new Set(roots)
+    for (const root of importedRoots) if (!current.has(root)) { scene.remove(root); importedRoots.delete(root) }
+    for (const root of roots) if (!importedRoots.has(root)) { scene.add(root); importedRoots.add(root) }
+  }
+
+  /** Submits the frame to the scene without drawing it, for `render` and `prepare`. */
+  function submitFrame(frame) {
+    validateFrame(frame, uploaded)
+    applyCamera(frame.camera)
+
+    const observations = createWorkObservations(frame.nodes.length)
+    observations.environmentUpdateCount = sceneEnvironment.apply(frame.environment)
+    const liveObjectIds = new Set()
+    const liveGeometryKeys = new Set()
+    const liveMaterialKeys = new Set()
+    for (const node of frame.nodes) {
+      liveObjectIds.add(node.id)
+      const nextGeometryKey = geometryKey(node.geometry)
+      const nextGeometry = acquireResource(
+        geometries,
+        nextGeometryKey,
+        createGeometry,
+        node.geometry,
+        observations,
+        "geometryCreateCount",
+      )
+      // The material follows the geometry actually bound to the mesh, so both always agree on
+      // the color attribute even when a resourceKey is reused with a different payload.
+      materialInput.node = node
+      materialInput.vertexColors = nextGeometry.hasAttribute("color")
+      const nextMaterialKey = materialKey(materialInput)
+      const nextMaterial = acquireResource(
+        materials,
+        nextMaterialKey,
+        createMaterial,
+        materialInput,
+        observations,
+        "materialCreateCount",
+      )
+      liveGeometryKeys.add(nextGeometryKey)
+      liveMaterialKeys.add(nextMaterialKey)
+
+      let mesh = objects.get(node.id)
+      if (!mesh) {
+        mesh = new THREE.Mesh(nextGeometry, nextMaterial)
+        mesh.matrixAutoUpdate = false
+        mesh.castShadow = options.shadows === true
+        mesh.receiveShadow = options.shadows === true
+        objects.set(node.id, mesh)
+        scene.add(mesh)
+        observations.objectCreateCount += 1
+      } else {
+        mesh.geometry = nextGeometry
+        mesh.material = nextMaterial
+      }
+      composeTransform(mesh.matrix, node, transformScratch)
+      mesh.matrixWorldNeedsUpdate = true
+      mesh.visible = node.visible !== false
+    }
+    materialInput.node = null
+
+    for (const [id, mesh] of objects) {
+      if (liveObjectIds.has(id)) continue
+      scene.remove(mesh)
+      objects.delete(id)
+      observations.objectRemoveCount += 1
+    }
+
+    const liveBatchIds = new Set()
+    for (const batch of frame.instanceBatches ?? []) {
+      liveBatchIds.add(batch.id)
+      const nextGeometryKey = geometryKey(batch.geometry)
+      const geometry = acquireResource(
+        geometries,
+        nextGeometryKey,
+        createGeometry,
+        batch.geometry,
+        observations,
+        "geometryCreateCount",
+      )
+      materialInput.node = instanceBatchMaterialNode(batch, batchMaterialNode)
+      materialInput.vertexColors = geometry.hasAttribute("color")
+      const nextMaterialKey = materialKey(materialInput)
+      const material = acquireResource(
+        materials,
+        nextMaterialKey,
+        createMaterial,
+        materialInput,
+        observations,
+        "materialCreateCount",
+      )
+      liveGeometryKeys.add(nextGeometryKey)
+      liveMaterialKeys.add(nextMaterialKey)
+
+      const result = syncInstanceBatch(
+        instanceBatches.get(batch.id),
+        batch,
+        geometry,
+        material,
+        writeInstanceMatrix,
+        transformScratch,
+      )
+      attachInstanceBatchResult(scene, result, options.shadows === true, observations)
+      instanceBatches.set(batch.id, result.state)
+      observations.instanceBatchCount += 1
+      observations.instanceCount += batch.instances.length
+    }
+    materialInput.node = null
+    for (const [id, state] of instanceBatches) {
+      if (liveBatchIds.has(id)) continue
+      scene.remove(state.mesh)
+      state.mesh.dispose()
+      instanceBatches.delete(id)
+      observations.objectRemoveCount += 1
+    }
+
+    // Each node and each instance batch acquires exactly one object, geometry, and material.
+    const acquisitions = observations.nodeVisitCount + observations.instanceBatchCount
+    observations.objectReuseCount = acquisitions - observations.objectCreateCount
+    observations.geometryReuseCount = acquisitions - observations.geometryCreateCount
+    observations.materialReuseCount = acquisitions - observations.materialCreateCount
+    observations.geometryEvictCount = evictUnusedResources(geometries, liveGeometryKeys)
+    observations.materialEvictCount = evictUnusedResources(materials, liveMaterialKeys)
+    recordLiveCacheCounts(observations, liveCaches)
+    effectLayer.sync(frame.effects, observations)
+    return observations
+  }
+
   return {
     configureTextureLoader(loader) {
       loader.detectSupport(renderer)
@@ -245,138 +375,39 @@ export function createThreeSceneRenderer(canvas, options = {}) {
     /** Present Rust-authoritative imported poses through the same scene/context. */
     renderImportedRoots({camera: frameCamera, roots}) {
       validateRenderCamera(frameCamera)
-      if (!Array.isArray(roots) || roots.some(root => !root?.isObject3D)) failContract("imported roots must be Three objects")
-      const current = new Set(roots)
-      for (const root of importedRoots) if (!current.has(root)) { scene.remove(root); importedRoots.delete(root) }
-      for (const root of roots) if (!importedRoots.has(root)) { scene.add(root); importedRoots.add(root) }
+      submitImportedRoots(roots)
       applyCamera(frameCamera)
       renderer.render(scene, camera)
       return {importedInstances: roots.length}
     },
 
-    render(frame) {
-      validateFrame(frame, uploaded)
-      applyCamera(frame.camera)
-
-      const observations = createWorkObservations(frame.nodes.length)
-      observations.environmentUpdateCount = sceneEnvironment.apply(frame.environment)
-      const liveObjectIds = new Set()
-      const liveGeometryKeys = new Set()
-      const liveMaterialKeys = new Set()
-      for (const node of frame.nodes) {
-        liveObjectIds.add(node.id)
-        const nextGeometryKey = geometryKey(node.geometry)
-        const nextGeometry = acquireResource(
-          geometries,
-          nextGeometryKey,
-          createGeometry,
-          node.geometry,
-          observations,
-          "geometryCreateCount",
-        )
-        // The material follows the geometry actually bound to the mesh, so both always agree on
-        // the color attribute even when a resourceKey is reused with a different payload.
-        materialInput.node = node
-        materialInput.vertexColors = nextGeometry.hasAttribute("color")
-        const nextMaterialKey = materialKey(materialInput)
-        const nextMaterial = acquireResource(
-          materials,
-          nextMaterialKey,
-          createMaterial,
-          materialInput,
-          observations,
-          "materialCreateCount",
-        )
-        liveGeometryKeys.add(nextGeometryKey)
-        liveMaterialKeys.add(nextMaterialKey)
-
-        let mesh = objects.get(node.id)
-        if (!mesh) {
-          mesh = new THREE.Mesh(nextGeometry, nextMaterial)
-          mesh.matrixAutoUpdate = false
-          mesh.castShadow = options.shadows === true
-          mesh.receiveShadow = options.shadows === true
-          objects.set(node.id, mesh)
-          scene.add(mesh)
-          observations.objectCreateCount += 1
-        } else {
-          mesh.geometry = nextGeometry
-          mesh.material = nextMaterial
+    /**
+     * Submit `frame` and the imported `roots` like `renderImportedRoots` and `render`, without
+     * drawing them, and resolve once every program they draw with is compiled and every texture
+     * they sample is uploaded. Programs compile in parallel where the browser has
+     * KHR_parallel_shader_compile, so the main thread does not wait on the driver. A following
+     * `render` of the same content neither compiles nor uploads.
+     */
+    async prepare(frame, {roots = []} = {}) {
+      submitImportedRoots(roots)
+      const observations = submitFrame(frame)
+      await renderer.compileAsync(scene, camera)
+      const textures = new Set()
+      scene.traverse(object => {
+        for (const material of [object.material ?? []].flat()) {
+          for (const value of Object.values(material)) if (value?.isTexture) textures.add(value)
         }
-        composeTransform(mesh.matrix, node, transformScratch)
-        mesh.matrixWorldNeedsUpdate = true
-        mesh.visible = node.visible !== false
-      }
-      materialInput.node = null
+      })
+      for (const texture of textures) renderer.initTexture(texture)
+      return observations
+    },
 
-      for (const [id, mesh] of objects) {
-        if (liveObjectIds.has(id)) continue
-        scene.remove(mesh)
-        objects.delete(id)
-        observations.objectRemoveCount += 1
-      }
-
-      const liveBatchIds = new Set()
-      for (const batch of frame.instanceBatches ?? []) {
-        liveBatchIds.add(batch.id)
-        const nextGeometryKey = geometryKey(batch.geometry)
-        const geometry = acquireResource(
-          geometries,
-          nextGeometryKey,
-          createGeometry,
-          batch.geometry,
-          observations,
-          "geometryCreateCount",
-        )
-        materialInput.node = instanceBatchMaterialNode(batch, batchMaterialNode)
-        materialInput.vertexColors = geometry.hasAttribute("color")
-        const nextMaterialKey = materialKey(materialInput)
-        const material = acquireResource(
-          materials,
-          nextMaterialKey,
-          createMaterial,
-          materialInput,
-          observations,
-          "materialCreateCount",
-        )
-        liveGeometryKeys.add(nextGeometryKey)
-        liveMaterialKeys.add(nextMaterialKey)
-
-        const result = syncInstanceBatch(
-          instanceBatches.get(batch.id),
-          batch,
-          geometry,
-          material,
-          writeInstanceMatrix,
-          transformScratch,
-        )
-        attachInstanceBatchResult(scene, result, options.shadows === true, observations)
-        instanceBatches.set(batch.id, result.state)
-        observations.instanceBatchCount += 1
-        observations.instanceCount += batch.instances.length
-      }
-      materialInput.node = null
-      for (const [id, state] of instanceBatches) {
-        if (liveBatchIds.has(id)) continue
-        scene.remove(state.mesh)
-        state.mesh.dispose()
-        instanceBatches.delete(id)
-        observations.objectRemoveCount += 1
-      }
-
-      // Each node and each instance batch acquires exactly one object, geometry, and material.
-      const acquisitions = observations.nodeVisitCount + observations.instanceBatchCount
-      observations.objectReuseCount = acquisitions - observations.objectCreateCount
-      observations.geometryReuseCount = acquisitions - observations.geometryCreateCount
-      observations.materialReuseCount = acquisitions - observations.materialCreateCount
-      observations.geometryEvictCount = evictUnusedResources(geometries, liveGeometryKeys)
-      observations.materialEvictCount = evictUnusedResources(materials, liveMaterialKeys)
-      recordLiveCacheCounts(observations, liveCaches)
-      effectLayer.sync(frame.effects, observations)
-
+    render(frame) {
+      const observations = submitFrame(frame)
       renderer.render(scene, camera)
       return observations
     },
+
 
     dispose() {
       for (const geometry of geometries.values()) geometry.dispose()
