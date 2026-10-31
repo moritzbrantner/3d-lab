@@ -393,6 +393,13 @@ export type ThreeSceneRenderer = {
   renderCamera(camera: RendererCamera): RendererWorkObservations
   renderImportedRoots(frame: {camera: RendererCamera; roots: import("three").Object3D[]}): {importedInstances:number}
   render(frame: RendererFrame): RendererWorkObservations
+  /**
+   * Submit `frame` and the imported `roots` without drawing, then resolve once their programs
+   * are compiled (in parallel where KHR_parallel_shader_compile exists) and their textures are
+   * uploaded, so the first `render` of that content does not stall. The scene holds the
+   * submitted content at once: render nothing else until it resolves.
+   */
+  prepare(frame: RendererFrame, options?: {roots?: import("three").Object3D[]}): Promise<RendererWorkObservations>
   dispose(): void
 }
 
