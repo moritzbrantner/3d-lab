@@ -377,6 +377,36 @@ export type ThreeSceneRendererOptions = {
   pixelRatioLimit?: number
   /** Hard cap on billboards (effects plus burst particles) drawn per frame across all atlases (also each atlas mesh's fixed capacity). Defaults to 64. */
   maxEffectInstances?: number
+  /**
+   * Makes the material for a node or an instance batch instead of the built-in
+   * MeshStandardMaterial/MeshBasicMaterial. Called once per distinct request (requests are cached
+   * by every field). An instance batch requests a white node with its opacity, wireframe and
+   * sides; its colors arrive as linear `instanceColor`s.
+   */
+  material?: (request: RendererMaterialRequest) => import("three").Material
+  /**
+   * Draws the scene instead of `renderer.render(scene, camera)`, for example through a lighting
+   * pipeline. `camera` carries the frame's view and projection, with `fov` and `aspect` derived
+   * from a perspective projection.
+   */
+  draw?: (
+    renderer: import("three").WebGLRenderer,
+    scene: import("three").Scene,
+    camera: import("three").PerspectiveCamera,
+  ) => void
+}
+
+/** A material request: the node's material fields and whether its geometry has vertex colors. */
+export type RendererMaterialRequest = {
+  node: {
+    color?: RendererColor
+    opacity?: number
+    wireframe?: boolean
+    doubleSided?: boolean
+    unlit?: boolean
+    emissive?: RendererColor
+  }
+  vertexColors: boolean
 }
 
 export type ThreeSceneRenderer = {

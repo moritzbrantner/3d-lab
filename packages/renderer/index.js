@@ -162,8 +162,12 @@ export function createThreeSceneRenderer(canvas, options = {}) {
     shadows: options.shadows === true,
   })
 
-  const camera = new THREE.Camera()
+  // A PerspectiveCamera whose projection comes from each frame: `fov` and `aspect` are derived
+  // from it for a `draw` hook that fits to the view (for example shadow cascades).
+  const camera = new THREE.PerspectiveCamera()
   camera.matrixAutoUpdate = false
+  const draw = options.draw ?? ((target, drawnScene, drawnCamera) => target.render(drawnScene, drawnCamera))
+  const makeMaterial = options.material ?? createMaterial
   const objects = new Map()
   const instanceBatches = new Map()
   const geometries = new Map()
@@ -200,6 +204,11 @@ export function createThreeSceneRenderer(canvas, options = {}) {
     camera.matrixWorld.copy(camera.matrixWorldInverse).invert()
     camera.projectionMatrix.fromArray(webGpuProjectionToWebGl(frameCamera.projectionMatrix))
     camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert()
+    const p = camera.projectionMatrix.elements
+    if (p[11] === -1 && p[5] > 0 && p[0] > 0) {
+      camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(1 / p[5]))
+      camera.aspect = p[5] / p[0]
+    }
   }
 
   function submitImportedRoots(roots) {
@@ -238,7 +247,7 @@ export function createThreeSceneRenderer(canvas, options = {}) {
       const nextMaterial = acquireResource(
         materials,
         nextMaterialKey,
-        createMaterial,
+        makeMaterial,
         materialInput,
         observations,
         "materialCreateCount",
@@ -290,7 +299,7 @@ export function createThreeSceneRenderer(canvas, options = {}) {
       const material = acquireResource(
         materials,
         nextMaterialKey,
-        createMaterial,
+        makeMaterial,
         materialInput,
         observations,
         "materialCreateCount",
@@ -368,7 +377,7 @@ export function createThreeSceneRenderer(canvas, options = {}) {
       const observations = createWorkObservations(0)
       recordLiveCacheCounts(observations, liveCaches)
       effectLayer.observe(observations)
-      renderer.render(scene, camera)
+      draw(renderer, scene, camera)
       return observations
     },
 
@@ -377,7 +386,7 @@ export function createThreeSceneRenderer(canvas, options = {}) {
       validateRenderCamera(frameCamera)
       submitImportedRoots(roots)
       applyCamera(frameCamera)
-      renderer.render(scene, camera)
+      draw(renderer, scene, camera)
       return {importedInstances: roots.length}
     },
 
@@ -404,7 +413,7 @@ export function createThreeSceneRenderer(canvas, options = {}) {
 
     render(frame) {
       const observations = submitFrame(frame)
-      renderer.render(scene, camera)
+      draw(renderer, scene, camera)
       return observations
     },
 
