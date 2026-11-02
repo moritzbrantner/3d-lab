@@ -726,6 +726,65 @@ try {
   }
   checks.push("camera moves and one-node transforms over 8/32/128 static meshes create, evict and upload nothing; load/replace is linear");
 
+  // The renderer's draw hook can submit the same scene several times (the consumer's three
+  // sun-shadow cascades plus the main pass). Static nodes must not recompute their world matrices
+  // on every pass, nor on a later camera-only frame when their transforms are unchanged.
+  const worldMatrixUpdates = await page.evaluate(({ camera: frameCamera, nodes }) => {
+    const canvas = document.createElement("canvas");
+    document.body.append(canvas);
+    let writes = 0;
+    const instrumented = new WeakSet();
+    const renderer = window.createThreeSceneRenderer(canvas, {
+      antialias: false,
+      draw(target, scene, viewCamera) {
+        for (const mesh of scene.children) {
+          if (!mesh.isMesh || instrumented.has(mesh)) continue;
+          instrumented.add(mesh);
+          const original = mesh.matrixWorld.multiplyMatrices.bind(mesh.matrixWorld);
+          mesh.matrixWorld.multiplyMatrices = (parent, local) => {
+            writes += 1;
+            return original(parent, local);
+          };
+        }
+        for (let pass = 0; pass < 4; pass += 1) target.render(scene, viewCamera);
+      },
+    });
+    renderer.setSize(64, 64, 1);
+    const count = (frame) => {
+      const before = writes;
+      renderer.render(frame);
+      return writes - before;
+    };
+    const first = count({ camera: frameCamera, nodes });
+    const cameraOnly = count({ camera: frameCamera, nodes });
+    const changed = count({ camera: frameCamera, nodes: nodes.map((node, index) => index === 0
+      ? { ...node, transform: { translation: [0, 0.5, 0] } } : node) });
+    const steady = count({ camera: frameCamera, nodes: nodes.map((node, index) => index === 0
+      ? { ...node, transform: { translation: [0, 0.5, 0] } } : node) });
+    const matrixNodes = nodes.map(({ transform, ...node }) => ({
+      ...node,
+      modelMatrix: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, ...transform.translation, 1],
+    }));
+    count({ camera: frameCamera, nodes: matrixNodes });
+    const modelMatrixSteady = count({ camera: frameCamera,
+      nodes: matrixNodes.map(node => ({ ...node, modelMatrix: [...node.modelMatrix] })) });
+    const changedMatrices = matrixNodes.map((node, index) => index === 0
+      ? { ...node, modelMatrix: node.modelMatrix.map((value, column) => column === 12 ? value + 0.5 : value) }
+      : node);
+    const modelMatrixChanged = count({ camera: frameCamera, nodes: changedMatrices });
+    const modelMatrixStable = count({ camera: frameCamera,
+      nodes: changedMatrices.map(node => ({ ...node, modelMatrix: [...node.modelMatrix] })) });
+    renderer.dispose();
+    canvas.getContext("webgl2")?.getExtension("WEBGL_lose_context")?.loseContext();
+    canvas.remove();
+    return { first, cameraOnly, changed, steady, modelMatrixSteady, modelMatrixChanged, modelMatrixStable };
+  }, { camera: retainedCamera, nodes: retainedNodes(32, 0) });
+  assert.deepEqual(worldMatrixUpdates, { first: 32, cameraOnly: 0, changed: 1, steady: 0,
+    modelMatrixSteady: 0, modelMatrixChanged: 1, modelMatrixStable: 0 },
+    "a four-pass draw recomputes only new or changed node world matrices");
+  evidence.worldMatrixUpdates = worldMatrixUpdates;
+  checks.push("four-pass draws update node world matrices only when their transforms change");
+
   assert.deepEqual(errors, [], "page must not report errors or warnings");
 } finally {
   await writeFile(path.join(output, "result.json"), `${JSON.stringify({ checks, evidence, errors }, null, 2)}\n`);

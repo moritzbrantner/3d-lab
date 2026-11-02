@@ -120,6 +120,27 @@ function composeTransform(matrix, node, scratch) {
   matrix.compose(scratch.translation, scratch.rotation, scratch.scale)
 }
 
+/** Only invalidate a node's world transform when its submitted matrix actually changes. */
+function syncNodeTransform(mesh, node, scratch) {
+  if (node.modelMatrix !== undefined) {
+    const current = mesh.matrix.elements
+    let changed = false
+    for (let index = 0; index < 16; index += 1) {
+      if (current[index] !== node.modelMatrix[index]) {
+        changed = true
+        break
+      }
+    }
+    if (!changed) return
+    mesh.matrix.fromArray(node.modelMatrix)
+  } else {
+    composeTransform(scratch.matrix, node, scratch)
+    if (mesh.matrix.equals(scratch.matrix)) return
+    mesh.matrix.copy(scratch.matrix)
+  }
+  mesh.matrixWorldNeedsUpdate = true
+}
+
 function createWorkObservations(nodeVisitCount) {
   return {
     nodeVisitCount,
@@ -157,6 +178,10 @@ export function createThreeSceneRenderer(canvas, options = {}) {
   renderer.shadowMap.enabled = options.shadows === true
 
   const scene = new THREE.Scene()
+  // The renderer-owned scene root never moves. Three.js otherwise recomposes its identity
+  // matrix on every draw and forces every descendant's world matrix to update, including
+  // across multiple shadow cascades drawn from the same submitted scene.
+  scene.matrixAutoUpdate = false
   const sceneEnvironment = createSceneEnvironment(scene, {
     background: options.alpha === true ? null : options.background ?? DEFAULT_BACKGROUND,
     shadows: options.shadows === true,
@@ -215,7 +240,12 @@ export function createThreeSceneRenderer(canvas, options = {}) {
     if (!Array.isArray(roots) || roots.some(root => !root?.isObject3D)) failContract("imported roots must be Three objects")
     const current = new Set(roots)
     for (const root of importedRoots) if (!current.has(root)) { scene.remove(root); importedRoots.delete(root) }
-    for (const root of roots) if (!importedRoots.has(root)) { scene.add(root); importedRoots.add(root) }
+    for (const root of roots) if (!importedRoots.has(root)) {
+      scene.add(root)
+      // Reparenting can change the world transform even for a root with matrixAutoUpdate=false.
+      root.matrixWorldNeedsUpdate = true
+      importedRoots.add(root)
+    }
   }
 
   /** Submits the frame to the scene without drawing it, for `render` and `prepare`. */
@@ -268,8 +298,7 @@ export function createThreeSceneRenderer(canvas, options = {}) {
         mesh.geometry = nextGeometry
         mesh.material = nextMaterial
       }
-      composeTransform(mesh.matrix, node, transformScratch)
-      mesh.matrixWorldNeedsUpdate = true
+      syncNodeTransform(mesh, node, transformScratch)
       mesh.visible = node.visible !== false
     }
     materialInput.node = null
