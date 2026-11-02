@@ -726,9 +726,9 @@ try {
   }
   checks.push("camera moves and one-node transforms over 8/32/128 static meshes create, evict and upload nothing; load/replace is linear");
 
-  // The renderer's draw hook can submit the same scene several times (the consumer's three
-  // sun-shadow cascades plus the main pass). Static nodes must not recompute their world matrices
-  // on every pass, nor on a later camera-only frame when their transforms are unchanged.
+  // Greyhaven's lighting syncs world matrices once, then freezes automatic world updates
+  // for three sun-shadow cascades and the main pass. Unchanged retained nodes must not be
+  // recomputed on the next frame's sync, nor when only the camera moves.
   const worldMatrixUpdates = await page.evaluate(({ camera: frameCamera, nodes }) => {
     const canvas = document.createElement("canvas");
     document.body.append(canvas);
@@ -746,7 +746,14 @@ try {
             return original(parent, local);
           };
         }
-        for (let pass = 0; pass < 4; pass += 1) target.render(scene, viewCamera);
+        scene.updateMatrixWorld();
+        const prior = scene.matrixWorldAutoUpdate;
+        scene.matrixWorldAutoUpdate = false;
+        try {
+          for (let pass = 0; pass < 4; pass += 1) target.render(scene, viewCamera);
+        } finally {
+          scene.matrixWorldAutoUpdate = prior;
+        }
       },
     });
     renderer.setSize(64, 64, 1);
@@ -781,9 +788,9 @@ try {
   }, { camera: retainedCamera, nodes: retainedNodes(32, 0) });
   assert.deepEqual(worldMatrixUpdates, { first: 32, cameraOnly: 0, changed: 1, steady: 0,
     modelMatrixSteady: 0, modelMatrixChanged: 1, modelMatrixStable: 0 },
-    "a four-pass draw recomputes only new or changed node world matrices");
+    "a Greyhaven-style four-pass draw recomputes only new or changed node world matrices");
   evidence.worldMatrixUpdates = worldMatrixUpdates;
-  checks.push("four-pass draws update node world matrices only when their transforms change");
+  checks.push("Greyhaven-style four-pass draws update node world matrices only when their transforms change");
 
   assert.deepEqual(errors, [], "page must not report errors or warnings");
 } finally {

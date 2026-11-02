@@ -178,9 +178,9 @@ export function createThreeSceneRenderer(canvas, options = {}) {
   renderer.shadowMap.enabled = options.shadows === true
 
   const scene = new THREE.Scene()
-  // The renderer-owned scene root never moves. Three.js otherwise recomposes its identity
-  // matrix on every draw and forces every descendant's world matrix to update, including
-  // across multiple shadow cascades drawn from the same submitted scene.
+  // The renderer-owned scene root never moves. Recomputing its identity matrix would force
+  // every descendant's world matrix to update, including in a consumer's once-per-frame
+  // world-matrix sync before rendering shadow cascades.
   scene.matrixAutoUpdate = false
   const sceneEnvironment = createSceneEnvironment(scene, {
     background: options.alpha === true ? null : options.background ?? DEFAULT_BACKGROUND,
