@@ -42,7 +42,7 @@
     "build:imported-character-wasm": "bun scripts/build-imported-character-wasm.mjs"
   },
   "dependencies": {
-    "three": "0.186.1"
+    "three": "0.187.0"
   },
   "devDependencies": {
     "playwright": "1.64.1"
