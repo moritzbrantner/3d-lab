@@ -34,7 +34,7 @@ jobs:
           import json
           import os
           import subprocess
-          scopes = {'validate-editor-runtime-evidence': ['web/lib/scene-editor.ts', 'web/lib/scene-editor.test.ts', 'web/lib/scene-editor-history.ts', 'web/lib/scene-editor-history.test.ts', 'web/lib/mesh.ts', 'scripts/profile-editor-mutations.ts', 'profiles/runtime-profiler/editor-mutations.json', '.github/workflows/editor-runtime-evidence.yml', '.github/workflows/ci.yml'], 'validate-renderer-runtime-evidence': ['package.json', 'packages/renderer/**', 'crates/**', 'fixtures/imported-character/**', 'scripts/imported-character-browser-acceptance.ts', 'scripts/inspection-character-browser-acceptance.ts', 'scripts/bundle-character-browser-acceptance.ts', 'scripts/lib/gltf-resources-bundle.ts', 'web/app/renderer-performance/**', 'web/components/renderer-performance-canary.tsx', 'web/app/skeletal-animation/**', 'web/components/character-rig-lab*', 'web/components/skeletal-animation-*', 'web/lib/skeletal-animation-*', 'web/components/imported-skin-lab*', 'web/app/editor/**', 'web/components/scene-editor-lab*', 'web/lib/scene-editor-snapshot*', 'web/lib/character-*', 'web/lib/imported-skin*', 'scripts/character-browser-smoke.mjs', 'scripts/skeletal-inspection-browser-smoke.mjs', 'scripts/editor-snapshot-browser-smoke.mjs', 'scripts/renderer-presentation-smoke.mjs', 'scripts/sync-web-animation-fixtures.mjs', 'fixtures/catalog/khronos-simpleskin-embedded.*', 'fixtures/static-glb/**', 'scripts/static-glb-fixtures.mjs', 'profiles/runtime-profiler/renderer-browser.json', 'profiles/runtime-profiler/renderer-browser.mjs', '.github/workflows/renderer-runtime-evidence.yml', '.github/workflows/ci.yml'], 'validate-runtime-evidence': ['Cargo.toml', 'Cargo.lock', 'crates/**', 'examples/asset-tooling-scene-adapter/**', 'profiles/runtime-profiler/scene-export.json', 'scripts/generate-scene-export-profile.py', 'scripts/profile-scene-export.sh', '.github/workflows/runtime-evidence.yml', '.github/workflows/ci.yml'], 'validate-topology-renderer-runtime-evidence': ['package.json', 'web/lib/scene-editor-topology-persistent.ts', 'web/lib/scene-editor-topology-adjacency.ts', 'web/lib/scene-editor-history.ts', 'web/lib/topology-renderer-adapter.ts', 'web/app/topology-performance/**', 'web/components/topology-renderer-performance-canary.tsx', 'scripts/run-topology-renderer-canary.mjs', 'scripts/summarize-topology-browser-calibration.mjs', 'profiles/runtime-profiler/topology-renderer-browser.json', 'profiles/runtime-profiler/topology-renderer-browser.mjs', '.github/workflows/topology-renderer-runtime-evidence.yml', '.github/workflows/ci.yml'], 'validate-topology-runtime-evidence': ['web/lib/scene-editor-topology.ts', 'web/lib/scene-editor-topology-persistent.ts', 'web/lib/scene-editor-topology-adjacency.ts', 'web/lib/scene-editor-topology.test.ts', 'web/lib/scene-editor-topology-persistent.test.ts', 'web/lib/scene-editor-topology-adjacency.test.ts', 'web/lib/scene-editor-topology-history.test.ts', 'web/lib/scene-editor-history.ts', 'web/lib/scene-editor.ts', 'web/lib/mesh.ts', 'scripts/profile-editor-topology.ts', 'profiles/runtime-profiler/editor-topology.json', '.github/workflows/topology-runtime-evidence.yml', '.github/workflows/ci.yml'], 'validate-renderer-variance-calibration': ['package.json', 'bun.lock', 'packages/renderer/**', 'web/package.json', 'web/bun.lock', 'web/next.config.ts', 'web/app/layout.tsx', 'web/app/globals.css', 'web/app/renderer-performance/**', 'web/components/renderer-performance-canary.tsx', 'profiles/runtime-profiler/renderer-browser.json', 'profiles/runtime-profiler/renderer-browser.mjs', 'scripts/summarize_renderer_browser_variance.py', 'scripts/test_renderer_browser_variance.py', '.github/workflows/renderer-variance-calibration.yml', '.github/workflows/ci.yml']}
+          scopes = {'validate-editor-runtime-evidence': ['web/lib/scene-editor.ts', 'web/lib/scene-editor.test.ts', 'web/lib/scene-editor-history.ts', 'web/lib/scene-editor-history.test.ts', 'web/lib/mesh.ts', 'scripts/profile-editor-mutations.ts', 'profiles/runtime-profiler/editor-mutations.json', '.github/workflows/editor-runtime-evidence.yml', '.github/workflows/ci.yml'], 'validate-renderer-runtime-evidence': ['package.json', 'packages/renderer/**', 'crates/**', 'fixtures/imported-character/**', 'scripts/imported-character-browser-acceptance.ts', 'scripts/inspection-character-browser-acceptance.ts', 'scripts/bundle-character-browser-acceptance.ts', 'scripts/lib/gltf-resources-bundle.ts', 'web/app/renderer-performance/**', 'web/components/renderer-performance-canary.tsx', 'web/app/skeletal-animation/**', 'web/components/character-rig-lab*', 'web/components/skeletal-animation-*', 'web/lib/skeletal-animation-*', 'web/components/imported-skin-lab*', 'web/app/editor/**', 'web/components/scene-editor-lab*', 'web/lib/scene-editor-snapshot*', 'web/lib/character-*', 'web/lib/imported-skin*', 'scripts/character-browser-smoke.mjs', 'scripts/skeletal-inspection-browser-smoke.mjs', 'scripts/editor-snapshot-browser-smoke.mjs', 'scripts/renderer-presentation-smoke.mjs', 'scripts/sync-web-animation-fixtures.mjs', 'fixtures/catalog/khronos-simpleskin-embedded.*', 'fixtures/static-glb/**', 'scripts/static-glb-fixtures.mjs', 'profiles/runtime-profiler/renderer-browser.json', 'profiles/runtime-profiler/renderer-browser.mjs', '.github/workflows/ci.yml'], 'validate-runtime-evidence': ['Cargo.toml', 'Cargo.lock', 'crates/**', 'examples/asset-tooling-scene-adapter/**', 'profiles/runtime-profiler/scene-export.json', 'scripts/generate-scene-export-profile.py', 'scripts/profile-scene-export.sh', '.github/workflows/runtime-evidence.yml', '.github/workflows/ci.yml'], 'validate-topology-renderer-runtime-evidence': ['package.json', 'web/lib/scene-editor-topology-persistent.ts', 'web/lib/scene-editor-topology-adjacency.ts', 'web/lib/scene-editor-history.ts', 'web/lib/topology-renderer-adapter.ts', 'web/app/topology-performance/**', 'web/components/topology-renderer-performance-canary.tsx', 'scripts/run-topology-renderer-canary.mjs', 'scripts/summarize-topology-browser-calibration.mjs', 'profiles/runtime-profiler/topology-renderer-browser.json', 'profiles/runtime-profiler/topology-renderer-browser.mjs', '.github/workflows/topology-renderer-runtime-evidence.yml', '.github/workflows/ci.yml'], 'validate-topology-runtime-evidence': ['web/lib/scene-editor-topology.ts', 'web/lib/scene-editor-topology-persistent.ts', 'web/lib/scene-editor-topology-adjacency.ts', 'web/lib/scene-editor-topology.test.ts', 'web/lib/scene-editor-topology-persistent.test.ts', 'web/lib/scene-editor-topology-adjacency.test.ts', 'web/lib/scene-editor-topology-history.test.ts', 'web/lib/scene-editor-history.ts', 'web/lib/scene-editor.ts', 'web/lib/mesh.ts', 'scripts/profile-editor-topology.ts', 'profiles/runtime-profiler/editor-topology.json', '.github/workflows/topology-runtime-evidence.yml', '.github/workflows/ci.yml'], 'validate-renderer-variance-calibration': ['package.json', 'bun.lock', 'packages/renderer/**', 'web/package.json', 'web/bun.lock', 'web/next.config.ts', 'web/app/layout.tsx', 'web/app/globals.css', 'web/app/renderer-performance/**', 'web/components/renderer-performance-canary.tsx', 'profiles/runtime-profiler/renderer-browser.json', 'profiles/runtime-profiler/renderer-browser.mjs', 'scripts/summarize_renderer_browser_variance.py', 'scripts/test_renderer_browser_variance.py', '.github/workflows/renderer-variance-calibration.yml', '.github/workflows/ci.yml']}
           selected = {job: False for job in scopes}
           if os.environ["GITHUB_EVENT_NAME"] == "pull_request":
               with open(os.environ["GITHUB_EVENT_PATH"]) as source:
@@ -123,7 +123,50 @@ jobs:
     if: github.event_name == 'pull_request' && needs.validation-scope.outputs.validate-renderer-runtime-evidence == 'true'
     permissions:
       contents: read
-    uses: ./.github/workflows/renderer-runtime-evidence.yml
+    uses: moritzbrantner/reusable-workflows/.github/workflows/runtime-evidence.yml@41d30fd97f0b58c148f135112ceb9124e976d7bc
+    with:
+      job_name: Reusable renderer Chromium evidence
+      profiler_revision: 9a7a451681c5598ec7aa888daf2a66cbbade3365
+      workloads: profiles/runtime-profiler/renderer-browser.json
+      workload_files: |
+        package.json
+        profiles/runtime-profiler/renderer-browser.json
+        profiles/runtime-profiler/renderer-browser.mjs
+        web/app/renderer-performance/page.tsx
+        web/components/renderer-performance-canary.tsx
+      prime_command: |
+        bun install
+        (cd web && bun install)
+      browser: true
+      browser_bun_version: "1.4.4"
+      browser_site_directory: web/out
+      browser_port: 4173
+      browser_ready_path: /renderer-performance/
+      browser_server_log_id: renderer
+      browser_preflight_command: |
+        bun scripts/renderer-presentation-smoke.mjs "$RUNNER_TEMP/renderer-presentation-smoke"
+        bun run build:imported-character-wasm
+        bun scripts/imported-character-browser-acceptance.ts "$RUNNER_TEMP/imported-character-browser-acceptance"
+        bun scripts/inspection-character-browser-acceptance.ts "$RUNNER_TEMP/inspection-character-browser-acceptance"
+        bun scripts/bundle-character-browser-acceptance.ts "$RUNNER_TEMP/bundle-character-browser-acceptance"
+        bun scripts/fetch-ranger-acceptance.ts "$RUNNER_TEMP/ranger-rolling"
+        bun scripts/compressed-bundle-browser-acceptance.ts "$RUNNER_TEMP/ranger-rolling" "$RUNNER_TEMP/compressed-bundle-acceptance"
+      browser_build_command: (cd web && GITHUB_ACTIONS=false bun run build)
+      browser_server_acceptance_command: |
+        bun scripts/character-browser-smoke.mjs "$BROWSER_ORIGIN/skeletal-animation/" "$RUNNER_TEMP/character-browser-smoke"
+        bun scripts/skeletal-inspection-browser-smoke.mjs "$BROWSER_ORIGIN/skeletal-animation/" "$RUNNER_TEMP/skeletal-inspection-browser-smoke"
+        bun scripts/editor-snapshot-browser-smoke.mjs "$BROWSER_ORIGIN/editor/" "$RUNNER_TEMP/editor-snapshot-browser-smoke"
+      browser_artifact_paths: |
+        character-browser-smoke
+        skeletal-inspection-browser-smoke
+        editor-snapshot-browser-smoke
+        renderer-presentation-smoke
+        imported-character-browser-acceptance
+        inspection-character-browser-acceptance
+        bundle-character-browser-acceptance
+        compressed-bundle-acceptance
+        ranger-rolling/acquisition.json
+      artifact_name: renderer-browser-runtime
 
   validate-runtime-evidence:
     needs: validation-scope
