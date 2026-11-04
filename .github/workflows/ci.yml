@@ -123,7 +123,7 @@ jobs:
     if: github.event_name == 'pull_request' && needs.validation-scope.outputs.validate-renderer-runtime-evidence == 'true'
     permissions:
       contents: read
-    uses: moritzbrantner/reusable-workflows/.github/workflows/runtime-evidence.yml@bb269c477fe8940d5eb67db7b87bcddb6f778356
+    uses: moritzbrantner/reusable-workflows/.github/workflows/runtime-evidence.yml@41d30fd97f0b58c148f135112ceb9124e976d7bc
     with:
       job_name: Reusable renderer Chromium evidence
       profiler_revision: 9a7a451681c5598ec7aa888daf2a66cbbade3365
