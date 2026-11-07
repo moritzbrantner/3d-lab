@@ -130,6 +130,8 @@ export type RendererTransform = {
 
 type RendererNodeBase = {
   id: string
+  /** The mesh's Three.js `name`, for inspection and profiling; defaults to `id`. */
+  name?: string
   geometry: RendererGeometry
   color: RendererColor
   opacity?: number
@@ -196,6 +198,8 @@ export type RendererInstance = {
  */
 export type RendererInstanceBatch = {
   id: string
+  /** The instanced mesh's Three.js `name`, for inspection and profiling; defaults to `id`. */
+  name?: string
   geometry: RendererGeometry
   /** Default instance color. */
   color: number | `#${string}`

@@ -53,6 +53,12 @@ describe("instance batch sync", () => {
     state.mesh.getColorAt(0, color)
     expect(color.getHexString()).toBe(new THREE.Color("#336633").getHexString())
     expect(state.mesh.boundingSphere.center.x).toBeCloseTo(1)
+    expect(state.mesh.name).toBe("trees")
+  })
+
+  test("names the mesh after the batch name when one is given", () => {
+    const {state} = syncInstanceBatch(undefined, batch(1, {name: "vegetation"}), geometry, material, writeTranslation, scratch())
+    expect(state.mesh.name).toBe("vegetation")
   })
 
   test("skips re-upload while the revision is unchanged and uploads when it changes", () => {
@@ -208,6 +214,7 @@ describe("instance batch contract validation", () => {
   test.each([
     ["duplicate batch ids", {instanceBatches: [batch(1), batch(1)]}],
     ["empty revision", {instanceBatches: [batch(1, {revision: ""})]}],
+    ["empty name", {instanceBatches: [batch(1, {name: ""})]}],
     ["non-array instances", {instanceBatches: [{...batch(0), instances: null}]}],
     [
       "instance with both matrix and transform",
