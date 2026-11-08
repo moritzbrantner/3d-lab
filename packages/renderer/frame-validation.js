@@ -272,6 +272,7 @@ export function validateFrame(frame, uploaded) {
     requireColor(node.color)
     requireOpacity(node)
     requireDoubleSided(node)
+    requireName(node)
   }
 
   if (frame.instanceBatches !== undefined) validateInstanceBatches(frame.instanceBatches, uploaded)
@@ -283,6 +284,12 @@ export function validateFrame(frame, uploaded) {
 function requireDoubleSided(entry) {
   if (entry.doubleSided !== undefined && typeof entry.doubleSided !== "boolean") {
     throw new ThreeRendererContractError(`doubleSided for ${entry.id} must be a boolean`)
+  }
+}
+
+function requireName(entry) {
+  if (entry.name !== undefined && (typeof entry.name !== "string" || entry.name.length === 0)) {
+    throw new ThreeRendererContractError(`name for ${entry.id} must be a non-empty string`)
   }
 }
 
@@ -315,6 +322,7 @@ function validateInstanceBatches(batches, uploaded) {
     requireColor(batch.color)
     requireOpacity(batch)
     requireDoubleSided(batch)
+    requireName(batch)
     if (!Array.isArray(batch.instances)) {
       throw new ThreeRendererContractError(`instances for batch ${batch.id} must be an array`)
     }

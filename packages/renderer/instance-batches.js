@@ -44,6 +44,7 @@ export function syncInstanceBatch(state, batch, geometry, material, writeMatrix,
     // Frustum culling uses the bounds of all live instances, not the base geometry.
     if (count > 0) mesh.computeBoundingSphere()
   }
+  mesh.name = batch.name ?? batch.id
   mesh.visible = batch.visible !== false && count > 0
 
   return {

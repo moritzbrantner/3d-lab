@@ -298,6 +298,7 @@ export function createThreeSceneRenderer(canvas, options = {}) {
         mesh.geometry = nextGeometry
         mesh.material = nextMaterial
       }
+      mesh.name = node.name ?? node.id
       syncNodeTransform(mesh, node, transformScratch)
       mesh.visible = node.visible !== false
     }

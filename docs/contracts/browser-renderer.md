@@ -58,6 +58,8 @@ A node's `color`, `opacity`, `wireframe`, and shading select its material:
 
 Every node is single-sided (back faces culled) unless it sets `doubleSided: true`; instance batches take the same flag.
 
+A node's or batch's optional `name` (a non-empty string) becomes its Three.js mesh `name`, for inspection and draw profiles that group by name; it defaults to the `id` and changes nothing that is drawn.
+
 `unlit` and `emissive` are mutually exclusive; the types forbid the combination and validation rejects it. Fog applies to every material, so distant effects fade with the world. Shadow casting follows the renderer `shadows` option for all nodes, including emissive and unlit ones; unlit nodes never show received shadows.
 
 Materials are cached by their parameters, not by node: nodes with equal color, opacity, wireframe mode, sidedness, vertex-color use, and shading (including the emissive color) share one material, and the material is evicted when no node uses it. Vertex-color use is read from the cached geometry bound to the node, not from the submitted payload, so the material and geometry always agree on whether a color attribute exists. Colors in the key compare by their submitted representation, like the environment. Adding emissive or unlit nodes therefore adds one material per distinct parameter set, visible through `materialCreateCount` and `liveMaterialCount`.
