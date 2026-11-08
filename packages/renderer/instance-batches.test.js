@@ -61,6 +61,12 @@ describe("instance batch sync", () => {
     expect(state.mesh.name).toBe("vegetation")
   })
 
+  test("gives the mesh the batch's userData when one is given", () => {
+    const userData = {shadowCascades: 2}
+    const {state} = syncInstanceBatch(undefined, batch(1, {userData}), geometry, material, writeTranslation, scratch())
+    expect(state.mesh.userData).toBe(userData)
+  })
+
   test("skips re-upload while the revision is unchanged and uploads when it changes", () => {
     const first = syncInstanceBatch(
       undefined,
@@ -215,6 +221,7 @@ describe("instance batch contract validation", () => {
     ["duplicate batch ids", {instanceBatches: [batch(1), batch(1)]}],
     ["empty revision", {instanceBatches: [batch(1, {revision: ""})]}],
     ["empty name", {instanceBatches: [batch(1, {name: ""})]}],
+    ["array userData", {instanceBatches: [batch(1, {userData: []})]}],
     ["non-array instances", {instanceBatches: [{...batch(0), instances: null}]}],
     [
       "instance with both matrix and transform",

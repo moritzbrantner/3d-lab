@@ -273,6 +273,7 @@ export function validateFrame(frame, uploaded) {
     requireOpacity(node)
     requireDoubleSided(node)
     requireName(node)
+    requireUserData(node)
   }
 
   if (frame.instanceBatches !== undefined) validateInstanceBatches(frame.instanceBatches, uploaded)
@@ -290,6 +291,12 @@ function requireDoubleSided(entry) {
 function requireName(entry) {
   if (entry.name !== undefined && (typeof entry.name !== "string" || entry.name.length === 0)) {
     throw new ThreeRendererContractError(`name for ${entry.id} must be a non-empty string`)
+  }
+}
+
+function requireUserData(entry) {
+  if (entry.userData !== undefined && (typeof entry.userData !== "object" || entry.userData === null || Array.isArray(entry.userData))) {
+    throw new ThreeRendererContractError(`userData for ${entry.id} must be an object`)
   }
 }
 
@@ -323,6 +330,7 @@ function validateInstanceBatches(batches, uploaded) {
     requireOpacity(batch)
     requireDoubleSided(batch)
     requireName(batch)
+    requireUserData(batch)
     if (!Array.isArray(batch.instances)) {
       throw new ThreeRendererContractError(`instances for batch ${batch.id} must be an array`)
     }

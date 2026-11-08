@@ -132,6 +132,8 @@ type RendererNodeBase = {
   id: string
   /** The mesh's Three.js `name`, for inspection and profiling; defaults to `id`. */
   name?: string
+  /** Replaces the mesh's Three.js `userData` while given, for the consumer's `draw` (e.g. its shadow opt-outs). */
+  userData?: Record<string, unknown>
   geometry: RendererGeometry
   color: RendererColor
   opacity?: number
@@ -200,6 +202,8 @@ export type RendererInstanceBatch = {
   id: string
   /** The instanced mesh's Three.js `name`, for inspection and profiling; defaults to `id`. */
   name?: string
+  /** Replaces the instanced mesh's Three.js `userData` while given, for the consumer's `draw`. */
+  userData?: Record<string, unknown>
   geometry: RendererGeometry
   /** Default instance color. */
   color: number | `#${string}`

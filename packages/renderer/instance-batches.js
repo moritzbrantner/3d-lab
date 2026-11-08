@@ -45,6 +45,7 @@ export function syncInstanceBatch(state, batch, geometry, material, writeMatrix,
     if (count > 0) mesh.computeBoundingSphere()
   }
   mesh.name = batch.name ?? batch.id
+  if (batch.userData !== undefined) mesh.userData = batch.userData
   mesh.visible = batch.visible !== false && count > 0
 
   return {

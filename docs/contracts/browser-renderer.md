@@ -58,7 +58,7 @@ A node's `color`, `opacity`, `wireframe`, and shading select its material:
 
 Every node is single-sided (back faces culled) unless it sets `doubleSided: true`; instance batches take the same flag.
 
-A node's or batch's optional `name` (a non-empty string) becomes its Three.js mesh `name`, for inspection and draw profiles that group by name; it defaults to the `id` and changes nothing that is drawn.
+A node's or batch's optional `name` (a non-empty string) becomes its Three.js mesh `name`, for inspection and draw profiles that group by name; it defaults to the `id` and changes nothing that is drawn. An optional `userData` object replaces the mesh's Three.js `userData` while given (the renderer itself never reads it), so a consumer's `draw` can mark meshes, for example with its lighting's shadow opt-outs.
 
 `unlit` and `emissive` are mutually exclusive; the types forbid the combination and validation rejects it. Fog applies to every material, so distant effects fade with the world. Shadow casting follows the renderer `shadows` option for all nodes, including emissive and unlit ones; unlit nodes never show received shadows.
 
