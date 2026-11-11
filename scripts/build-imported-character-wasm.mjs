@@ -6,8 +6,8 @@ function run(command, args) {
 }
 run("rustup", ["target", "add", "wasm32-unknown-unknown"])
 const version = spawnSync("wasm-bindgen", ["--version"], {encoding:"utf8"})
-if (version.status !== 0 || version.stdout.trim() !== "wasm-bindgen 0.2.129") {
-  run("cargo", ["install", "wasm-bindgen-cli", "--version", "0.2.129", "--locked"])
+if (version.status !== 0 || version.stdout.trim() !== "wasm-bindgen 0.2.130") {
+  run("cargo", ["install", "wasm-bindgen-cli", "--version", "0.2.130", "--locked"])
 }
 run("cargo", ["build", "--release", "--target", "wasm32-unknown-unknown", "-p", "three-d-character-wasm"])
 mkdirSync("packages/renderer/imported-character-wasm", {recursive:true})

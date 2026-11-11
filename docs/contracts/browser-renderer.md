@@ -202,7 +202,7 @@ do not rebuild immutable GPU resources or publish React state. Per-instance disp
 releases its Rust handle; asset disposal releases instances/shared resources once.
 
 Build/distribution: `bun run build:imported-character-wasm` uses the real Rust wasm32
-artifact and pinned wasm-bindgen0.2.129 web adapter. The generated JS/types/WASM ship
+artifact and pinned wasm-bindgen0.2.130 web adapter. The generated JS/types/WASM ship
 inside the renderer package. The mandatory Chromium contract observes actual compiled
 WASM bytes and rendered textured geometry. This path requires browser texture facilities;
 Bun tests cover framing/provenance/export, not fake image decoding.
