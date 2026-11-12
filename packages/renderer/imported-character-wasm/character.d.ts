@@ -6,7 +6,7 @@ export class CharacterAsset {
     [Symbol.dispose](): void;
     create_instance(): CharacterInstance;
     metadata_json(): string;
-    constructor(bytes: Uint8Array);
+    constructor(bytes: Uint8Array | number[]);
 }
 
 export class CharacterInstance {

@@ -232,6 +232,21 @@ canonical rig takes each joint's bind from the first skin naming it. Extra colou
 sets are skipped unless a material samples a UV set other than 0, which is still
 unsupported.
 
+Rigid, node-animated characters (#184) — asset-tooling `quadruped-rigid` /
+`biped-rigid` entries such as the `zoo-animals` release — have no skin: unskinned mesh
+parts sit on, or under, clip-targeted joint nodes. They load through the same two entry
+points and Rust runtime. Rust admits a character without a skinned mesh only when at
+least one unskinned mesh node is a clip-targeted node or descends from one; otherwise
+it still fails with "requires a skinned mesh node or a rigid mesh node driven by an
+animated node". Every unskinned mesh node's POSITION must be finite and its indices in
+range (`rigidMeshNodes` in the Rust metadata, which the browser checks against the
+decoded scene). Rigid parts follow their node's Rust local matrix exactly as non-joint
+ancestors do, so `seek`/`transition`/`advance`, shared geometry/materials,
+`attach`/`jointPosition` by node name and `renderImportedCharacterInstances` are
+unchanged; `skinNodes` is empty. Clip semantics (no clips, zero-duration clips,
+detached nodes) are rejected as for skinned characters. `fixtures/zoo-animals` is a
+byte-identical subset (zebra/expressive, penguin/expressive) of the pinned release tar.
+
 ### Compressed per-entry downloads
 
 The same bundle entry points accept the producer's existing `asset-downloads-v1`
