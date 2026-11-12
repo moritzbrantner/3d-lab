@@ -186,6 +186,9 @@ Build its live Rust browser bridge with `bun run build:imported-character-wasm`;
 run the actual consumer contract with
 `bun scripts/imported-character-browser-acceptance.ts target/imported-character-browser-acceptance`.
 See the browser renderer contract for retained resources, independent poses and native adapter limits.
+Rigid, node-animated (unskinned) characters such as asset-tooling `zoo-animals` use the same
+entry points; their Chromium contract runs with
+`bun scripts/rigid-character-browser-acceptance.ts target/rigid-character-browser-acceptance`.
 
 Original character source bytes pinned only by SHA-256 and byte length (for example a
 catalog viewer) use the separate, inspection-only

@@ -22,6 +22,9 @@ pub struct ImportedCharacter {
     pub inverse_binds: Vec<Mat4>,
     /// Every skinned mesh node, in source scene order.
     pub mesh_nodes: Vec<usize>,
+    /// Every unskinned (rigid) mesh node, in source scene order. Rigid parts follow their
+    /// node's posed world matrix; they carry no skin palette or influences.
+    pub rigid_mesh_nodes: Vec<usize>,
     /// Source identity of each entry in `primitive_indices` / `gpu_skin_indices`.
     pub primitives: Vec<ImportedPrimitive>,
     pub primitive_indices: Vec<Vec<u32>>,
@@ -172,8 +175,57 @@ pub fn load_gltf_imported_character(bytes: &[u8]) -> Result<ImportedCharacter, F
         .iter()
         .filter(|n| n.skin().is_some() && n.mesh().is_some())
         .collect();
-    if meshes.is_empty() {
-        return Err(invalid("imported character requires a skinned mesh node"));
+    let source_clips = load_gltf_animation_clips(bytes)?;
+    // Rigid (node-animated) characters: unskinned mesh parts placed on, or parented under,
+    // clip-targeted nodes. They follow the same Rust-sampled node pose as skinned joints.
+    let mut animated = vec![false; source.len()];
+    for track in source_clips.iter().flat_map(AnimationClip::tracks) {
+        let (AnimationTrack::Translation { node, .. }
+        | AnimationTrack::Rotation { node, .. }
+        | AnimationTrack::Scale { node, .. }) = track;
+        if let Some(flag) = animated.get_mut(*node) {
+            *flag = true;
+        }
+    }
+    let driven = |mut index: usize| loop {
+        if animated[index] {
+            return true;
+        }
+        match parents[index] {
+            Some(parent) => index = parent,
+            None => return false,
+        }
+    };
+    let rigid: Vec<_> = source
+        .iter()
+        .filter(|n| n.skin().is_none() && n.mesh().is_some())
+        .collect();
+    if meshes.is_empty() && !rigid.iter().any(|n| driven(n.index())) {
+        return Err(invalid(
+            "imported character requires a skinned mesh node or a rigid mesh node driven by an animated node",
+        ));
+    }
+    let mut rigid_mesh_nodes = Vec::new();
+    for mesh_node in &rigid {
+        let mesh = mesh_node
+            .mesh()
+            .ok_or_else(|| invalid("missing rigid mesh"))?;
+        for primitive in mesh.primitives() {
+            let reader = primitive.reader(|b| buffers.get(b.index()).map(Vec::as_slice));
+            let positions = reader
+                .read_positions()
+                .ok_or_else(|| invalid("rigid mesh POSITION missing"))?
+                .collect::<Vec<_>>();
+            if positions.iter().flatten().any(|v| !v.is_finite()) {
+                return Err(invalid("rigid mesh position nonfinite"));
+            }
+            if let Some(indices) = reader.read_indices()
+                && indices.into_u32().any(|i| i as usize >= positions.len())
+            {
+                return Err(invalid("rigid mesh index out of range"));
+            }
+        }
+        rigid_mesh_nodes.push(mesh_node.index());
     }
     // Every skinned mesh node keeps its own authored skin palette and inverse binds (GPU
     // metadata). The canonical rig takes each joint's bind from the first skin naming it.
@@ -324,7 +376,7 @@ pub fn load_gltf_imported_character(bytes: &[u8]) -> Result<ImportedCharacter, F
             gpu_skin_indices.push(gpu_slots);
         }
     }
-    let clips = load_gltf_animation_clips(bytes)?
+    let clips = source_clips
         .iter()
         .map(|clip| {
             let tracks = clip
@@ -371,6 +423,7 @@ pub fn load_gltf_imported_character(bytes: &[u8]) -> Result<ImportedCharacter, F
         skin_nodes,
         inverse_binds,
         mesh_nodes,
+        rigid_mesh_nodes,
         primitives,
         primitive_indices,
         gpu_skin_indices,

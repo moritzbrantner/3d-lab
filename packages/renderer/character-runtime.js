@@ -59,6 +59,10 @@ export async function loadCharacterRuntime(bytes, fail, decoded) {
       const index = gltf.parser.associations.get(node)?.nodes
       if (index !== undefined) mapping.set(node, index)
     })
+    // Rigid (unskinned) parts follow their decoded node's Rust local matrix like any other
+    // scene node; each one Rust validated must have a decoded counterpart.
+    const decodedNodes = new Set(mapping.values())
+    if (!metadata.rigidMeshNodes.every(index => decodedNodes.has(index))) { fail("decoded scene is missing a Rust-validated rigid mesh node") }
   } catch (error) { disposeDecoded(gltf); authority.free(); throw error }
   const morphTargets = []
   gltf.scene.traverse(node => {

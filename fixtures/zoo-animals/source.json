@@ -1,0 +1,25 @@
+{
+  "release": "https://github.com/moritzbrantner/asset-tooling/releases/tag/zoo-animals",
+  "acquired": "2026-11-12",
+  "tar": {
+    "name": "zoo-animals.tar",
+    "sha256": "10478f08b43b05a7a36ff481584d09ef30cef829f56c6b4fbe9bb7465c767f18"
+  },
+  "bundle": {
+    "byteLength": 10032,
+    "kind": "asset-bundle",
+    "mediaType": "application/vnd.moritzbrantner.asset-bundle+json",
+    "metadata": {},
+    "schemaVersion": 1,
+    "sha256": "4c1f13159d1c7281ddc373a361cd6a7f02f405ebaed505d79e294ddb7238705b"
+  },
+  "license": "MIT",
+  "subset": "manifest.json keeps only zoo.animal.zebra/expressive (quadruped-rigid) and zoo.animal.penguin/expressive (biped-rigid); every other file is byte-identical to the release tar.",
+  "files": {
+    "LICENSE.txt": "1363fc4e729ede77675ec7ef74438f33715fce72e6d1e88e1ad13ae5888e1c86",
+    "resources/3927d94bfe50995a16a6b877d72f6719c520c0a72a9b1a5c3e3dccb46918f6f2.bin": "3927d94bfe50995a16a6b877d72f6719c520c0a72a9b1a5c3e3dccb46918f6f2",
+    "resources/7c21835a9f09a0306a2003ab335d065ed5647548e91f4ad725624174a2faf131.bin": "7c21835a9f09a0306a2003ab335d065ed5647548e91f4ad725624174a2faf131",
+    "scenes/zoo.animal.penguin/expressive.gltf": "48a1cb1abba0e59a9ac22e6b41441f4673bee78e4fd788630c0fc86f8a3b8cc3",
+    "scenes/zoo.animal.zebra/expressive.gltf": "9011bb757e5a5096f5050d6967dd6a936a8fe4d8780665e6fc07fa1158398f99"
+  }
+}

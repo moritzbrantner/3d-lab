@@ -1,0 +1,96 @@
+{
+  "assets": [
+    {
+      "attachments": [],
+      "key": "zoo.animal.penguin",
+      "observations": {
+        "animations": [
+          "idle",
+          "walk",
+          "feed",
+          "rest"
+        ],
+        "skins": 0,
+        "triangles": 1524
+      },
+      "path": "scenes/zoo.animal.penguin/expressive.gltf",
+      "resources": [
+        {
+          "byteLength": 193540,
+          "mediaType": "application/octet-stream",
+          "path": "resources/3927d94bfe50995a16a6b877d72f6719c520c0a72a9b1a5c3e3dccb46918f6f2.bin",
+          "sha256": "3927d94bfe50995a16a6b877d72f6719c520c0a72a9b1a5c3e3dccb46918f6f2",
+          "uri": "../../resources/3927d94bfe50995a16a6b877d72f6719c520c0a72a9b1a5c3e3dccb46918f6f2.bin"
+        }
+      ],
+      "sha256": "48a1cb1abba0e59a9ac22e6b41441f4673bee78e4fd788630c0fc86f8a3b8cc3",
+      "source": {
+        "byteLength": 224956,
+        "kind": "scene",
+        "mediaType": "model/gltf-binary",
+        "metadata": {
+          "coordinateSystem": "right-handed-y-up",
+          "operation": "scene.import.gltf",
+          "operationVersion": "2",
+          "profile": "gltf-core-production-v1",
+          "resourceSha256s": [],
+          "sourceSha256": "ed2125c6a35d067ba54eecf4be3f943432cfd4e7b18f1daf24e0292c48fa63e3",
+          "unit": "meter"
+        },
+        "schemaVersion": 1,
+        "sha256": "b66cc92d8745d2d03d755bded5f5e4a2d0cf0162780c20d52176e9287d8651c4"
+      },
+      "variant": "expressive"
+    },
+    {
+      "attachments": [],
+      "key": "zoo.animal.zebra",
+      "observations": {
+        "animations": [
+          "idle",
+          "walk",
+          "feed",
+          "rest"
+        ],
+        "skins": 0,
+        "triangles": 3938
+      },
+      "path": "scenes/zoo.animal.zebra/expressive.gltf",
+      "resources": [
+        {
+          "byteLength": 283488,
+          "mediaType": "application/octet-stream",
+          "path": "resources/7c21835a9f09a0306a2003ab335d065ed5647548e91f4ad725624174a2faf131.bin",
+          "sha256": "7c21835a9f09a0306a2003ab335d065ed5647548e91f4ad725624174a2faf131",
+          "uri": "../../resources/7c21835a9f09a0306a2003ab335d065ed5647548e91f4ad725624174a2faf131.bin"
+        }
+      ],
+      "sha256": "9011bb757e5a5096f5050d6967dd6a936a8fe4d8780665e6fc07fa1158398f99",
+      "source": {
+        "byteLength": 327356,
+        "kind": "scene",
+        "mediaType": "model/gltf-binary",
+        "metadata": {
+          "coordinateSystem": "right-handed-y-up",
+          "operation": "scene.import.gltf",
+          "operationVersion": "2",
+          "profile": "gltf-core-production-v1",
+          "resourceSha256s": [],
+          "sourceSha256": "51e030096481f3313f71f57df45a60ac6f92bc85031cc0e6cc9f590a8bdd0838",
+          "unit": "meter"
+        },
+        "schemaVersion": 1,
+        "sha256": "e48d58b0e4c2564433bf7e5964dfee45ea73c33b4ad7e0bbd3bc1bd3ce4d6fa1"
+      },
+      "variant": "expressive"
+    }
+  ],
+  "policy": {
+    "allowedValidatorWarnings": [
+      "NODE_SKINNED_MESH_NON_ROOT",
+      "MESH_PRIMITIVE_GENERATED_TANGENT_SPACE"
+    ]
+  },
+  "profile": "gltf-resources-v1",
+  "schemaVersion": 4
+}
