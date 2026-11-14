@@ -415,3 +415,61 @@ export async function loadDownloadBundle(bundle, options, fail, character) {
     }
   }
 }
+/**
+ * Decode one `gltf-resources-v1` bundle entry whose textures are KTX2 (`KHR_texture_basisu`, as every
+ * asset-tooling kit and, since asset-tooling #517, the Ranger bundle ship them) the way the download path does:
+ * one Three.js decode with the KTX2 transcoder, and a canonical, texture-free copy for the Rust bridge.
+ * `files` maps each glTF resource URI to its bytes; no other URL is loaded.
+ */
+export async function loadKtx2BundleEntry(json, files, options, fail) {
+  if (
+    !options.renderer?.configureTextureLoader ||
+    typeof options.transcoderPath !== "string" ||
+    !options.transcoderPath.endsWith("/")
+  ) {
+    fail("KTX2 needs renderer.configureTextureLoader and transcoderPath ending in /");
+  }
+  const manager = new THREE.LoadingManager();
+  const failures = [];
+  manager.onError = (url) => {
+    failures.push(url);
+  };
+  const urls = new Map();
+  for (const [uri, bytes] of files) {
+    urls.set(uri, URL.createObjectURL(new Blob([bytes])));
+  }
+  manager.setURLModifier((url) => {
+    if (urls.has(url)) {
+      return urls.get(url);
+    }
+    if (["basis_transcoder.js", "basis_transcoder.wasm"].some((file) => url === options.transcoderPath + file)) {
+      return url;
+    }
+    if (url.startsWith("blob:")) {
+      return url;
+    }
+    fail(`undeclared loader URL ${url}`);
+  });
+  const ktx2 = new KTX2Loader(manager).setTranscoderPath(options.transcoderPath);
+  let gltf;
+  try {
+    options.renderer.configureTextureLoader(ktx2);
+    const loader = new GLTFLoader(manager).setMeshoptDecoder(MeshoptDecoder).setKTX2Loader(ktx2);
+    gltf = await loader.parseAsync(JSON.stringify(json), "");
+    if (failures.length) {
+      fail(`bundle resource decode failed: ${failures.join(", ")}`);
+    }
+    const canonical = await canonicalDocument(gltf, "entry.decoded.bin", fail);
+    return { gltf, glb: assembleGlb(canonical.json, new Map([["entry.decoded.bin", canonical.bytes]]), fail) };
+  } catch (error) {
+    if (gltf) {
+      disposeDecoded(gltf);
+    }
+    throw error;
+  } finally {
+    ktx2.dispose();
+    for (const url of urls.values()) {
+      URL.revokeObjectURL(url);
+    }
+  }
+}

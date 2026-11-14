@@ -2,7 +2,7 @@ import {copyBytes, loadCharacterRuntime, renderImportedCharacterInstances} from 
 import {sha256Hex} from "./content-hash.js"
 import {assembleGlb, bundleEntry, referencedResources} from "./bundle-glb.js"
 import {loadImportedItem, loadDecodedItem} from "./imported-item.js"
-import {loadDownloadBundle, downloadEntry} from "./download-bundle.js"
+import {loadDownloadBundle, loadKtx2BundleEntry, downloadEntry} from "./download-bundle.js"
 
 function fail(message) { throw new Error(`imported character: ${message}`) }
 function provenanceOf(bytes, provenance) {
@@ -48,7 +48,7 @@ export async function adaptImportedCharacterBundle(bundle, options = {}) {
   const onProgress = typeof options.onProgress === "function" ? options.onProgress : () => {}
   const {entry, key, variant, glb, gltf} = bundle?.manifest?.schema === "asset-downloads-v1"
     ? await loadDownloadBundle(bundle, options, fail, true)
-    : await readBundleGlb(bundle, onProgress)
+    : await readBundleGlb(bundle, onProgress, options)
   const manifest = bundle.manifest
   const runtime = await loadCharacterRuntime(glb, fail, gltf)
   const {metadata} = runtime
@@ -63,8 +63,11 @@ export async function adaptImportedCharacterBundle(bundle, options = {}) {
     dispose: runtime.dispose,
   })
 }
-/** Read one bundle entry's glTF and declared resources into in-memory GLB bytes. */
-async function readBundleGlb(bundle, onProgress) {
+/**
+ * Read one bundle entry's glTF and declared resources into in-memory GLB bytes. An entry with KTX2 textures
+ * (`KHR_texture_basisu`) is decoded once by Three.js, like a download entry, and also returns that `gltf`.
+ */
+async function readBundleGlb(bundle, onProgress, options = {}) {
   const {manifest, key, variant = "default", readResource} = bundle ?? {}
   if (typeof readResource !== "function") fail("bundle readResource must be a function")
   const entry = bundleEntry(manifest, key, variant, fail)
@@ -83,6 +86,7 @@ async function readBundleGlb(bundle, onProgress) {
     loadedBytes += bytes.byteLength
     onProgress({loadedBytes, totalBytes})
   }
+  if ((json.extensionsUsed ?? []).includes("KHR_texture_basisu")) return {entry, key, variant, ...await loadKtx2BundleEntry(json, bytesByUri, options, fail)}
   return {entry, key, variant, glb: assembleGlb(json, bytesByUri, fail)}
 }
 /**
@@ -96,7 +100,8 @@ export async function adaptImportedItemBundle(bundle, options = {}) {
     const {gltf, key, variant, glb} = await loadDownloadBundle(bundle, options, fail, false)
     return loadDecodedItem(gltf, `bundle:${key}/${variant}:${sha256Hex(glb)}`, fail)
   }
-  const {entry, key, variant, glb} = await readBundleGlb(bundle, onProgress)
+  const {entry, key, variant, glb, gltf} = await readBundleGlb(bundle, onProgress, options)
+  if (gltf) return loadDecodedItem(gltf, `bundle:${key}/${variant}:${entry.sha256}`, fail)
   return loadImportedItem(glb, `bundle:${key}/${variant}:${entry.sha256}`, fail)
 }
 /** Read one named attachment (for example `humanoid-sockets`) of a bundle entry as JSON. */
