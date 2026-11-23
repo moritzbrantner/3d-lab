@@ -192,6 +192,10 @@ export function createThreeSceneRenderer(canvas, options = {}) {
   const camera = new THREE.PerspectiveCamera()
   camera.matrixAutoUpdate = false
   const draw = options.draw ?? ((target, drawnScene, drawnCamera) => target.render(drawnScene, drawnCamera))
+  // Compiles what `draw` will draw. A `draw` through a lighting pipeline sets its passes'
+  // materials and defines only while it draws, so it brings its own (for example
+  // render-engine's `Lighting.prepare`); three's compileAsync suits three's own render.
+  const compileDraw = options.prepare ?? ((target, drawnScene, drawnCamera) => target.compileAsync(drawnScene, drawnCamera))
   const makeMaterial = options.material ?? createMaterial
   const objects = new Map()
   const instanceBatches = new Map()
@@ -431,7 +435,7 @@ export function createThreeSceneRenderer(canvas, options = {}) {
     async prepare(frame, {roots = []} = {}) {
       submitImportedRoots(roots)
       const observations = submitFrame(frame)
-      await renderer.compileAsync(scene, camera)
+      await compileDraw(renderer, scene, camera)
       const textures = new Set()
       scene.traverse(object => {
         for (const material of [object.material ?? []].flat()) {

@@ -402,6 +402,17 @@ export type ThreeSceneRendererOptions = {
     scene: import("three").Scene,
     camera: import("three").PerspectiveCamera,
   ) => void
+  /**
+   * Compiles every program `draw` will draw `scene` with, without drawing, for `prepare`:
+   * resolves once they are linked. Defaults to `renderer.compileAsync(scene, camera)`, which
+   * covers three's own `render`. Give one with a `draw` that sets its own materials or defines
+   * while it draws, for example render-engine's `Lighting.prepare` beside `Lighting.render`.
+   */
+  prepare?: (
+    renderer: import("three").WebGLRenderer,
+    scene: import("three").Scene,
+    camera: import("three").PerspectiveCamera,
+  ) => Promise<unknown>
 }
 
 /** A material request: the node's material fields and whether its geometry has vertex colors. */
