@@ -224,6 +224,14 @@ runtime as `adaptImportedCharacter`. Provenance is the bundle entry (profile, ke
 sha256, source AssetRef). Content hashing is asset-tooling's `verifyAssetBundle`, which
 stays the consumer's choice.
 
+A character also takes every `<key>.clips/<family>` entry of the same manifest, in
+manifest order (asset-tooling #775: a rigged clip library with the skeleton's nodes and
+one clip family, no mesh; the Ranger's `default` carries no clips of its own). Their
+declared resources are read once each, and their clips bind to the character by unique
+authored node name with the same rules as the compressed path's shared clips below. The
+provenance `sha256` then also covers the libraries' entry hashes. Items never read clip
+libraries.
+
 A character may consist of several skinned mesh nodes, each with its own skin (outfit
 pieces, head, eyes). Rust validates every skinned primitive and reports it by glTF
 mesh/primitive index (`primitives`, `meshNodes`); the browser matches decoded meshes
