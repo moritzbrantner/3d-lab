@@ -2,7 +2,7 @@ import {copyBytes, loadCharacterRuntime, renderImportedCharacterInstances} from 
 import {sha256Hex} from "./content-hash.js"
 import {assembleGlb, bundleEntry, referencedResources} from "./bundle-glb.js"
 import {loadImportedItem, loadDecodedItem} from "./imported-item.js"
-import {loadDownloadBundle, loadKtx2BundleEntry, downloadEntry} from "./download-bundle.js"
+import {bindSharedAnimations, loadDownloadBundle, loadKtx2BundleEntry, downloadEntry} from "./download-bundle.js"
 
 function fail(message) { throw new Error(`imported character: ${message}`) }
 function provenanceOf(bytes, provenance) {
@@ -40,7 +40,7 @@ function toBytes(value, what) {
 }
 /**
  * Load one character from an unpacked asset-tooling `gltf-resources-v1` bundle. Only the
- * entry's glTF and the resources it declares are read, through the caller's
+ * entry's glTF, its `<key>.clips/<family>` clip libraries and the resources they declare are read, through the caller's
  * `readResource(path)`; there is no implicit network access. Byte lengths are checked;
  * content verification (asset-tooling `verifyAssetBundle`) stays the consumer's choice.
  */
@@ -48,7 +48,7 @@ export async function adaptImportedCharacterBundle(bundle, options = {}) {
   const onProgress = typeof options.onProgress === "function" ? options.onProgress : () => {}
   const {entry, key, variant, glb, gltf} = bundle?.manifest?.schema === "asset-downloads-v1"
     ? await loadDownloadBundle(bundle, options, fail, true)
-    : await readBundleGlb(bundle, onProgress, options)
+    : await readBundleGlb(bundle, onProgress, options, true)
   const manifest = bundle.manifest
   const runtime = await loadCharacterRuntime(glb, fail, gltf)
   const {metadata} = runtime
@@ -66,15 +66,28 @@ export async function adaptImportedCharacterBundle(bundle, options = {}) {
 /**
  * Read one bundle entry's glTF and declared resources into in-memory GLB bytes. An entry with KTX2 textures
  * (`KHR_texture_basisu`) is decoded once by Three.js, like a download entry, and also returns that `gltf`.
+ * A character also takes the bundle's shared clip libraries, `<key>.clips/<family>` (asset-tooling #775:
+ * skeleton nodes and one family's clips, no mesh), bound by unique joint name like the download path's clips.
  */
-async function readBundleGlb(bundle, onProgress, options = {}) {
+async function readBundleGlb(bundle, onProgress, options = {}, character = false) {
   const {manifest, key, variant = "default", readResource} = bundle ?? {}
   if (typeof readResource !== "function") fail("bundle readResource must be a function")
   const entry = bundleEntry(manifest, key, variant, fail)
-  const document = toBytes(await readResource(entry.path), "bundle glTF")
-  let json
-  try { json = JSON.parse(new TextDecoder().decode(document)) } catch { fail(`bundle glTF ${entry.path} is not JSON`) }
-  const resources = referencedResources(json, entry, fail)
+  const readJson = async source => {
+    const bytes = toBytes(await readResource(source.path), "bundle glTF")
+    try { return JSON.parse(new TextDecoder().decode(bytes)) } catch { return fail(`bundle glTF ${source.path} is not JSON`) }
+  }
+  const json = await readJson(entry)
+  const libraries = character
+    ? manifest.assets.filter(asset => asset?.key === `${key}.clips`).map(asset => bundleEntry(manifest, asset.key, asset.variant, fail))
+    : []
+  const libraryJson = await Promise.all(libraries.map(readJson))
+  const declared = new Map()
+  for (const resource of [
+    ...referencedResources(json, entry, fail),
+    ...libraries.flatMap((library, index) => referencedResources(libraryJson[index], library, fail)),
+  ]) declared.set(resource.uri, resource)
+  const resources = [...declared.values()]
   const totalBytes = resources.reduce((sum, resource) => sum + resource.byteLength, 0)
   let loadedBytes = 0
   onProgress({loadedBytes, totalBytes})
@@ -86,8 +99,13 @@ async function readBundleGlb(bundle, onProgress, options = {}) {
     loadedBytes += bytes.byteLength
     onProgress({loadedBytes, totalBytes})
   }
-  if ((json.extensionsUsed ?? []).includes("KHR_texture_basisu")) return {entry, key, variant, ...await loadKtx2BundleEntry(json, bytesByUri, options, fail)}
-  return {entry, key, variant, glb: assembleGlb(json, bytesByUri, fail)}
+  for (const clips of libraryJson) bindSharedAnimations(json, clips, fail)
+  const identity = libraries.length === 0 ? entry : {
+    ...entry,
+    sha256: sha256Hex(new TextEncoder().encode([entry.sha256, ...libraries.map(library => `${library.variant}:${library.sha256}`)].join("\n"))),
+  }
+  if ((json.extensionsUsed ?? []).includes("KHR_texture_basisu")) return {entry: identity, key, variant, ...await loadKtx2BundleEntry(json, bytesByUri, options, fail)}
+  return {entry: identity, key, variant, glb: assembleGlb(json, bytesByUri, fail)}
 }
 /**
  * Load one static, unskinned item (weapon, shield, prop) from an unpacked asset-tooling
